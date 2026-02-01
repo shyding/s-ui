@@ -100,10 +100,13 @@ func parseSocksFormats(uri string, i int) (*map[string]interface{}, string, bool
 								port = 1080
 							}
 							
-							tag := remarks
-							if i > 0 && tag != "" {
-								tag = fmt.Sprintf("%d.%s", i, remarks)
-							}
+								tag := remarks
+								if tag == "" {
+									tag = fmt.Sprintf("socks-%s-%d", host, port)
+								}
+								if i > 0 {
+									tag = fmt.Sprintf("%d.%s", i, tag)
+								}
 							
 							socks := map[string]interface{}{
 								"type":        "socks",
@@ -132,9 +135,10 @@ func parseSocksFormats(uri string, i int) (*map[string]interface{}, string, bool
 					username := parts[2]
 					password := parts[3]
 					
-					tag := ""
+					// Generate a default tag based on host:port
+					tag := fmt.Sprintf("socks-%s-%d", host, port)
 					if i > 0 {
-						tag = fmt.Sprintf("%d.", i)
+						tag = fmt.Sprintf("%d.%s", i, tag)
 					}
 					
 					socks := map[string]interface{}{
