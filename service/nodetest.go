@@ -28,6 +28,7 @@ type NodeTestResult struct {
 	Available bool   `json:"available"`
 	LandingIP string `json:"landingIP"`
 	Country   string `json:"country"`
+	Region    string `json:"region"`
 	City      string `json:"city"`
 	ISP       string `json:"isp"`
 	Error     string `json:"error,omitempty"`
@@ -155,9 +156,14 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
 			result.LandingIP, _ = ipInfo["query"].(string)
 			result.Country, _ = ipInfo["country"].(string)
+			result.Region, _ = ipInfo["regionName"].(string)
 			result.City, _ = ipInfo["city"].(string)
 			result.ISP, _ = ipInfo["isp"].(string)
+		} else {
+			result.Error = fmt.Sprintf("parse IP info failed: %v", err)
 		}
+	} else {
+		result.Error = "invalid HTTP response"
 	}
 
 	return result, nil

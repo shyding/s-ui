@@ -168,6 +168,7 @@ interface TestResult {
   available: boolean
   landingIP: string
   country: string
+  region: string
   city: string
   isp: string
   error?: string
@@ -207,10 +208,10 @@ export default {
       ipHeaders: [
         { title: 'Status', key: 'available', width: '70px' },
         { title: 'Tag', key: 'tag' },
-        { title: 'Server', key: 'server' },
         { title: 'Latency', key: 'latency', width: '90px' },
         { title: 'Landing IP', key: 'landingIP' },
-        { title: 'Country', key: 'country', width: '120px' }
+        { title: 'Location', key: 'location' },
+        { title: 'Error', key: 'error' }
       ]
     }
   },
@@ -230,8 +231,11 @@ export default {
       const sum = available.reduce((acc, r) => acc + r.latency, 0)
       return Math.round(sum / available.length)
     },
-    filteredResults(): TestResult[] {
-      let filtered = [...this.results]
+    filteredResults(): any[] {
+      let filtered = [...this.results].map(r => ({
+        ...r,
+        location: [r.country, r.region, r.city].filter(Boolean).join(' / ') || '-'
+      }))
       
       // Filter
       if (this.filterStatus === 'available') {

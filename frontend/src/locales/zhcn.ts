@@ -131,6 +131,9 @@ export default {
     close: "关闭",
     restartApp: "重启面板",
     restartSb: "重启 Singbox",
+    batchImport: "批量导入",
+    testAll: "测试全部",
+    import: "导入",
   },
   login: {
     title: "登录",
@@ -468,7 +471,7 @@ export default {
       allowPrivate: "允许私有网络",
     },
   },
-  tls : {
+  tls: {
     enable: "启用 TLS",
     usePath: "使用外部路径",
     useText: "使用文件内容",
@@ -533,5 +536,29 @@ export default {
     m: "分",
     s: "秒",
     ms: "毫秒",
+  },
+  batchImport: {
+    linksLabel: "粘贴链接（每行一个）",
+    placeholder: "vless://...\nvmess://...\ntrojan://...\nss://...\nsocks5://...",
+    result: "结果",
+    success: "成功",
+    failed: "失败",
+    failedLinks: "失败的链接",
+  },
+  nodeTest: {
+    title: "节点测试",
+    testing: "测试中...",
+    sortBy: "排序方式",
+    filter: "过滤",
+    concurrency: "并发数",
+    queryIP: "查询落地IP",
+    total: "总数",
+    available: "可用",
+    failed: "失败",
+    avgLatency: "平均延迟",
+    clickStart: "点击「开始测试」测试所有节点。",
+    export: "导出",
+    startTest: "开始测试",
+    testWithIP: "测试并查询IP",
   },
 }
