@@ -3,10 +3,15 @@ package model
 import "encoding/json"
 
 type Outbound struct {
-	Id      uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
-	Type    string          `json:"type" form:"type"`
-	Tag     string          `json:"tag" form:"tag" gorm:"unique"`
-	Options json.RawMessage `json:"-" form:"-"`
+	Id           uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	Type         string          `json:"type" form:"type"`
+	Tag          string          `json:"tag" form:"tag" gorm:"unique"`
+	Options      json.RawMessage `json:"-" form:"-"`
+	LandingIP    string          `json:"landingIP,omitempty" form:"landingIP"`
+	Country      string          `json:"country,omitempty" form:"country"`
+	Region       string          `json:"region,omitempty" form:"region"`
+	City         string          `json:"city,omitempty" form:"city"`
+	LastTestTime int64           `json:"lastTestTime,omitempty" form:"lastTestTime"`
 }
 
 func (o *Outbound) UnmarshalJSON(data []byte) error {

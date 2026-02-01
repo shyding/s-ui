@@ -430,7 +430,7 @@ func (a *ApiService) TestAllNodesWithIP(c *gin.Context) {
 		}
 	}
 	
-	results, err := a.NodeTestService.TestAllOutboundsWithIPInternal(concurrency)
+	results, err := a.NodeTestService.TestAllAndSave(concurrency)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return

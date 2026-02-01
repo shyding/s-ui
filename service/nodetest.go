@@ -273,3 +273,40 @@ func (s *NodeTestService) TestAllOutboundsWithIPInternal(concurrency int) ([]*No
 	
 	return s.TestAllOutboundsWithIP(concurrency, ctx)
 }
+
+// SaveTestResult saves the test result to database
+func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
+	if result.LandingIP == "" {
+		return nil // no IP info to save
+	}
+	
+	db := database.GetDB()
+	now := time.Now().Unix()
+	
+	return db.Model(&model.Outbound{}).
+		Where("tag = ?", result.Tag).
+		Updates(map[string]interface{}{
+			"landing_ip":     result.LandingIP,
+			"country":        result.Country,
+			"region":         result.Region,
+			"city":           result.City,
+			"last_test_time": now,
+		}).Error
+}
+
+// TestAllAndSave tests all nodes with IP and saves results to database
+func (s *NodeTestService) TestAllAndSave(concurrency int) ([]*NodeTestResult, error) {
+	results, err := s.TestAllOutboundsWithIPInternal(concurrency)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Save results to database
+	for _, result := range results {
+		if result.LandingIP != "" {
+			s.SaveTestResult(result)
+		}
+	}
+	
+	return results, nil
+}

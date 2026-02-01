@@ -67,6 +67,12 @@
               <template v-else>-</template>
             </v-col>
           </v-row>
+          <v-row v-if="item.country || item.region">
+            <v-col>{{ $t('nodeTest.location') || 'Location' }}</v-col>
+            <v-col>
+              <span class="text-caption">{{ [item.country, item.region, item.city].filter(Boolean).join(' / ') || '-' }}</span>
+            </v-col>
+          </v-row>
         </v-card-text>
         <v-divider></v-divider>
         <v-card-actions style="padding: 0;">

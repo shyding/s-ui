@@ -560,5 +560,6 @@ export default {
     export: "Export",
     startTest: "Start Test",
     testWithIP: "Test with IP",
+    location: "Location",
   },
 }
