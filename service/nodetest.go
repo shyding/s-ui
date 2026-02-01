@@ -114,8 +114,9 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	// Dial to ip-api.com through the proxy
-	destination := M.ParseSocksaddr("ip-api.com:80")
+	// Dial to ip-api.com through the proxy (use IP to avoid DNS issues)
+	// ip-api.com IP: 208.95.112.1
+	destination := M.ParseSocksaddr("208.95.112.1:80")
 	
 	conn, err := outbound.DialContext(dialCtx, N.NetworkTCP, destination)
 	if err != nil {
@@ -124,7 +125,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	}
 	defer conn.Close()
 
-	// Send HTTP request
+	// Send HTTP request with Host header
 	req := "GET /json/ HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
 	_, err = conn.Write([]byte(req))
 	if err != nil {
