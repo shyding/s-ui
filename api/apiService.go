@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -328,6 +329,60 @@ func (a *ApiService) LinkConvert(c *gin.Context) {
 	link := c.Request.FormValue("link")
 	result, _, err := util.GetOutbound(link, 0)
 	jsonObj(c, result, err)
+}
+
+func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
+	hostname := getHostname(c)
+	links := c.Request.FormValue("links")
+	
+	// Split links by newline
+	lines := strings.Split(links, "\n")
+	
+	successCount := 0
+	failedLinks := []string{}
+	
+	db := database.GetDB()
+	tx := db.Begin()
+	
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		
+		// Parse the link
+		outboundData, _, err := util.GetOutbound(line, i+1)
+		if err != nil {
+			failedLinks = append(failedLinks, line)
+			continue
+		}
+		
+		// Convert to JSON for saving
+		data, err := json.Marshal(outboundData)
+		if err != nil {
+			failedLinks = append(failedLinks, line)
+			continue
+		}
+		
+		// Save via ConfigService
+		_, err = a.ConfigService.Save("outbounds", "new", json.RawMessage(data), "", loginUser, hostname)
+		if err != nil {
+			failedLinks = append(failedLinks, line)
+			continue
+		}
+		
+		successCount++
+	}
+	
+	tx.Commit()
+	
+	result := map[string]interface{}{
+		"success":     successCount,
+		"failed":      len(failedLinks),
+		"failedLinks": failedLinks,
+	}
+	
+	jsonObj(c, result, nil)
 }
 
 func (a *ApiService) ImportDb(c *gin.Context) {

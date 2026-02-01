@@ -48,6 +48,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.RestartSb(c)
 	case "linkConvert":
 		a.ApiService.LinkConvert(c)
+	case "batchImport":
+		a.ApiService.BatchImport(c, loginUser)
 	case "importdb":
 		a.ApiService.ImportDb(c)
 	case "addToken":

@@ -42,7 +42,7 @@ var defaultConfig = `{
 }`
 
 var defaultValueMap = map[string]string{
-	"webListen":     "0.0.0.0",
+	"webListen":     "",
 	"webDomain":     "",
 	"webPort":       "2095",
 	"secret":        common.Random(32),
@@ -53,7 +53,7 @@ var defaultValueMap = map[string]string{
 	"sessionMaxAge": "0",
 	"trafficAge":    "30",
 	"timeLocation":  "Asia/Tehran",
-	"subListen":     "0.0.0.0",
+	"subListen":     "",
 	"subPort":       "2096",
 	"subPath":       "/sub/",
 	"subDomain":     "",
