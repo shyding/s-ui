@@ -69,19 +69,48 @@ jobs:
       - name: Deploy to Ubuntu Server
         run: |
           scp -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
+          scp -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
+          scp -P ${{ secrets.SERVER_PORT }} s-ui.sh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.sh
 
-      - name: Restart s-ui service
+      - name: Install or Update s-ui service
         run: |
           ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            # Stop s-ui service
-            sudo systemctl stop s-ui
-
-            # Backup old binary
-            sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S)
+            # Check if s-ui service exists
+            if ! systemctl list-unit-files | grep -q "s-ui.service"; then
+              echo "s-ui service not found, installing..."
+              
+              # Create installation directory
+              sudo mkdir -p /usr/local/s-ui
+              
+              # Copy service file
+              sudo cp /tmp/s-ui.service /etc/systemd/system/s-ui.service
+              
+              # Copy management script
+              sudo cp /tmp/s-ui.sh /usr/local/s-ui/s-ui.sh
+              sudo chmod +x /usr/local/s-ui/s-ui.sh
+              
+              # Reload systemd and enable service
+              sudo systemctl daemon-reload
+              sudo systemctl enable s-ui
+              
+              echo "s-ui service installed successfully!"
+            else
+              echo "s-ui service exists, updating..."
+              # Stop s-ui service
+              sudo systemctl stop s-ui || true
+              
+              # Backup old binary if exists
+              if [ -f /usr/local/s-ui/sui ]; then
+                sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S)
+              fi
+            fi
 
             # Replace with new binary
             sudo mv /tmp/sui /usr/local/s-ui/sui
             sudo chmod +x /usr/local/s-ui/sui
+
+            # Clean up temp files
+            rm -f /tmp/s-ui.service /tmp/s-ui.sh
 
             # Start s-ui service
             sudo systemctl start s-ui
