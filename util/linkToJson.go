@@ -12,6 +12,11 @@ import (
 )
 
 func GetOutbound(uri string, i int) (*map[string]interface{}, string, error) {
+	// First, try to parse non-standard SOCKS5 formats
+	if result, tag, ok := parseSocksFormats(uri, i); ok {
+		return result, tag, nil
+	}
+
 	u, err := url.Parse(uri)
 	if err == nil {
 		switch u.Scheme {
@@ -36,6 +41,118 @@ func GetOutbound(uri string, i int) (*map[string]interface{}, string, error) {
 		}
 	}
 	return nil, "", common.NewError("Unsupported link format")
+}
+
+// parseSocksFormats handles non-standard SOCKS5 link formats:
+// Format 1: socks5://IP:PORT:USERNAME:PASSWORD
+// Format 2: socks://BASE64?remarks=NAME (base64 encoded user:pass@host:port)
+func parseSocksFormats(uri string, i int) (*map[string]interface{}, string, bool) {
+	// Check for socks5:// or socks:// prefix
+	lowerUri := strings.ToLower(uri)
+	
+	// Format 1: socks5://IP:PORT:USERNAME:PASSWORD
+	if strings.HasPrefix(lowerUri, "socks5://") || strings.HasPrefix(lowerUri, "socks://") {
+		// Remove the scheme
+		var data string
+		if strings.HasPrefix(lowerUri, "socks5://") {
+			data = uri[9:]
+		} else {
+			data = uri[8:]
+		}
+		
+		// Check if it's base64 encoded format (Format 3)
+		// socks://BASE64?remarks=NAME
+		if idx := strings.Index(data, "?"); idx != -1 || !strings.Contains(data, "@") {
+			// Try to parse as base64 format
+			base64Part := data
+			remarks := ""
+			
+			if idx := strings.Index(data, "?"); idx != -1 {
+				base64Part = data[:idx]
+				queryStr := data[idx+1:]
+				// Parse remarks from query
+				if strings.HasPrefix(queryStr, "remarks=") {
+					remarks = queryStr[8:]
+					remarks, _ = url.QueryUnescape(remarks)
+				} else if q, err := url.ParseQuery(queryStr); err == nil {
+					remarks = q.Get("remarks")
+				}
+			}
+			
+			// Try to decode base64
+			decoded := StrOrBase64Encoded(base64Part)
+			if decoded != base64Part && strings.Contains(decoded, "@") {
+				// Successfully decoded: user:pass@host:port
+				atIdx := strings.LastIndex(decoded, "@")
+				if atIdx > 0 {
+					userPass := decoded[:atIdx]
+					hostPort := decoded[atIdx+1:]
+					
+					colonIdx := strings.Index(userPass, ":")
+					if colonIdx > 0 {
+						username := userPass[:colonIdx]
+						password := userPass[colonIdx+1:]
+						
+						host, portStr, err := net.SplitHostPort(hostPort)
+						if err == nil {
+							port, _ := strconv.Atoi(portStr)
+							if port == 0 {
+								port = 1080
+							}
+							
+							tag := remarks
+							if i > 0 && tag != "" {
+								tag = fmt.Sprintf("%d.%s", i, remarks)
+							}
+							
+							socks := map[string]interface{}{
+								"type":        "socks",
+								"tag":         tag,
+								"server":      host,
+								"server_port": port,
+								"username":    username,
+								"password":    password,
+								"version":     "5",
+							}
+							return &socks, tag, true
+						}
+					}
+				}
+			}
+		}
+		
+		// Check for colon-separated format: IP:PORT:USERNAME:PASSWORD
+		// This format has no @ symbol and exactly 4 colon-separated parts
+		if !strings.Contains(data, "@") {
+			parts := strings.Split(data, ":")
+			if len(parts) == 4 {
+				host := parts[0]
+				port, err := strconv.Atoi(parts[1])
+				if err == nil && port > 0 && port <= 65535 {
+					username := parts[2]
+					password := parts[3]
+					
+					tag := ""
+					if i > 0 {
+						tag = fmt.Sprintf("%d.", i)
+					}
+					
+					socks := map[string]interface{}{
+						"type":        "socks",
+						"tag":         tag,
+						"server":      host,
+						"server_port": port,
+						"username":    username,
+						"password":    password,
+						"version":     "5",
+					}
+					return &socks, tag, true
+				}
+			}
+		}
+	}
+	
+	return nil, "", false
 }
 
 func vmess(data string, i int) (*map[string]interface{}, string, error) {
