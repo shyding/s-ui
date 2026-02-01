@@ -31,6 +31,8 @@ func GetOutbound(uri string, i int) (*map[string]interface{}, string, error) {
 			return tuic(u, i)
 		case "ss", "shadowsocks":
 			return ss(u, i)
+		case "socks", "socks5":
+			return socks(u, i)
 		}
 	}
 	return nil, "", common.NewError("Unsupported link format")
@@ -518,4 +520,35 @@ func getTls(security string, q *url.Values) map[string]interface{} {
 		}
 	}
 	return tls
+}
+
+func socks(u *url.URL, i int) (*map[string]interface{}, string, error) {
+	host, portStr, _ := net.SplitHostPort(u.Host)
+	port := 1080
+	if len(portStr) > 0 {
+		port, _ = strconv.Atoi(portStr)
+	}
+
+	username := ""
+	password := ""
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+
+	tag := u.Fragment
+	if i > 0 {
+		tag = fmt.Sprintf("%d.%s", i, u.Fragment)
+	}
+
+	socks := map[string]interface{}{
+		"type":        "socks",
+		"tag":         tag,
+		"server":      host,
+		"server_port": port,
+		"username":    username,
+		"password":    password,
+		"version":     "5",
+	}
+	return &socks, tag, nil
 }

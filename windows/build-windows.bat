@@ -1,6 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM Change to the parent directory of this script (project root)
+cd /d "%~dp0.."
+
 echo Building S-UI for Windows...
 
 REM Check if Go is installed
