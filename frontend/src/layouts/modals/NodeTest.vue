@@ -211,7 +211,7 @@ export default {
         { title: 'Latency', key: 'latency', width: '90px' },
         { title: 'Landing IP', key: 'landingIP' },
         { title: 'Location', key: 'location' },
-        { title: 'Error', key: 'error' }
+        { title: 'Remark', key: 'remark', width: '150px' }
       ]
     }
   },
@@ -232,10 +232,30 @@ export default {
       return Math.round(sum / available.length)
     },
     filteredResults(): any[] {
-      let filtered = [...this.results].map(r => ({
-        ...r,
-        location: [r.country, r.region, r.city].filter(Boolean).join(' / ') || '-'
-      }))
+      let filtered = [...this.results].map(r => {
+        let remark = ''
+        if (r.landingIP) {
+          remark = '✓'
+        } else if (r.error) {
+          // Simplify error message
+          if (r.error.includes('invalid address')) {
+            remark = 'Config Error'
+          } else if (r.error.includes('incorrect user name')) {
+            remark = 'Auth Failed'
+          } else if (r.error.includes('timeout')) {
+            remark = 'Timeout'
+          } else if (r.error.includes('invalid HTTP')) {
+            remark = 'HTTP Error'
+          } else {
+            remark = 'Failed'
+          }
+        }
+        return {
+          ...r,
+          location: [r.country, r.region, r.city].filter(Boolean).join(' / ') || '-',
+          remark
+        }
+      })
       
       // Filter
       if (this.filterStatus === 'available') {
