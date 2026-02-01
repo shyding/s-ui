@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ type ApiService struct {
 	service.PanelService
 	service.StatsService
 	service.ServerService
+	service.NodeTestService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -383,6 +385,58 @@ func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
 	}
 	
 	jsonObj(c, result, nil)
+}
+
+func (a *ApiService) TestNode(c *gin.Context) {
+	tag := c.Request.FormValue("tag")
+	if tag == "" {
+		jsonMsg(c, "", fmt.Errorf("tag is required"))
+		return
+	}
+	
+	result, err := a.NodeTestService.TestOutbound(tag)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, result, nil)
+}
+
+func (a *ApiService) TestAllNodes(c *gin.Context) {
+	concurrencyStr := c.Request.FormValue("concurrency")
+	concurrency := 50
+	if concurrencyStr != "" {
+		if c, err := strconv.Atoi(concurrencyStr); err == nil && c > 0 {
+			concurrency = c
+		}
+	}
+	
+	results, err := a.NodeTestService.TestAllOutbounds(concurrency)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, results, nil)
+}
+
+func (a *ApiService) TestAllNodesWithIP(c *gin.Context) {
+	concurrencyStr := c.Request.FormValue("concurrency")
+	concurrency := 10 // Lower for IP lookup due to API rate limits
+	if concurrencyStr != "" {
+		if cv, err := strconv.Atoi(concurrencyStr); err == nil && cv > 0 {
+			concurrency = cv
+		}
+	}
+	
+	results, err := a.NodeTestService.TestAllOutboundsWithIPInternal(concurrency)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, results, nil)
 }
 
 func (a *ApiService) ImportDb(c *gin.Context) {

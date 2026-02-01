@@ -50,6 +50,12 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.LinkConvert(c)
 	case "batchImport":
 		a.ApiService.BatchImport(c, loginUser)
+	case "testNode":
+		a.ApiService.TestNode(c)
+	case "testAllNodes":
+		a.ApiService.TestAllNodes(c)
+	case "testAllNodesWithIP":
+		a.ApiService.TestAllNodesWithIP(c)
 	case "importdb":
 		a.ApiService.ImportDb(c)
 	case "addToken":
