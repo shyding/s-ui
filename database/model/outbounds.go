@@ -42,6 +42,23 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	combined := make(map[string]interface{})
 	combined["type"] = o.Type
 	combined["tag"] = o.Tag
+	
+	// Add location fields if they exist
+	if o.LandingIP != "" {
+		combined["landingIP"] = o.LandingIP
+	}
+	if o.Country != "" {
+		combined["country"] = o.Country
+	}
+	if o.Region != "" {
+		combined["region"] = o.Region
+	}
+	if o.City != "" {
+		combined["city"] = o.City
+	}
+	if o.LastTestTime > 0 {
+		combined["lastTestTime"] = o.LastTestTime
+	}
 
 	if o.Options != nil {
 		var restFields map[string]json.RawMessage
