@@ -561,5 +561,7 @@ export default {
     startTest: "开始测试",
     testWithIP: "测试并查询IP",
     location: "位置",
+    deleteFailed: "删除失败节点",
+    confirmDelete: "确定要删除 {count} 个失败节点吗？",
   },
 }

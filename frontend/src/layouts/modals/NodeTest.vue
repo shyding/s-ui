@@ -135,6 +135,15 @@
         >
           {{ $t('nodeTest.export') || 'Export' }}
         </v-btn>
+        <v-btn
+          color="error"
+          variant="tonal"
+          class="ml-2"
+          @click="deleteFailed"
+          :disabled="failedCount === 0 || testing"
+        >
+          {{ $t('nodeTest.deleteFailed') || 'Delete Failed' }}
+        </v-btn>
         <v-spacer></v-spacer>
         <v-btn
           color="primary"
@@ -343,6 +352,31 @@ export default {
       a.download = 'node-test-results.csv'
       a.click()
       URL.revokeObjectURL(url)
+    },
+    async deleteFailed() {
+      const msg = this.$t('nodeTest.confirmDelete', { count: this.failedCount }) || `Are you sure you want to delete ${this.failedCount} failed nodes?`
+      if (!confirm(msg)) {
+        return
+      }
+      
+      const failedTags = this.results.filter(r => !r.available).map(r => r.tag)
+      if (failedTags.length === 0) return
+
+      this.testing = true
+      try {
+        const response:any = await HttpUtils.post('api/batchDelete', { 
+          tags: failedTags.join(',') 
+        })
+        
+        if (response.success) {
+           // Remove deleted nodes from results
+           this.results = this.results.filter(r => r.available)
+           this.$emit('close') // Close modal to refresh outbounds list in parent
+        }
+      } catch (error) {
+        console.error('Delete failed:', error)
+      }
+      this.testing = false
     },
     closeModal() {
       this.$emit('close')

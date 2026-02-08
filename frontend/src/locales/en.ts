@@ -561,5 +561,7 @@ export default {
     startTest: "Start Test",
     testWithIP: "Test with IP",
     location: "Location",
+    deleteFailed: "Delete Failed",
+    confirmDelete: "Are you sure you want to delete {count} failed nodes?",
   },
 }

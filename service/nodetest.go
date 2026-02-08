@@ -121,6 +121,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	conn, err := outbound.DialContext(dialCtx, N.NetworkTCP, destination)
 	if err != nil {
 		result.Error = fmt.Sprintf("dial via proxy failed: %v", err)
+		result.Available = false
 		return result, nil
 	}
 	defer conn.Close()
@@ -130,6 +131,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	_, err = conn.Write([]byte(req))
 	if err != nil {
 		result.Error = fmt.Sprintf("write failed: %v", err)
+		result.Available = false
 		return result, nil
 	}
 
@@ -138,6 +140,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	n, err := conn.Read(buf)
 	if err != nil && err != io.EOF {
 		result.Error = fmt.Sprintf("read failed: %v", err)
+		result.Available = false
 		return result, nil
 	}
 
@@ -162,9 +165,11 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 			result.ISP, _ = ipInfo["isp"].(string)
 		} else {
 			result.Error = fmt.Sprintf("parse IP info failed: %v", err)
+			// Don't mark as unavailable just because IP parse failed, connection worked
 		}
 	} else {
 		result.Error = "invalid HTTP response"
+		result.Available = false
 	}
 
 	return result, nil

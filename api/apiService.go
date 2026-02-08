@@ -387,6 +387,45 @@ func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
 	jsonObj(c, result, nil)
 }
 
+func (a *ApiService) BatchDelete(c *gin.Context, loginUser string) {
+	hostname := getHostname(c)
+	tagsStr := c.Request.FormValue("tags")
+	
+	if tagsStr == "" {
+		jsonMsg(c, "", fmt.Errorf("tags are required"))
+		return
+	}
+	
+	tags := strings.Split(tagsStr, ",")
+	successCount := 0
+	failedTags := []string{}
+	
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		
+		// The 'del' action expects the data to be a JSON string of the tag
+		tagJson, _ := json.Marshal(tag)
+		
+		_, err := a.ConfigService.Save("outbounds", "del", json.RawMessage(tagJson), "", loginUser, hostname)
+		if err != nil {
+			failedTags = append(failedTags, tag)
+			continue
+		}
+		successCount++
+	}
+	
+	result := map[string]interface{}{
+		"success":     successCount,
+		"failed":      len(failedTags),
+		"failedTags":  failedTags,
+	}
+	
+	jsonObj(c, result, nil)
+}
+
 func (a *ApiService) TestNode(c *gin.Context) {
 	tag := c.Request.FormValue("tag")
 	if tag == "" {

@@ -56,6 +56,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.TestAllNodes(c)
 	case "testAllNodesWithIP":
 		a.ApiService.TestAllNodesWithIP(c)
+	case "batchDelete":
+		a.ApiService.BatchDelete(c, loginUser)
 	case "importdb":
 		a.ApiService.ImportDb(c)
 	case "addToken":
