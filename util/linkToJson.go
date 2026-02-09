@@ -379,7 +379,13 @@ func hy2(u *url.URL, i int) (*map[string]interface{}, string, error) {
 	tls := map[string]interface{}{
 		"enabled":     true,
 		"server_name": query.Get("sni"),
+		"alpn":        []string{"h3"}, // Default ALPN
 	}
+	// Default SNI
+	if tls["server_name"] == "" {
+		tls["server_name"] = host
+	}
+
 	alpn := query.Get("alpn")
 	insecure := query.Get("insecure")
 	if len(alpn) > 0 {

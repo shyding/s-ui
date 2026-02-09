@@ -84,6 +84,7 @@ func InitDB(dbPath string) error {
 		&model.Stats{},
 		&model.Client{},
 		&model.Changes{},
+		&model.Subscription{},
 	)
 	if err != nil {
 		return err

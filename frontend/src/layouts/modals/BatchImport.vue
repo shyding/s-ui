@@ -7,6 +7,20 @@
         <v-container>
           <v-row>
             <v-col cols="12">
+              <v-file-input
+                ref="fileInput"
+                v-model="selectedFile"
+                :label="$t('batchImport.selectFile') || 'Select file (.txt)'"
+                accept=".txt"
+                prepend-icon="mdi-file-upload"
+                variant="outlined"
+                density="compact"
+                @update:model-value="loadFile"
+              ></v-file-input>
+            </v-col>
+          </v-row>
+          <v-row>
+            <v-col cols="12">
               <v-textarea
                 v-model="links"
                 :label="$t('batchImport.linksLabel') || 'Paste links (one per line)'"
@@ -64,7 +78,8 @@ export default {
     return {
       links: '',
       loading: false,
-      result: null as ImportResult | null
+      result: null as ImportResult | null,
+      selectedFile: null as File | null
     }
   },
   methods: {
@@ -92,7 +107,19 @@ export default {
     closeModal() {
       this.links = ''
       this.result = null
+      this.selectedFile = null
       this.$emit('close')
+    },
+    loadFile() {
+      if (this.selectedFile) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            this.links = e.target.result as string
+          }
+        }
+        reader.readAsText(this.selectedFile)
+      }
     }
   },
   watch: {

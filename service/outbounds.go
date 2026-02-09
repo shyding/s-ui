@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
@@ -41,6 +42,40 @@ func (o *OutboundService) GetAll() (*[]map[string]interface{}, error) {
 	return &data, nil
 }
 
+func (o *OutboundService) GetBySubscriptionID(subID string) (*[]map[string]interface{}, error) {
+	db := database.GetDB()
+	outbounds := []*model.Outbound{}
+	
+	// Split IDs by comma to support multiple subscriptions
+	ids := strings.Split(subID, ",")
+
+	// Only fetch necessary fields for display
+	err := db.Model(model.Outbound{}).Where("subscription_id IN ?", ids).Scan(&outbounds).Error
+	if err != nil {
+		return nil, err
+	}
+	var data []map[string]interface{}
+	for _, outbound := range outbounds {
+		outData := map[string]interface{}{
+			"id":     outbound.Id,
+			"type":   outbound.Type,
+			"tag":    outbound.Tag,
+			// Add server/port if available in Options (usually parsed there)
+		}
+
+		if outbound.Options != nil {
+			var restFields map[string]json.RawMessage
+			if err := json.Unmarshal(outbound.Options, &restFields); err == nil {
+				for k, v := range restFields {
+					outData[k] = v
+				}
+			}
+		}
+		data = append(data, outData)
+	}
+	return &data, nil
+}
+
 func (o *OutboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 	var outboundsJson []json.RawMessage
 	var outbounds []*model.Outbound
@@ -49,7 +84,7 @@ func (o *OutboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		return nil, err
 	}
 	for _, outbound := range outbounds {
-		outboundJson, err := outbound.MarshalJSON()
+		outboundJson, err := outbound.SingBoxJSON()
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +105,7 @@ func (s *OutboundService) Save(tx *gorm.DB, act string, data json.RawMessage) er
 		}
 
 		if corePtr.IsRunning() {
-			configData, err := outbound.MarshalJSON()
+			configData, err := outbound.SingBoxJSON()
 			if err != nil {
 				return err
 			}

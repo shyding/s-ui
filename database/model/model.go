@@ -63,3 +63,15 @@ type Tokens struct {
 	UserId uint   `json:"userId" form:"userId"`
 	User   *User  `json:"user" gorm:"foreignKey:UserId;references:Id"`
 }
+
+type Subscription struct {
+	Id             uint   `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	Name           string `json:"name" form:"name"`
+	Url            string `json:"url" form:"url"`
+	Enabled        bool   `json:"enabled" form:"enabled"`
+	UpdateInterval int    `json:"updateInterval" form:"updateInterval"` // in minutes, 0 = manual only
+	UpdateMode     string `json:"updateMode" form:"updateMode"`         // "replace" or "incremental"
+	LastUpdate     int64  `json:"lastUpdate" form:"lastUpdate"`
+	CreatedAt      int64  `json:"createdAt" form:"createdAt"`
+	NodeCount      int    `json:"nodeCount" form:"nodeCount"` // cached count of imported nodes
+}

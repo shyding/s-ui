@@ -28,7 +28,7 @@ const routes = [
         path: '/clients',
         name: 'pages.clients',
         component: () => import('@/views/Clients.vue'),
-      },  
+      },
       {
         path: '/outbounds',
         name: 'pages.outbounds',
@@ -74,6 +74,11 @@ const routes = [
         name: 'pages.settings',
         component: () => import('@/views/Settings.vue'),
       },
+      {
+        path: '/subscriptions',
+        name: 'pages.subscriptions',
+        component: () => import('@/views/Subscriptions.vue'),
+      },
     ],
   },
 ]
@@ -84,7 +89,7 @@ const router = createRouter({
 })
 
 const DEFAULT_TITLE = 'S-UI'
-let intervalId:any
+let intervalId: any
 
 // Navigation guard to check authentication state
 router.beforeEach((to, from, next) => {
@@ -100,7 +105,7 @@ router.beforeEach((to, from, next) => {
     next('/')
   } else {
     // Load default data
-    if(to.path != '/login'){
+    if (to.path != '/login') {
       loadDataInterval()
     } else {
       if (intervalId) {

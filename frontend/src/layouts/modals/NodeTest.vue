@@ -5,7 +5,7 @@
         <span>{{ $t('nodeTest.title') || 'Node Test' }}</span>
         <v-spacer></v-spacer>
         <v-chip v-if="testing" color="primary" variant="tonal" class="mr-2">
-          {{ $t('nodeTest.testing') || 'Testing...' }} {{ progress }}/{{ total }}
+          {{ tags && tags.length > 0 ? ($t('nodeTest.testingSelected') || 'Testing Selected...') : ($t('nodeTest.testing') || 'Testing...') }} {{ progress }}/{{ total }}
         </v-chip>
       </v-card-title>
       <v-divider></v-divider>
@@ -111,6 +111,11 @@
                 {{ item.latency >= 0 ? item.latency + 'ms' : '-' }}
               </span>
             </template>
+            <template v-slot:item.realLatency="{ item }">
+              <span :class="getLatencyClass(item.realLatency)">
+                {{ item.realLatency > 0 ? item.realLatency + 'ms' : '-' }}
+              </span>
+            </template>
             <template v-slot:item.landingIP="{ item }">
               <span v-if="item.landingIP">{{ item.landingIP }}</span>
               <span v-else class="text-grey">-</span>
@@ -118,6 +123,21 @@
             <template v-slot:item.country="{ item }">
               <span v-if="item.country">{{ item.country }}</span>
               <span v-else class="text-grey">-</span>
+            </template>
+            <template v-slot:item.remark="{ item }">
+              <v-tooltip location="top" v-if="item.error">
+                <template v-slot:activator="{ props }">
+                  <span 
+                    v-bind="props" 
+                    :class="{'text-error': item.remark !== '✓', 'text-success': item.remark === '✓'}"
+                    style="cursor: help; text-decoration: underline dotted;"
+                  >
+                    {{ item.remark }}
+                  </span>
+                </template>
+                <span>{{ item.error }}</span>
+              </v-tooltip>
+              <span v-else :class="{'text-success': item.remark === '✓'}">{{ item.remark }}</span>
             </template>
           </v-data-table>
 
@@ -174,6 +194,7 @@ interface TestResult {
   server: string
   port: number
   latency: number
+  realLatency: number
   available: boolean
   landingIP: string
   country: string
@@ -184,8 +205,8 @@ interface TestResult {
 }
 
 export default {
-  props: ['visible'],
-  emits: ['close'],
+  props: ['visible', 'tags', 'initialNodes'],
+  emits: ['close', 'update-results'],
   data() {
     return {
       testing: false,
@@ -218,6 +239,7 @@ export default {
         { title: 'Status', key: 'available', width: '70px' },
         { title: 'Tag', key: 'tag' },
         { title: 'Latency', key: 'latency', width: '90px' },
+        { title: 'Real Latency', key: 'realLatency', width: '100px' },
         { title: 'Landing IP', key: 'landingIP' },
         { title: 'Location', key: 'location' },
         { title: 'Remark', key: 'remark', width: '150px' }
@@ -247,14 +269,23 @@ export default {
           remark = '✓'
         } else if (r.error) {
           // Simplify error message
-          if (r.error.includes('invalid address')) {
+          const err = r.error.toLowerCase()
+          if (err.includes('invalid address')) {
             remark = 'Config Error'
-          } else if (r.error.includes('incorrect user name')) {
+          } else if (err.includes('incorrect user name') || err.includes('auth failed')) {
             remark = 'Auth Failed'
-          } else if (r.error.includes('timeout')) {
+          } else if (err.includes('timeout') || err.includes('deadline exceeded')) {
             remark = 'Timeout'
-          } else if (r.error.includes('invalid HTTP')) {
+          } else if (err.includes('invalid http')) {
             remark = 'HTTP Error'
+          } else if (err.includes('handshake failed')) {
+            remark = 'Handshake Failed'
+          } else if (err.includes('connection refused')) {
+            remark = 'Connection Refused'
+          } else if (err.includes('eof')) {
+            remark = 'EOF'
+          } else if (err.includes('no route to host')) {
+            remark = 'No Route'
           } else {
             remark = 'Failed'
           }
@@ -307,15 +338,24 @@ export default {
       this.progress = 0
       
       try {
-        const endpoint = this.queryIP ? 'api/testAllNodesWithIP' : 'api/testAllNodes'
-        const response = await HttpUtils.post(endpoint, { 
-          concurrency: this.concurrency.toString() 
-        })
+        let endpoint = ''
+        const params: any = { concurrency: this.concurrency.toString() }
+
+        if (this.tags && this.tags.length > 0) {
+           endpoint = this.queryIP ? 'api/testSelectedNodesWithIP' : 'api/testSelectedNodes'
+           params.tags = this.tags.join(',')
+        } else {
+           endpoint = this.queryIP ? 'api/testAllNodesWithIP' : 'api/testAllNodes'
+        }
+
+        const response = await HttpUtils.post(endpoint, params)
         
         if (response.success && response.obj) {
           this.results = response.obj
           this.total = this.results.length
           this.progress = this.total
+          // Emit results to parent for sorting
+          this.$emit('update-results', this.results)
         }
       } catch (error) {
         console.error('Test failed:', error)
@@ -335,9 +375,9 @@ export default {
       
       if (this.queryIP) {
         csv = this.filteredResults.map(r => 
-          `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms,${r.landingIP || ''},${r.country || ''}`
+          `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms,${r.realLatency > 0 ? r.realLatency + 'ms' : '-'},${r.landingIP || ''},${r.country || ''}`
         ).join('\n')
-        header = 'Tag,Server,Port,Status,Latency,LandingIP,Country\n'
+        header = 'Tag,Server,Port,Status,Latency,RealLatency,LandingIP,Country\n'
       } else {
         csv = this.filteredResults.map(r => 
           `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms`
@@ -385,8 +425,27 @@ export default {
   watch: {
     visible(newValue) {
       if (newValue) {
-        this.results = []
-        this.progress = 0
+        if (this.initialNodes && this.initialNodes.length > 0) {
+          this.results = this.initialNodes.map((n: any) => ({
+            tag: n.tag,
+            server: n.server || '',
+            port: n.port || 0,
+            latency: -1,
+            realLatency: -1,
+            available: false,
+            landingIP: '',
+            country: '',
+            region: '',
+            city: '',
+            isp: ''
+          }))
+          this.total = this.results.length
+          this.progress = 0
+        } else {
+          this.results = []
+          this.progress = 0
+          this.total = 0
+        }
       }
     }
   }

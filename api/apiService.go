@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util"
+	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +31,7 @@ type ApiService struct {
 	service.StatsService
 	service.ServerService
 	service.NodeTestService
+	service.SubscriptionService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -478,6 +481,109 @@ func (a *ApiService) TestAllNodesWithIP(c *gin.Context) {
 	jsonObj(c, results, nil)
 }
 
+func (a *ApiService) TestSelectedNodes(c *gin.Context) {
+	concurrencyStr := c.Request.FormValue("concurrency")
+	tagsStr := c.Request.FormValue("tags")
+	concurrency := 50
+	
+	if concurrencyStr != "" {
+		if cv, err := strconv.Atoi(concurrencyStr); err == nil && cv > 0 {
+			concurrency = cv
+		}
+	}
+	
+	var tags []string
+	if tagsStr != "" {
+		tags = strings.Split(tagsStr, ",")
+	}
+	
+	if len(tags) == 0 {
+		jsonMsg(c, "", fmt.Errorf("tags are required"))
+		return
+	}
+	
+	results, err := a.NodeTestService.TestSelectedOutbounds(tags, concurrency)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, results, nil)
+}
+
+func (a *ApiService) TestSelectedNodesWithIP(c *gin.Context) {
+	concurrencyStr := c.Request.FormValue("concurrency")
+	tagsStr := c.Request.FormValue("tags")
+	concurrency := 10 // Lower for IP lookup
+	
+	if concurrencyStr != "" {
+		if cv, err := strconv.Atoi(concurrencyStr); err == nil && cv > 0 {
+			concurrency = cv
+		}
+	}
+	
+	var tags []string
+	if tagsStr != "" {
+		tags = strings.Split(tagsStr, ",")
+	}
+	
+	if len(tags) == 0 {
+		jsonMsg(c, "", fmt.Errorf("tags are required"))
+		return
+	}
+	
+	results, err := a.NodeTestService.TestSelectedAndSave(tags, concurrency)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, results, nil)
+}
+
+func (a *ApiService) ExportOutbounds(c *gin.Context) {
+	tagsStr := c.Request.FormValue("tags")
+	
+	var tags []string
+	if tagsStr != "" {
+		tags = strings.Split(tagsStr, ",")
+	}
+	
+	if len(tags) == 0 {
+		jsonMsg(c, "", fmt.Errorf("tags are required"))
+		return
+	}
+	
+	db := database.GetDB()
+	var outbounds []model.Outbound
+	err := db.Where("tag IN ?", tags).Find(&outbounds).Error
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	var links []string
+	for _, outbound := range outbounds {
+		// Convert to map
+		var outMap map[string]interface{}
+		jsonData, err := outbound.MarshalJSON()
+		if err != nil {
+			continue
+		}
+		if err := json.Unmarshal(jsonData, &outMap); err != nil {
+			continue
+		}
+		
+		link, err := util.OutboundToLink(outMap)
+		if err != nil {
+			continue
+		}
+		links = append(links, link)
+	}
+	
+	jsonObj(c, links, nil)
+}
+
 func (a *ApiService) ImportDb(c *gin.Context) {
 	file, _, err := c.Request.FormFile("db")
 	if err != nil {
@@ -543,4 +649,136 @@ func (a *ApiService) GetSingboxConfig(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Content-Disposition", "attachment; filename=config_"+time.Now().Format("20060102-150405")+".json")
 	c.Writer.Write(rawConfig)
+}
+
+// Subscription API handlers
+func (a *ApiService) GetSubscriptions(c *gin.Context) {
+	subscriptions, err := a.SubscriptionService.GetAll()
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	jsonObj(c, subscriptions, nil)
+}
+
+func (a *ApiService) AddSubscription(c *gin.Context) {
+	name := c.Request.FormValue("name")
+	url := c.Request.FormValue("url")
+	updateMode := c.Request.FormValue("updateMode")
+	intervalStr := c.Request.FormValue("interval")
+	
+	if name == "" || url == "" {
+		jsonMsg(c, "", fmt.Errorf("name and url are required"))
+		return
+	}
+	
+	if updateMode == "" {
+		updateMode = "replace"
+	}
+	
+	interval := 0
+	if intervalStr != "" {
+		interval, _ = strconv.Atoi(intervalStr)
+	}
+	
+	subscription, err := a.SubscriptionService.Add(name, url, updateMode, interval)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, subscription, nil)
+}
+
+func (a *ApiService) UpdateSubscription(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	name := c.Request.FormValue("name")
+	url := c.Request.FormValue("url")
+	updateMode := c.Request.FormValue("updateMode")
+	intervalStr := c.Request.FormValue("interval")
+	enabledStr := c.Request.FormValue("enabled")
+	
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		jsonMsg(c, "", fmt.Errorf("invalid id"))
+		return
+	}
+	
+	interval := 0
+	if intervalStr != "" {
+		interval, _ = strconv.Atoi(intervalStr)
+	}
+	
+	enabled := enabledStr == "true" || enabledStr == "1"
+	
+	err = a.SubscriptionService.Update(uint(id), name, url, updateMode, interval, enabled)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonMsg(c, "updated", nil)
+}
+
+func (a *ApiService) DeleteSubscription(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		jsonMsg(c, "", fmt.Errorf("invalid id"))
+		return
+	}
+	
+	err = a.SubscriptionService.Delete(uint(id))
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonMsg(c, "deleted", nil)
+}
+
+func (a *ApiService) RefreshSubscription(c *gin.Context) {
+	idsStr := c.Request.FormValue("ids")
+	
+	if idsStr == "" {
+		jsonMsg(c, "", fmt.Errorf("ids are required"))
+		return
+	}
+	
+	var ids []uint
+	for _, idStr := range strings.Split(idsStr, ",") {
+		id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 32)
+		if err == nil {
+			ids = append(ids, uint(id))
+		}
+	}
+	
+	if len(ids) == 0 {
+		jsonMsg(c, "", fmt.Errorf("no valid ids provided"))
+		return
+	}
+	
+	results, err := a.SubscriptionService.RefreshMultiple(ids)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	
+	jsonObj(c, results, nil)
+}
+
+func (a *ApiService) GetSubscriptionNodes(c *gin.Context) {
+	id := c.Query("id")
+	if id == "" {
+		jsonMsg(c, "", common.NewError("missing id"))
+		return
+	}
+
+	nodes, err := a.OutboundService.GetBySubscriptionID(id)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	jsonObj(c, nodes, nil)
 }

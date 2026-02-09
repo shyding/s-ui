@@ -56,6 +56,12 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.TestAllNodes(c)
 	case "testAllNodesWithIP":
 		a.ApiService.TestAllNodesWithIP(c)
+	case "testSelectedNodes":
+		a.ApiService.TestSelectedNodes(c)
+	case "testSelectedNodesWithIP":
+		a.ApiService.TestSelectedNodesWithIP(c)
+	case "exportOutbounds":
+		a.ApiService.ExportOutbounds(c)
 	case "batchDelete":
 		a.ApiService.BatchDelete(c, loginUser)
 	case "importdb":
@@ -66,6 +72,14 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	case "deleteToken":
 		a.ApiService.DeleteToken(c)
 		a.apiv2.ReloadTokens()
+	case "addSubscription":
+		a.ApiService.AddSubscription(c)
+	case "updateSubscription":
+		a.ApiService.UpdateSubscription(c)
+	case "deleteSubscription":
+		a.ApiService.DeleteSubscription(c)
+	case "refreshSubscription":
+		a.ApiService.RefreshSubscription(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -93,6 +107,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetStats(c)
 	case "status":
 		a.ApiService.GetStatus(c)
+	case "subscriptionNodes":
+		a.ApiService.GetSubscriptionNodes(c)
 	case "onlines":
 		a.ApiService.GetOnlines(c)
 	case "logs":
@@ -107,6 +123,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetTokens(c)
 	case "singbox-config":
 		a.ApiService.GetSingboxConfig(c)
+	case "subscriptions":
+		a.ApiService.GetSubscriptions(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

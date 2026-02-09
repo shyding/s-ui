@@ -24,7 +24,8 @@ type NodeTestResult struct {
 	Tag       string `json:"tag"`
 	Server    string `json:"server"`
 	Port      int    `json:"port"`
-	Latency   int64  `json:"latency"`   // milliseconds, -1 means failed
+	Latency   int64  `json:"latency"`     // TCP handshake latency
+	RealLatency int64 `json:"realLatency"` // HTTP connection latency (True Delay)
 	Available bool   `json:"available"`
 	LandingIP string `json:"landingIP"`
 	Country   string `json:"country"`
@@ -69,6 +70,13 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 	}
 
 	// Test TCP connection latency
+	// Skip TCP test for UDP-based protocols
+	if outbound.Type == "hysteria2" || outbound.Type == "tuic" || outbound.Type == "wireguard" || outbound.Type == "hy2" {
+		result.Available = true
+		result.Latency = 0
+		return result, nil
+	}
+
 	start := time.Now()
 	address := fmt.Sprintf("%s:%d", server, port)
 	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
@@ -92,7 +100,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		return nil, err
 	}
 
-	// Skip IP lookup if connection failed
+	// Skip IP lookup if connection failed (except for UDP protocols which skipped check)
 	if !result.Available {
 		return result, nil
 	}
@@ -114,6 +122,32 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
+	// Measure Real Latency (True Delay)
+	// Use a fast, lightweight URL like v2rayN does (http://www.google.com/generate_204)
+	// We use http://www.gstatic.com/generate_204 to avoid potential blocking issues with www.google.com in some regions,
+	// though they are usually the same.
+	rlStart := time.Now()
+	rlDest := M.ParseSocksaddr("www.gstatic.com:80") 
+	
+	rlConn, err := outbound.DialContext(dialCtx, N.NetworkTCP, rlDest)
+	if err == nil {
+		req := "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n"
+		_, err = rlConn.Write([]byte(req))
+		if err == nil {
+			buf := make([]byte, 1)
+			_, err = rlConn.Read(buf)
+			if err == nil || err == io.EOF {
+				result.RealLatency = time.Since(rlStart).Milliseconds()
+			}
+		}
+		rlConn.Close()
+	}
+	
+	// If RealLatency test failed using gstatic, try the IP API connection as fallback (server latency)
+	if result.RealLatency == 0 {
+		// We will measure it during IP check
+	}
+
 	// Dial to ip-api.com through the proxy (use IP to avoid DNS issues)
 	// ip-api.com IP: 208.95.112.1
 	destination := M.ParseSocksaddr("208.95.112.1:80")
@@ -134,6 +168,9 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		result.Available = false
 		return result, nil
 	}
+	
+	// Start measuring time for IP check (we can use this as fallback RealLatency if the first one failed)
+	ipStart := time.Now()
 
 	// Read response
 	buf := make([]byte, 4096)
@@ -144,7 +181,12 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		return result, nil
 	}
 
-	// Parse response body (skip HTTP headers)
+	// If RealLatency was not set by the fast check, use the time to first byte of IP API
+	if result.RealLatency == 0 {
+		result.RealLatency = time.Since(ipStart).Milliseconds()
+	}
+
+
 	response := string(buf[:n])
 	bodyStart := -1
 	for i := 0; i < len(response)-3; i++ {
@@ -221,6 +263,52 @@ func (s *NodeTestService) TestAllOutbounds(concurrency int) ([]*NodeTestResult, 
 	return results, nil
 }
 
+// TestSelectedOutbounds tests selected outbounds in parallel
+func (s *NodeTestService) TestSelectedOutbounds(tags []string, concurrency int) ([]*NodeTestResult, error) {
+	db := database.GetDB()
+	var outbounds []model.Outbound
+	// Fetch only selected tags
+	err := db.Where("tag IN ?", tags).Find(&outbounds).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if concurrency <= 0 {
+		concurrency = 50
+	}
+
+	results := make([]*NodeTestResult, 0, len(outbounds))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	
+	sem := make(chan struct{}, concurrency)
+
+	for _, outbound := range outbounds {
+		// Skip non-proxy outbounds
+		if outbound.Type == "direct" || outbound.Type == "selector" || 
+		   outbound.Type == "urltest" || outbound.Type == "block" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(ob model.Outbound) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result, _ := s.TestOutbound(ob.Tag)
+			if result != nil {
+				mu.Lock()
+				results = append(results, result)
+				mu.Unlock()
+			}
+		}(outbound)
+	}
+
+	wg.Wait()
+	return results, nil
+}
+
 // TestAllOutboundsWithIP tests all outbounds and gets landing IPs (slower, requires sing-box running)
 func (s *NodeTestService) TestAllOutboundsWithIP(concurrency int, ctx context.Context) ([]*NodeTestResult, error) {
 	db := database.GetDB()
@@ -232,6 +320,51 @@ func (s *NodeTestService) TestAllOutboundsWithIP(concurrency int, ctx context.Co
 
 	if concurrency <= 0 {
 		concurrency = 10 // Lower concurrency for IP lookup (API rate limits)
+	}
+
+	results := make([]*NodeTestResult, 0, len(outbounds))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	
+	sem := make(chan struct{}, concurrency)
+
+	for _, outbound := range outbounds {
+		// Skip non-proxy outbounds
+		if outbound.Type == "direct" || outbound.Type == "selector" || 
+		   outbound.Type == "urltest" || outbound.Type == "block" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(ob model.Outbound) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			result, _ := s.TestOutboundWithLandingIP(ob.Tag, ctx)
+			if result != nil {
+				mu.Lock()
+				results = append(results, result)
+				mu.Unlock()
+			}
+		}(outbound)
+	}
+
+	wg.Wait()
+	return results, nil
+}
+
+// TestSelectedOutboundsWithIP tests selected outbounds and gets landing IPs
+func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency int, ctx context.Context) ([]*NodeTestResult, error) {
+	db := database.GetDB()
+	var outbounds []model.Outbound
+	err := db.Where("tag IN ?", tags).Find(&outbounds).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if concurrency <= 0 {
+		concurrency = 10
 	}
 
 	results := make([]*NodeTestResult, 0, len(outbounds))
@@ -278,6 +411,37 @@ func (s *NodeTestService) TestAllOutboundsWithIPInternal(concurrency int) ([]*No
 	}
 	
 	return s.TestAllOutboundsWithIP(concurrency, ctx)
+}
+
+// TestSelectedOutboundsWithIPInternal is the internal method that uses corePtr directly
+func (s *NodeTestService) TestSelectedOutboundsWithIPInternal(tags []string, concurrency int) ([]*NodeTestResult, error) {
+	if !corePtr.IsRunning() {
+		return nil, fmt.Errorf("sing-box is not running")
+	}
+	
+	ctx := corePtr.GetCtx()
+	if ctx == nil {
+		return nil, fmt.Errorf("sing-box context not available")
+	}
+	
+	return s.TestSelectedOutboundsWithIP(tags, concurrency, ctx)
+}
+
+// TestSelectedAndSave tests selected nodes with IP and saves results to database
+func (s *NodeTestService) TestSelectedAndSave(tags []string, concurrency int) ([]*NodeTestResult, error) {
+	results, err := s.TestSelectedOutboundsWithIPInternal(tags, concurrency)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Save results to database
+	for _, result := range results {
+		if result.LandingIP != "" {
+			s.SaveTestResult(result)
+		}
+	}
+	
+	return results, nil
 }
 
 // SaveTestResult saves the test result to database
