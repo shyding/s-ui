@@ -576,6 +576,13 @@ export default {
     testSelected: "测试已选",
     testingSelected: "测试已选中...",
     realLatency: "真连接延迟",
+    quality: "质量",
+    score: "欺诈值",
+    status: "状态",
+    type: "类型",
+    timeout: "超时",
+    untested: "未测试",
+    test: "测试",
   },
   subscription: {
     title: "订阅",

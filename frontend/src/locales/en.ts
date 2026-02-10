@@ -576,6 +576,13 @@ export default {
     testSelected: "Test Selected",
     testingSelected: "Testing Selected...",
     realLatency: "Real Latency",
+    quality: "Quality",
+    score: "Fraud Score",
+    status: "Status",
+    timeout: "Time out",
+    untested: "Untested",
+    type: "Type",
+    test: "Test",
   },
   subscription: {
     title: "Subscription",

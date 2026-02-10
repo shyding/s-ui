@@ -200,7 +200,10 @@ interface TestResult {
   country: string
   region: string
   city: string
+
   isp: string
+  ipType: string
+  fraudScore: number
   error?: string
 }
 
@@ -241,6 +244,8 @@ export default {
         { title: 'Latency', key: 'latency', width: '90px' },
         { title: 'Real Latency', key: 'realLatency', width: '100px' },
         { title: 'Landing IP', key: 'landingIP' },
+        { title: 'Type', key: 'ipType', width: '80px' },
+        { title: 'Score', key: 'fraudScore', width: '70px' },
         { title: 'Location', key: 'location' },
         { title: 'Remark', key: 'remark', width: '150px' }
       ]
@@ -375,9 +380,9 @@ export default {
       
       if (this.queryIP) {
         csv = this.filteredResults.map(r => 
-          `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms,${r.realLatency > 0 ? r.realLatency + 'ms' : '-'},${r.landingIP || ''},${r.country || ''}`
+          `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms,${r.realLatency > 0 ? r.realLatency + 'ms' : '-'},${r.landingIP || ''},${r.ipType || ''},${r.fraudScore || ''},${r.country || ''}`
         ).join('\n')
-        header = 'Tag,Server,Port,Status,Latency,RealLatency,LandingIP,Country\n'
+        header = 'Tag,Server,Port,Status,Latency,RealLatency,LandingIP,IPType,FraudScore,Country\n'
       } else {
         csv = this.filteredResults.map(r => 
           `${r.tag},${r.server},${r.port},${r.available ? 'OK' : 'FAIL'},${r.latency}ms`
@@ -437,7 +442,10 @@ export default {
             country: '',
             region: '',
             city: '',
-            isp: ''
+
+            isp: '',
+            ipType: '',
+            fraudScore: undefined
           }))
           this.total = this.results.length
           this.progress = 0

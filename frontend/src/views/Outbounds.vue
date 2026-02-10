@@ -86,47 +86,78 @@
       </v-menu>
     </v-col>
   </v-row>
-  <!-- Delete Confirm Dialog -->
-  <v-dialog v-model="deleteConfirmDialog" max-width="400">
-    <v-card>
-      <v-card-title>{{ $t('actions.del') || 'Delete' }}</v-card-title>
-      <v-card-text>
-        {{ $t('actions.confirmDeleteSelected', { count: selectedTags.length }) || `Are you sure you want to delete ${selectedTags.length} selected nodes?` }}
-      </v-card-text>
-      <v-card-actions>
-        <v-btn color="error" @click="deleteSelected">{{ $t('yes') || 'Yes' }}</v-btn>
-        <v-spacer></v-spacer>
-        <v-btn @click="deleteConfirmDialog = false">{{ $t('no') || 'No' }}</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-  <!-- Export Modal -->
-  <v-dialog v-model="exportModal.visible" max-width="600">
-    <v-card>
-      <v-card-title>{{ $t('actions.exportSelected') || 'Export Selected' }}</v-card-title>
-      <v-card-text>
-        <v-textarea
-          v-model="exportModal.links"
-          :label="$t('actions.exportedLinks') || 'Exported Links'"
-          rows="10"
-          readonly
-          variant="outlined"
-        ></v-textarea>
-      </v-card-text>
-      <v-card-actions>
-        <v-btn color="primary" @click="copyLinks">{{ $t('actions.copy') || 'Copy' }}</v-btn>
-        <v-btn color="success" @click="downloadLinks">{{ $t('actions.download') || 'Download' }}</v-btn>
-        <v-spacer></v-spacer>
-        <v-btn @click="exportModal.visible = false">{{ $t('actions.close') || 'Close' }}</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+
+  <!-- Search & Filter -->
   <v-row>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(item, index) in sortedOutbounds" :key="item.tag">
+    <v-col cols="12" sm="6" md="3">
+      <v-text-field
+        v-model="search"
+        :label="$t('search') || 'Search'"
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        @update:model-value="page = 1"
+      ></v-text-field>
+    </v-col>
+    <v-col cols="6" sm="3" md="2">
+      <v-select
+        v-model="filterStatus"
+        :items="statusOptions"
+        :label="$t('nodeTest.status') || 'Status'"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        item-title="title"
+        item-value="value"
+        @update:model-value="page = 1"
+      ></v-select>
+    </v-col>
+    <v-col cols="6" sm="3" md="2">
+      <v-select
+        v-model="filterIpType"
+        :items="ipTypeOptions"
+        :label="$t('nodeTest.type') || 'Type'"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        @update:model-value="page = 1"
+      ></v-select>
+    </v-col>
+    <v-col cols="6" sm="3" md="2">
+      <v-autocomplete
+        v-model="filterCountry"
+        :items="countryOptions"
+        :label="$t('nodeTest.location') || 'Location'"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        @update:model-value="page = 1"
+      ></v-autocomplete>
+    </v-col>
+    <v-col cols="6" sm="3" md="2">
+       <v-select
+          v-model="pageSize"
+          :items="[12, 24, 60, 100]"
+          :label="$t('perPage') || 'Per Page'"
+          variant="outlined"
+          density="compact"
+          hide-details
+       ></v-select>
+    </v-col>
+  </v-row>
+
+  <!-- Node List -->
+  <v-row>
+    <v-col cols="12" sm="6" md="4" lg="3" xl="2" v-for="(item, index) in pagedOutbounds" :key="item.tag">
       <v-card rounded="xl" elevation="5" min-width="200" :title="item.tag">
         <template v-slot:append>
             <div class="d-flex align-center">
-              <v-chip v-if="getLatency(item.tag) > 0" :color="getLatencyColor(getLatency(item.tag))" size="small" class="mr-2">
+              <v-chip v-if="getLatency(item.tag) >= 0" :color="getLatencyColor(getLatency(item.tag))" size="small" class="mr-2">
                 {{ getLatency(item.tag) }}ms
               </v-chip>
               <v-btn size="small" variant="text" icon density="compact" @click.stop="testNode(item.tag)" :loading="testingTag === item.tag">
@@ -166,18 +197,37 @@
             </v-col>
           </v-row>
           <v-row>
-            <v-col>{{ $t('online') }}</v-col>
+            <v-col>{{ $t('nodeTest.status') || 'Status' }}</v-col>
             <v-col>
               <template v-if="onlines.includes(item.tag)">
                 <v-chip density="comfortable" size="small" color="success" variant="flat">{{ $t('online') }}</v-chip>
               </template>
-              <template v-else>-</template>
+              <template v-else-if="item.lastTestTime > 0">
+                <v-chip density="comfortable" size="small" :color="item.available ? 'info' : 'error'" variant="flat">
+                  {{ item.available ? ($t('nodeTest.available') || 'Available') : ($t('nodeTest.timeout') || 'Time out') }}
+                </v-chip>
+              </template>
+              <template v-else>
+                <v-chip density="comfortable" size="small" color="grey" variant="flat" label>
+                  {{ $t('nodeTest.untested') || 'Untested' }}
+                </v-chip>
+              </template>
             </v-col>
           </v-row>
           <v-row v-if="item.country || item.region">
             <v-col>{{ $t('nodeTest.location') || 'Location' }}</v-col>
             <v-col>
               <span class="text-caption">{{ [item.country, item.region, item.city].filter(Boolean).join(' / ') || '-' }}</span>
+            </v-col>
+          </v-row>
+          <v-row v-if="item.ipType || item.fraudScore !== undefined || item.available">
+            <v-col>{{ $t('nodeTest.quality') || 'Quality' }}</v-col>
+            <v-col>
+              <div class="d-flex align-center">
+                 <v-chip v-if="item.ipType" size="x-small" :color="item.ipType === 'ISP' ? 'success' : 'warning'" class="mr-1" label>{{ item.ipType }}</v-chip>
+                 <v-chip v-else size="x-small" color="grey" class="mr-1" label>Unknown</v-chip>
+                 <v-chip v-if="item.fraudScore !== undefined" size="x-small" :color="item.fraudScore < 30 ? 'success' : (item.fraudScore < 70 ? 'warning' : 'error')" label>{{ $t('nodeTest.score') || 'Score' }}: {{ item.fraudScore }}</v-chip>
+              </div>
             </v-col>
           </v-row>
         </v-card-text>
@@ -216,6 +266,16 @@
         </v-card-actions>
       </v-card>
     </v-col>
+  </v-row>
+  
+  <v-row v-if="pageCount > 1">
+      <v-col cols="12">
+          <v-pagination
+              v-model="page"
+              :length="pageCount"
+              :total-visible="7"
+          ></v-pagination>
+      </v-col>
   </v-row>
 </template>
 
@@ -282,13 +342,93 @@ const getLatencyColor = (latency: number) => {
   return 'error'
 }
 
-const sortedOutbounds = computed(() => {
-  const items = [...outbounds.value]
+// Search & Pagination
+const search = ref('')
+const page = ref(1)
+const pageSize = ref(24)
+
+const filterStatus = ref<string | null>(null)
+const filterIpType = ref<string | null>(null)
+const filterCountry = ref<string | null>(null)
+
+const ipTypeOptions = computed(() => {
+  const types = new Set<string>()
+  let hasUnknown = false
+  Data().outbounds.forEach((o: Outbound) => {
+    if (o.ipType) {
+      types.add(o.ipType)
+    } else {
+      hasUnknown = true
+    }
+  })
+  const arr = Array.from(types).sort()
+  if (hasUnknown) arr.push('Unknown')
+  return arr
+})
+
+const countryOptions = computed(() => {
+  const countries = new Set<string>()
+  Data().outbounds.forEach((o: Outbound) => {
+    if (o.country) countries.add(o.country)
+  })
+  return Array.from(countries).sort()
+})
+
+const statusOptions = computed(() => [
+  { title: 'Online', value: 'Online' },
+  { title: 'Available', value: 'Available' },
+  { title: 'Timeout', value: 'Timeout' },
+  { title: 'Untested', value: 'Untested' }
+])
+
+const filteredOutbounds = computed(() => {
+  let items = [...outbounds.value]
+  
+  // Keyword Search
+  if (search.value) {
+    const q = search.value.toLowerCase()
+    items = items.filter(o => 
+      o.tag.toLowerCase().includes(q) || 
+      o.type.toLowerCase().includes(q) || 
+      (o.server && o.server.toLowerCase().includes(q)) ||
+      (o.landingIP && o.landingIP.toLowerCase().includes(q))
+    )
+  }
+
+  // Filter by Status
+  if (filterStatus.value) {
+    items = items.filter(o => {
+      const isOnline = onlines.value.includes(o.tag)
+      if (filterStatus.value === 'Online') return isOnline
+      if (filterStatus.value === 'Available') return !isOnline && o.lastTestTime > 0 && o.available
+      if (filterStatus.value === 'Timeout') return !isOnline && o.lastTestTime > 0 && !o.available
+      if (filterStatus.value === 'Untested') return !isOnline && (!o.lastTestTime || o.lastTestTime <= 0)
+      return true
+    })
+  }
+
+  // Filter by IP Type
+  if (filterIpType.value) {
+    if (filterIpType.value === 'Unknown') {
+      items = items.filter(o => !o.ipType)
+    } else {
+      items = items.filter(o => o.ipType === filterIpType.value)
+    }
+  }
+
+  // Filter by Country
+  if (filterCountry.value) {
+    items = items.filter(o => o.country === filterCountry.value)
+  }
+
+  // Sort
   switch (sortBy.value) {
     case 'latency':
       return items.sort((a, b) => {
         const latA = latencyMap.get(a.tag) || 99999
         const latB = latencyMap.get(b.tag) || 99999
+        if (latA === -1 && latB !== -1) return 1
+        if (latA !== -1 && latB === -1) return -1
         return latA - latB
       })
     case 'latency-desc':
@@ -303,6 +443,16 @@ const sortedOutbounds = computed(() => {
   }
 })
 
+const pageCount = computed(() => Math.ceil(filteredOutbounds.value.length / pageSize.value))
+
+const pagedOutbounds = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredOutbounds.value.slice(start, end)
+})
+
+const sortedOutbounds = computed(() => filteredOutbounds.value) // Keep backward comp if needed, or just remove usage
+
 const testNode = async (tag: string) => {
   testingTag.value = tag
   latencyMap.set(tag, -1) // Reset latency display to ensure user sees it's refreshing if valid
@@ -310,7 +460,7 @@ const testNode = async (tag: string) => {
     const response = await HttpUtils.post('api/testSelectedNodes', { tags: tag })
     if (response.success && response.obj && response.obj.length > 0) {
       const result = response.obj[0]
-      if (result.latency > 0) {
+      if (result.available || result.latency >= 0) {
         latencyMap.set(tag, result.latency)
       } else {
         // If failed or timeout
@@ -345,15 +495,15 @@ const copyNodeLink = async (tag: string) => {
 
 const onTestResults = (results: any[]) => {
   results.forEach(r => {
-    if (r.latency > 0) {
+    if (r.available || r.latency >= 0) {
       latencyMap.set(r.tag, r.latency)
     } else {
       latencyMap.set(r.tag, -1)
     }
   })
   
-  // If user hasn't selected a sort order, maybe suggest one? 
-  // Or if they are on "Latency", this will automatically re-sort due to computed property.
+  // Reload data to update persistent status (Available, lastTestTime)
+  Data().loadData()
 }
 
 const showBatchModal = () => {

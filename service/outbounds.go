@@ -24,9 +24,18 @@ func (o *OutboundService) GetAll() (*[]map[string]interface{}, error) {
 	var data []map[string]interface{}
 	for _, outbound := range outbounds {
 		outData := map[string]interface{}{
-			"id":   outbound.Id,
-			"type": outbound.Type,
-			"tag":  outbound.Tag,
+			"id":           outbound.Id,
+			"type":         outbound.Type,
+			"tag":          outbound.Tag,
+			"landingIP":    outbound.LandingIP,
+			"country":      outbound.Country,
+			"region":       outbound.Region,
+			"city":         outbound.City,
+
+			"lastTestTime": outbound.LastTestTime,
+			"fraudScore":   outbound.FraudScore,
+			"ipType":       outbound.IPType,
+			"available":    outbound.Available,
 		}
 		if outbound.Options != nil {
 			var restFields map[string]json.RawMessage
@@ -57,9 +66,18 @@ func (o *OutboundService) GetBySubscriptionID(subID string) (*[]map[string]inter
 	var data []map[string]interface{}
 	for _, outbound := range outbounds {
 		outData := map[string]interface{}{
-			"id":     outbound.Id,
-			"type":   outbound.Type,
-			"tag":    outbound.Tag,
+			"id":           outbound.Id,
+			"type":         outbound.Type,
+			"tag":          outbound.Tag,
+			"landingIP":    outbound.LandingIP,
+			"country":      outbound.Country,
+			"region":       outbound.Region,
+			"city":         outbound.City,
+
+			"lastTestTime": outbound.LastTestTime,
+			"fraudScore":   outbound.FraudScore,
+			"ipType":       outbound.IPType,
+			"available":    outbound.Available,
 			// Add server/port if available in Options (usually parsed there)
 		}
 
