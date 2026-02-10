@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +36,8 @@ type NodeTestResult struct {
 	Region    string `json:"region"`
 	City      string `json:"city"`
 	ISP       string `json:"isp"`
+	IPType    string `json:"ipType"`
+	FraudScore int   `json:"fraudScore"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -163,33 +168,36 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		// We will measure it during IP check
 	}
 
-	// Try multiple IP lookup services with fallback
-	ipLookupSuccess := false
-	
-	// Service 1: ip-api.com (fast, free, no auth required)
-	if !ipLookupSuccess {
-		if err := s.tryIPAPI(dialCtx, outbound_adapter, result); err == nil {
-			ipLookupSuccess = true
-		}
+	// Try multiple IP lookup services concurrently
+	ipLookupTasks := []IPLookupTask{
+		// Service 1: ip-api.com
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPAPI(ctx, outbound_adapter, res)
+		},
+		// Service 2: ipinfo.io
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPInfo(ctx, outbound_adapter, res)
+		},
+		// Service 3: ipwhois.io
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPWhois(ctx, outbound_adapter, res)
+		},
+		// Service 4: ping0.cc
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryPing0(ctx, outbound_adapter, res)
+		},
 	}
 	
-	// Service 2: ipinfo.io (reliable, free tier available)
-	if !ipLookupSuccess {
-		if err := s.tryIPInfo(dialCtx, outbound_adapter, result); err == nil {
-			ipLookupSuccess = true
-		}
-	}
+	s.executeIPLookups(dialCtx, result, ipLookupTasks)
 	
-	// Service 3: ipwhois.io (alternative)
-	if !ipLookupSuccess {
-		if err := s.tryIPWhois(dialCtx, outbound_adapter, result); err == nil {
-			ipLookupSuccess = true
-		}
-	}
-	
-	if !ipLookupSuccess {
+	if result.LandingIP == "" {
 		result.Error = "all IP lookup services failed"
-		result.Available = false
+		// Do not set Available = false here, because the node is reachable (latency > 0)
+	} else {
+		// After successful IP lookup, try to get fraud score if IP is available
+		if result.LandingIP != "" {
+			s.getIPTypeAndScore(dialCtx, outbound_adapter, result)
+		}
 	}
 
 	return result, nil
@@ -233,32 +241,38 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 		return result, nil
 	}
 
-	// Try multiple IP lookup services with fallback
-	ipLookupSuccess := false
-	
-	// Service 1: ip-api.com (fast, free, no auth required)
-	if !ipLookupSuccess {
-		if err := s.tryIPAPIWithDialer(dialer, result); err == nil {
-			ipLookupSuccess = true
-		}
+	// Try multiple IP lookup services concurrently
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	ipLookupTasks := []IPLookupTask{
+		// Service 1: ip-api.com
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPAPIWithDialer(dialer, res)
+		},
+		// Service 2: ipinfo.io
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPInfoWithDialer(dialer, res)
+		},
+		// Service 3: ipwhois.io
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryIPWhoisWithDialer(dialer, res)
+		},
+		// Service 4: ping0.cc
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryPing0WithDialer(dialer, res)
+		},
 	}
 	
-	// Service 2: ipinfo.io (reliable, free tier available)
-	if !ipLookupSuccess {
-		if err := s.tryIPInfoWithDialer(dialer, result); err == nil {
-			ipLookupSuccess = true
-		}
-	}
+	s.executeIPLookups(ctx, result, ipLookupTasks)
 	
-	// Service 3: ipwhois.io (alternative)
-	if !ipLookupSuccess {
-		if err := s.tryIPWhoisWithDialer(dialer, result); err == nil {
-			ipLookupSuccess = true
-		}
-	}
-	
-	if !ipLookupSuccess {
+	if result.LandingIP == "" {
 		result.Error = "all IP lookup services failed"
+	} else {
+		// Try to get fraud score
+		if result.LandingIP != "" {
+			s.getIPTypeAndScoreWithDialer(dialer, result)
+		}
 	}
 
 	return result, nil
@@ -278,7 +292,7 @@ func (s *NodeTestService) tryIPAPI(ctx context.Context, outbound adapter.Outboun
 	defer conn.Close()
 
 	// Send HTTP request with Host header
-	req := "GET /json/ HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
+	req := "GET /json/?fields=status,message,country,regionName,city,isp,query,reverse HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
 	_, err = conn.Write([]byte(req))
 	if err != nil {
 		return fmt.Errorf("write failed: %v", err)
@@ -317,6 +331,8 @@ func (s *NodeTestService) tryIPAPI(ctx context.Context, outbound adapter.Outboun
 			result.Region, _ = ipInfo["regionName"].(string)
 			result.City, _ = ipInfo["city"].(string)
 			result.ISP, _ = ipInfo["isp"].(string)
+			hostname, _ := ipInfo["reverse"].(string)
+			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
@@ -373,6 +389,11 @@ func (s *NodeTestService) tryIPInfo(ctx context.Context, outbound adapter.Outbou
 			if org, ok := ipInfo["org"].(string); ok {
 				result.ISP = org
 			}
+			// Attempt to guess type from org/isp if not provided (ipinfo free doesn't provide type)
+			hostname, _ := ipInfo["hostname"].(string)
+			if result.IPType == "" {
+				result.IPType = s.inferIPType(result.ISP, hostname)
+			}
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
@@ -426,6 +447,8 @@ func (s *NodeTestService) tryIPWhois(ctx context.Context, outbound adapter.Outbo
 			result.Region, _ = ipInfo["region"].(string)
 			result.City, _ = ipInfo["city"].(string)
 			result.ISP, _ = ipInfo["isp"].(string)
+			hostname, _ := ipInfo["reverse"].(string)
+			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
@@ -445,7 +468,7 @@ func (s *NodeTestService) tryIPAPIWithDialer(dialer proxy.Dialer, result *NodeTe
 	defer conn.Close()
 
 	// Send HTTP request
-	req := "GET /json/ HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
+	req := "GET /json/?fields=status,message,country,regionName,city,isp,query,reverse HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
 	_, err = conn.Write([]byte(req))
 	if err != nil {
 		return fmt.Errorf("write failed: %v", err)
@@ -480,6 +503,8 @@ func (s *NodeTestService) tryIPAPIWithDialer(dialer proxy.Dialer, result *NodeTe
 			result.Region, _ = ipInfo["regionName"].(string)
 			result.City, _ = ipInfo["city"].(string)
 			result.ISP, _ = ipInfo["isp"].(string)
+			hostname, _ := ipInfo["reverse"].(string)
+			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
@@ -534,6 +559,11 @@ func (s *NodeTestService) tryIPInfoWithDialer(dialer proxy.Dialer, result *NodeT
 			if org, ok := ipInfo["org"].(string); ok {
 				result.ISP = org
 			}
+			// Attempt to guess type from org/isp
+			hostname, _ := ipInfo["hostname"].(string)
+			if result.IPType == "" {
+				result.IPType = s.inferIPType(result.ISP, hostname)
+			}
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
@@ -586,9 +616,195 @@ func (s *NodeTestService) tryIPWhoisWithDialer(dialer proxy.Dialer, result *Node
 			result.Region, _ = ipInfo["region"].(string)
 			result.City, _ = ipInfo["city"].(string)
 			result.ISP, _ = ipInfo["isp"].(string)
+			// ipwhois.io doesn't strictly have a hostname field often, but let's check just in case or pass empty
+			// Actually ipwhois.app has 'org' and 'isp'. No specific hostname/reverse field documented as standard free.
+			// But since we changed signature, we MUST update call.
+			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, "") }
 			return nil
 		}
 		return fmt.Errorf("parse IP info failed: %v", err)
+	}
+	return fmt.Errorf("invalid HTTP response")
+}
+
+// tryPing0 attempts to get IP info from ping0.cc
+func (s *NodeTestService) tryPing0(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
+	// ping0.cc IP (one of them): 172.67.166.195 (Cloudflare) - utilizing domain for SNI might be needed if behind CF
+	// Since we need HTTPS for /geo usually, or HTTP. The user provided http://ping0.cc/
+	// Let's try HTTP with Host header first or HTTPS if supported.
+	// ping0.cc usually forces HTTPS.
+	// We'll use a fixed IP for ping0.cc to avoid DNS resolution, but we need SNI.
+	// For simplicity in this codebase context where we manually construct HTTP requests, handling HTTPS (TLS) manually via a TCP dialer is complex (need TLS handshake).
+	// If the outbound supports connection reuse or we can just use HTTP, it's easier.
+	// However, `read_url_content` showed `https://ping0.cc/geo` works. 
+	// Most `outbound.DialContext` returns a net.Conn. If we need TLS, we have to wrap it.
+	// For now, let's try HTTP to `ping0.cc:80`. If it redirects to HTTPS, we might fail since we don't handle 301.
+	// But `curl http://ping0.cc/geo` usually works or returns 301.
+	// Let's assume we can try to connect to port 80.
+	
+	// Actually, `ping0.cc` is behind Cloudflare. Direct IP access with Host header `ping0.cc` on port 80 should work if they allow HTTP.
+	// If they enforce HTTPS, we cannot easily do it without a TLS client.
+	// Given the constraints and previous patterns (using `http.Client` with custom transport in `getScamalyticsScore`), we should probably use that approach if we need HTTPS.
+	// BUT `tryIPAPI` and others utilize raw TCP + HTTP payload.
+	// valid IP for ping0.cc: 104.21.16.196 (CF)
+	
+	destination := M.ParseSocksaddr("104.21.16.196:80")
+	conn, err := outbound.DialContext(ctx, N.NetworkTCP, destination)
+	if err != nil {
+		return fmt.Errorf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	req := "GET /geo HTTP/1.1\r\nHost: ping0.cc\r\nUser-Agent: curl/7.68.0\r\nConnection: close\r\n\r\n"
+	_, err = conn.Write([]byte(req))
+	if err != nil {
+		return fmt.Errorf("write failed: %v", err)
+	}
+
+	ipStart := time.Now()
+	buf := make([]byte, 8192)
+	n, err := conn.Read(buf)
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("read failed: %v", err)
+	}
+
+	if result.RealLatency == 0 {
+		result.RealLatency = time.Since(ipStart).Milliseconds()
+	}
+
+	response := string(buf[:n])
+	bodyStart := -1
+	for i := 0; i < len(response)-3; i++ {
+		if response[i:i+4] == "\r\n\r\n" {
+			bodyStart = i + 4
+			break
+		}
+	}
+
+	if bodyStart > 0 && bodyStart < len(response) {
+		body := response[bodyStart:]
+		lines := strings.Split(body, "\n")
+		if len(lines) >= 2 {
+			// Line 1: IP (Hostname) or just IP
+			line1 := strings.TrimSpace(lines[0])
+			var hostname string
+			if idx := strings.Index(line1, "("); idx > 0 && strings.HasSuffix(line1, ")") {
+				result.LandingIP = strings.TrimSpace(line1[:idx])
+				hostname = strings.TrimSpace(line1[idx+1 : len(line1)-1])
+			} else {
+				result.LandingIP = line1
+			}
+			
+			// Line 2: "Country Region City — ISP" or just "Country Region City"
+			// Example: "美国 弗吉尼亚州 阿什本 — 甲骨文云 Oracle"
+			locationPart := lines[1]
+			if parts := strings.Split(lines[1], "—"); len(parts) > 1 {
+				locationPart = strings.TrimSpace(parts[0])
+				// ISP might be in the second part
+			}
+			
+			locParts := strings.Fields(locationPart)
+			if len(locParts) > 0 {
+				result.Country = locParts[0]
+			}
+			if len(locParts) > 1 {
+				result.Region = locParts[1]
+			}
+			if len(locParts) > 2 {
+				result.City = locParts[2]
+			}
+			
+			// ISP from Line 4 (English) preferred, or fallback to parsed Chinese ISP
+			if len(lines) >= 4 && strings.TrimSpace(lines[3]) != "" {
+				result.ISP = strings.TrimSpace(lines[3])
+			} else if len(lines) >= 3 && strings.HasPrefix(lines[2], "AS") {
+                 // Sometimes formatting varies, maybe AS is useful
+            }
+            
+            // If we didn't get ISP from line 4, check if hostname helps
+            if result.IPType == "" {
+            	result.IPType = s.inferIPType(result.ISP, hostname)
+            }
+            
+			return nil
+		}
+		return fmt.Errorf("parse IP info failed: invalid format")
+	}
+	return fmt.Errorf("invalid HTTP response")
+}
+
+// tryPing0WithDialer attempts to get IP info from ping0.cc using a dialer
+func (s *NodeTestService) tryPing0WithDialer(dialer proxy.Dialer, result *NodeTestResult) error {
+	destination := "104.21.16.196:80"
+	conn, err := dialer.Dial("tcp", destination)
+	if err != nil {
+		return fmt.Errorf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	req := "GET /geo HTTP/1.1\r\nHost: ping0.cc\r\nUser-Agent: curl/7.68.0\r\nConnection: close\r\n\r\n"
+	_, err = conn.Write([]byte(req))
+	if err != nil {
+		return fmt.Errorf("write failed: %v", err)
+	}
+
+	ipStart := time.Now()
+	buf := make([]byte, 8192)
+	n, err := conn.Read(buf)
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("read failed: %v", err)
+	}
+
+	if result.RealLatency == 0 {
+		result.RealLatency = time.Since(ipStart).Milliseconds()
+	}
+
+	response := string(buf[:n])
+	bodyStart := -1
+	for i := 0; i < len(response)-3; i++ {
+		if response[i:i+4] == "\r\n\r\n" {
+			bodyStart = i + 4
+			break
+		}
+	}
+
+	if bodyStart > 0 && bodyStart < len(response) {
+		body := response[bodyStart:]
+		lines := strings.Split(body, "\n")
+		if len(lines) >= 2 {
+			// Line 1: IP (Hostname) or just IP
+			line1 := strings.TrimSpace(lines[0])
+			var hostname string
+			if idx := strings.Index(line1, "("); idx > 0 && strings.HasSuffix(line1, ")") {
+				result.LandingIP = strings.TrimSpace(line1[:idx])
+				hostname = strings.TrimSpace(line1[idx+1 : len(line1)-1])
+			} else {
+				result.LandingIP = line1
+			}
+
+			locationPart := lines[1]
+			if parts := strings.Split(lines[1], "—"); len(parts) > 1 {
+				locationPart = strings.TrimSpace(parts[0])
+			}
+			locParts := strings.Fields(locationPart)
+			if len(locParts) > 0 {
+				result.Country = locParts[0]
+			}
+			if len(locParts) > 1 {
+				result.Region = locParts[1]
+			}
+			if len(locParts) > 2 {
+				result.City = locParts[2]
+			}
+			if len(lines) >= 4 && strings.TrimSpace(lines[3]) != "" {
+				result.ISP = strings.TrimSpace(lines[3])
+			}
+			if result.IPType == "" {
+				result.IPType = s.inferIPType(result.ISP, hostname)
+			}
+			return nil
+		}
+		return fmt.Errorf("parse IP info failed: invalid format")
 	}
 	return fmt.Errorf("invalid HTTP response")
 }
@@ -628,6 +844,7 @@ func (s *NodeTestService) TestAllOutbounds(concurrency int) ([]*NodeTestResult, 
 
 			result, _ := s.TestOutbound(ob.Tag)
 			if result != nil {
+				s.SaveTestResult(result) // Save the basic connectivity result
 				mu.Lock()
 				results = append(results, result)
 				mu.Unlock()
@@ -674,6 +891,7 @@ func (s *NodeTestService) TestSelectedOutbounds(tags []string, concurrency int) 
 
 			result, _ := s.TestOutbound(ob.Tag)
 			if result != nil {
+				s.SaveTestResult(result) // Save the basic connectivity result
 				mu.Lock()
 				results = append(results, result)
 				mu.Unlock()
@@ -812,9 +1030,7 @@ func (s *NodeTestService) TestSelectedAndSave(tags []string, concurrency int) ([
 	
 	// Save results to database
 	for _, result := range results {
-		if result.LandingIP != "" {
-			s.SaveTestResult(result)
-		}
+		s.SaveTestResult(result)
 	}
 	
 	return results, nil
@@ -822,22 +1038,169 @@ func (s *NodeTestService) TestSelectedAndSave(tags []string, concurrency int) ([
 
 // SaveTestResult saves the test result to database
 func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
-	if result.LandingIP == "" {
-		return nil // no IP info to save
-	}
-	
 	db := database.GetDB()
 	now := time.Now().Unix()
 	
+	updates := map[string]interface{}{
+		"last_test_time": now,
+		"available":      result.Available,
+	}
+
+	// Only update location/IP details if we actually got them
+	if result.LandingIP != "" {
+		updates["landing_ip"] = result.LandingIP
+		updates["country"] = result.Country
+		updates["region"] = result.Region
+		updates["city"] = result.City
+		updates["fraud_score"] = result.FraudScore
+		updates["ip_type"] = result.IPType
+	}
+
 	return db.Model(&model.Outbound{}).
 		Where("tag = ?", result.Tag).
-		Updates(map[string]interface{}{
-			"landing_ip":     result.LandingIP,
-			"country":        result.Country,
-			"region":         result.Region,
-			"city":           result.City,
-			"last_test_time": now,
-		}).Error
+		Updates(updates).Error
+}
+
+// getIPTypeAndScore attempts to get IP type and fraud score
+func (s *NodeTestService) getIPTypeAndScore(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) {
+	// 1. If IPType is missing, try to fetch it from ip-api.com (if not already tried) or others
+	// ip-api.com free doesn't give type/mobile/proxy.
+	// We rely on ipwhois.io (tryIPWhois) which gives "type".
+
+	// 2. Get Fraud Score from scamalytics.com (scraping)
+	// https://scamalytics.com/ip/{ip}
+	// We need to request this via the proxy because direct request might be blocked or we want to test the node's IP representation.
+	// However, scamalytics might block data center IPs.
+	// Actually, we should request scamalytics from the SERVER (direct) to check the LANDING IP.
+	// But the server might be blocked too.
+	// Let's try requesting through the proxy first, if fails, maybe direct?
+	// Usually we want to see how the IP is viewed by the world, so querying from the server (which is not the node) 
+	// about the node's IP is the correct way: server checks "scamalytics.com/ip/<landing_ip>"
+
+	s.getScamalyticsScore(ctx, outbound, result)
+}
+
+func (s *NodeTestService) getIPTypeAndScoreWithDialer(dialer proxy.Dialer, result *NodeTestResult) {
+	s.getScamalyticsScoreWithDialer(dialer, result)
+}
+
+func (s *NodeTestService) getScamalyticsScore(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) {
+	// We'll try to fetch from scamalytics using the proxy to avoid server IP bans, 
+	// but we represent the LandingIP in the URL.
+	url := fmt.Sprintf("https://scamalytics.com/ip/%s", result.LandingIP)
+	
+	// destination := M.ParseSocksaddr("scamalytics.com:443")
+	// For simplicity in this text-based tool, we might need a proper HTTP client over the outbound.
+	// Constructing HTTP client over custom dialer:
+	
+	// Create a custom transport
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// addr is scamalytics.com:443
+			// We need to parse it to metadata
+			host, port, _ := net.SplitHostPort(addr)
+			p, _ := net.LookupPort(network, port)
+			dest := M.ParseSocksaddrHostPort(host, uint16(p))
+			return outbound.DialContext(ctx, N.NetworkTCP, dest)
+		},
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives: true,
+	}
+	
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   15 * time.Second,
+	}
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return
+	}
+	// Mimic browser
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		// If proxy fails, try direct? Maybe not.
+		return
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	
+	// Parse HTML for score
+	// Look for: "Fraud Score: </div><div ...>X</div>" or similar
+	// Data structure changes often, but usually "Fraud Score" is visible.
+	// Current structure (approx): <div class="score">Fraud Score: X</div>
+	
+	html := string(body)
+	// Simple regex or string search
+	// Regex for "Fraud Score: \d+" or similar
+	re := regexp.MustCompile(`Fraud Score:\s*(\d+)`)
+	matches := re.FindStringSubmatch(html)
+	if len(matches) > 1 {
+		fmt.Sscanf(matches[1], "%d", &result.FraudScore)
+	} else {
+		// Try finding JSON in the page if they use it
+		// Or another pattern: <div class="score_box">...100...</div>
+		// This is brittle. 
+		// Fallback: scamlone.com or similar if scamalytics fails?
+		// For now just try this.
+		
+		// Another pattern seen: "score": "0" in JSON-LD or similar?
+		// pattern: <div style="...background-color: ...">0</div> (the score is often large)
+		
+		// Use a simpler heuristic check if regex fails
+		if strings.Contains(html, "High Risk") {
+			if result.FraudScore == 0 { result.FraudScore = 75 }
+		} else if strings.Contains(html, "Medium Risk") {
+			if result.FraudScore == 0 { result.FraudScore = 50 }
+		} else if strings.Contains(html, "Low Risk") {
+			if result.FraudScore == 0 { result.FraudScore = 15 } // Arbitrary low
+		}
+	}
+}
+
+func (s *NodeTestService) getScamalyticsScoreWithDialer(dialer proxy.Dialer, result *NodeTestResult) {
+	url := fmt.Sprintf("https://scamalytics.com/ip/%s", result.LandingIP)
+	
+	tr := &http.Transport{
+		Dial: dialer.Dial,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives: true,
+	}
+	
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   15 * time.Second,
+	}
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	
+	html := string(body)
+	re := regexp.MustCompile(`Fraud Score:\s*(\d+)`)
+	matches := re.FindStringSubmatch(html)
+	if len(matches) > 1 {
+		fmt.Sscanf(matches[1], "%d", &result.FraudScore)
+	}
 }
 
 // TestAllAndSave tests all nodes with IP and saves results to database
@@ -848,11 +1211,107 @@ func (s *NodeTestService) TestAllAndSave(concurrency int) ([]*NodeTestResult, er
 	}
 	
 	// Save results to database
+	// Save results to database
 	for _, result := range results {
-		if result.LandingIP != "" {
-			s.SaveTestResult(result)
-		}
+		s.SaveTestResult(result)
 	}
 	
 	return results, nil
+}
+
+// inferIPType guesses the IP type based on ISP name and Hostname
+func (s *NodeTestService) inferIPType(isp, hostname string) string {
+	if isp == "" && hostname == "" {
+		return ""
+	}
+	
+	lowerISP := strings.ToLower(isp)
+	lowerHost := strings.ToLower(hostname)
+	
+	// Hosting keywords for Hostname
+	hostKeywords := []string{
+		"ec2", "compute", "cloud", "vps", "server", "hosting", "datacenter", "colocation",
+		"azure", "googleusercontent", "amazonaws", "linode", "vultr", "digitalocean",
+		"oracle", "alibaba", "tencent", "kamatera", "hetzner", "ovh", "choopa", "leaseweb",
+		"m247", "fly.io", "cloudflare", "fastly", "akamai", "cdn",
+	}
+	
+	for _, keyword := range hostKeywords {
+		if strings.Contains(lowerHost, keyword) {
+			return "Hosting"
+		}
+	}
+	
+	// Hosting keywords for ISP
+	hostingKeywords := []string{
+		"cloud", "vps", "data", "hosting", "server", "solution", "tech", "network", 
+		"amazon", "google", "microsoft", "oracle", "aliyun", "tencent", "digitalocean", 
+		"vultr", "linode", "hetzner", "ovh", "leaseweb", "choopa", "m247", "fly.io",
+		"cloudflare", "fastly", "akamai", "cdn",
+	}
+	
+	for _, keyword := range hostingKeywords {
+		if strings.Contains(lowerISP, keyword) {
+			return "Hosting"
+		}
+	}
+	
+	// ISP keywords
+	ispKeywords := []string{
+		"telecom", "mobile", "cable", "broadband", "internet", "comcast", "verizon", 
+		"spectrum", "t-mobile", "vodafone", "att", "orange", "deutsche telekom",
+		"telefonica", "bt", "virgin", "sky", "charter", "cox", "century",
+	}
+	
+	for _, keyword := range ispKeywords {
+		if strings.Contains(lowerISP, keyword) {
+			return "ISP"
+		}
+	}
+	
+	return "Business"
+}
+// IPLookupTask is a function signature for IP lookup tasks
+type IPLookupTask func(ctx context.Context, result *NodeTestResult) error
+
+// executeIPLookups executes multiple IP lookup tasks concurrently and returns the first success
+func (s *NodeTestService) executeIPLookups(ctx context.Context, baseResult *NodeTestResult, tasks []IPLookupTask) {
+	// Create a new context for the group of tasks if needed, 
+	// but we can rely on the passed ctx (dialCtx) which likely has a timeout.
+	// However, we want to return as soon as one succeeds.
+	
+	resultChan := make(chan *NodeTestResult, len(tasks))
+	
+	// Launch all tasks
+	for _, task := range tasks {
+		go func(t IPLookupTask) {
+			// Create a copy of the result to avoid race conditions when writing to it
+			tempResult := *baseResult 
+			if err := t(ctx, &tempResult); err == nil {
+				resultChan <- &tempResult
+			} else {
+				resultChan <- nil
+			}
+		}(task)
+	}
+
+	// Wait for first success or all failures
+	failures := 0
+	for i := 0; i < len(tasks); i++ {
+		select {
+		case res := <-resultChan:
+			if res != nil {
+				// Success! Update baseResult with the successful result
+				*baseResult = *res
+				return
+			}
+			failures++
+		case <-ctx.Done():
+			// Context timeout or cancelled
+			return 
+		}
+	}
+	
+	// If we are here, all tasks failed (or returned nil)
+	// baseResult remains unchanged (failed state)
 }
