@@ -283,6 +283,10 @@ export default {
             remark = 'Timeout'
           } else if (err.includes('invalid http')) {
             remark = 'HTTP Error'
+          } else if (err.includes('network unreachable')) {
+            remark = 'Unreachable'
+          } else if (err.includes('dns resolution failed')) {
+            remark = 'DNS Error'
           } else if (err.includes('handshake failed')) {
             remark = 'Handshake Failed'
           } else if (err.includes('connection refused')) {

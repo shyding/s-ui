@@ -580,6 +580,7 @@ export default {
     score: "Fraud Score",
     status: "Status",
     timeout: "Time out",
+    unavailable: "Unavailable",
     untested: "Untested",
     type: "Type",
     test: "Test",

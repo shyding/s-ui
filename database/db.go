@@ -101,6 +101,10 @@ func GetDB() *gorm.DB {
 	return db
 }
 
+func SetDB(ndb *gorm.DB) {
+	db = ndb
+}
+
 func IsNotFound(err error) bool {
 	return err == gorm.ErrRecordNotFound
 }

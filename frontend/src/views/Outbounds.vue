@@ -204,7 +204,7 @@
               </template>
               <template v-else-if="item.lastTestTime > 0">
                 <v-chip density="comfortable" size="small" :color="item.available ? 'info' : 'error'" variant="flat">
-                  {{ item.available ? ($t('nodeTest.available') || 'Available') : ($t('nodeTest.timeout') || 'Time out') }}
+                  {{ item.available ? ($t('nodeTest.available') || 'Available') : ($t('nodeTest.unavailable') || 'Unavailable') }}
                 </v-chip>
               </template>
               <template v-else>
@@ -467,6 +467,8 @@ const testNode = async (tag: string) => {
         latencyMap.set(tag, -1) 
       }
     }
+    // Reload data to update persistent status (Available, lastTestTime)
+    await Data().loadData()
   } catch (error) {
     console.error(`Failed to test node ${tag}:`, error)
   } finally {

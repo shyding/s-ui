@@ -581,6 +581,7 @@ export default {
     status: "状态",
     type: "类型",
     timeout: "超时",
+    unavailable: "不可用",
     untested: "未测试",
     test: "测试",
   },

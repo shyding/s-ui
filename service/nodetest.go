@@ -77,25 +77,54 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 
 	// Test TCP connection latency
 	// Skip TCP test for UDP-based protocols
-	if outbound.Type == "hysteria2" || outbound.Type == "tuic" || outbound.Type == "wireguard" || outbound.Type == "hy2" {
+	isUDP := outbound.Type == "hysteria2" || outbound.Type == "tuic" || outbound.Type == "wireguard" || outbound.Type == "hy2"
+
+	if !isUDP {
+		start := time.Now()
+		address := fmt.Sprintf("%s:%d", server, port)
+		conn, err := net.DialTimeout("tcp", address, 10*time.Second)
+		if err != nil {
+			result.Available = false
+			result.Latency = -1
+			result.Error = s.simplifyError(err.Error())
+			return result, nil
+		}
+		conn.Close()
+		result.Latency = time.Since(start).Milliseconds()
 		result.Available = true
-		result.Latency = 0
 		return result, nil
 	}
 
-	start := time.Now()
-	address := fmt.Sprintf("%s:%d", server, port)
-	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
-	if err != nil {
-		result.Available = false
-		result.Latency = -1
-		result.Error = err.Error()
-		return result, nil
+	// For UDP-based protocols, we must connect through sing-box to test real proxy capability
+	if corePtr != nil && corePtr.IsRunning() {
+		ctx := corePtr.GetCtx()
+		if ctx != nil {
+			outboundManager := service.FromContext[adapter.OutboundManager](ctx)
+			if outboundManager != nil {
+				if outbound_adapter, loaded := outboundManager.Outbound(tag); loaded {
+					latency, err := s.measureProxyLatency(ctx, outbound_adapter)
+					if err != nil || latency < 0 {
+						result.Available = false
+						result.Latency = -1
+						if err != nil {
+							result.Error = s.simplifyError(err.Error())
+						} else {
+							result.Error = "proxy connection test failed"
+						}
+						return result, nil
+					}
+					
+					result.Latency = latency
+					result.Available = true
+					return result, nil
+				}
+			}
+		}
 	}
-	conn.Close()
-	result.Latency = time.Since(start).Milliseconds()
-	result.Available = true
 
+	result.Available = false
+	result.Latency = -1
+	result.Error = "sing-box required to test UDP protocols"
 	return result, nil
 }
 
@@ -144,23 +173,10 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 
 	// Measure Real Latency (True Delay)
 	// Use a fast, lightweight URL like v2rayN does (http://www.google.com/generate_204)
-	// We use http://www.gstatic.com/generate_204 to avoid potential blocking issues with www.google.com in some regions,
-	// though they are usually the same.
-	rlStart := time.Now()
-	rlDest := M.ParseSocksaddr("www.gstatic.com:80") 
-	
-	rlConn, err := outbound_adapter.DialContext(dialCtx, N.NetworkTCP, rlDest)
-	if err == nil {
-		req := "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n"
-		_, err = rlConn.Write([]byte(req))
-		if err == nil {
-			buf := make([]byte, 1)
-			_, err = rlConn.Read(buf)
-			if err == nil || err == io.EOF {
-				result.RealLatency = time.Since(rlStart).Milliseconds()
-			}
-		}
-		rlConn.Close()
+	// We use http://www.gstatic.com/generate_204 to avoid potential blocking issues with www.google.com in some regions.
+	latency, proxyErr := s.measureProxyLatency(ctx, outbound_adapter)
+	if proxyErr == nil && latency > 0 {
+		result.RealLatency = latency
 	}
 	
 	// If RealLatency test failed using gstatic, try the IP API connection as fallback (server latency)
@@ -191,8 +207,13 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	s.executeIPLookups(dialCtx, result, ipLookupTasks)
 	
 	if result.LandingIP == "" {
-		result.Error = "all IP lookup services failed"
-		// Do not set Available = false here, because the node is reachable (latency > 0)
+		if result.Error == "" {
+			result.Error = "all IP lookup services failed"
+		}
+		
+		// If all IP lookups failed, the proxy is practically unusable for internet access,
+		// even if the basic TCP connection or handshake (RealLatency) succeeded.
+		result.Available = false
 	} else {
 		// After successful IP lookup, try to get fraud score if IP is available
 		if result.LandingIP != "" {
@@ -267,7 +288,11 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	s.executeIPLookups(ctx, result, ipLookupTasks)
 	
 	if result.LandingIP == "" {
-		result.Error = "all IP lookup services failed"
+		if result.Error == "" {
+			result.Error = "all IP lookup services failed"
+		}
+		
+		result.Available = false
 	} else {
 		// Try to get fraud score
 		if result.LandingIP != "" {
@@ -279,534 +304,378 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 }
 
 
+// createOutboundHTTPClient creates an http.Client that routes through a sing-box outbound
+func (s *NodeTestService) createOutboundHTTPClient(ctx context.Context, outbound adapter.Outbound) *http.Client {
+	tr := &http.Transport{
+		DialContext: func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			host, port, _ := net.SplitHostPort(addr)
+			p, _ := net.LookupPort(network, port)
+			dest := M.ParseSocksaddrHostPort(host, uint16(p))
+			return outbound.DialContext(dialCtx, N.NetworkTCP, dest)
+		},
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   true,
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   15 * time.Second,
+	}
+}
+
+// createDialerHTTPClient creates an http.Client that routes through a SOCKS5 dialer
+func (s *NodeTestService) createDialerHTTPClient(dialer proxy.Dialer) *http.Client {
+	tr := &http.Transport{
+		Dial:                dialer.Dial,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   true,
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   15 * time.Second,
+	}
+}
+
 // tryIPAPI attempts to get IP info from ip-api.com
 func (s *NodeTestService) tryIPAPI(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
-	// Dial to ip-api.com through the proxy (use IP to avoid DNS issues)
-	// ip-api.com IP: 208.95.112.1
-	destination := M.ParseSocksaddr("208.95.112.1:80")
-	
-	conn, err := outbound.DialContext(ctx, N.NetworkTCP, destination)
-	if err != nil {
-		return fmt.Errorf("dial via proxy failed: %v", err)
-	}
-	defer conn.Close()
+	client := s.createOutboundHTTPClient(ctx, outbound)
 
-	// Send HTTP request with Host header
-	req := "GET /json/?fields=status,message,country,regionName,city,isp,query,reverse HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
-	
-	// Start measuring time for IP check (we can use this as fallback RealLatency if the first one failed)
 	ipStart := time.Now()
-
-	// Read response
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://ip-api.com/json/?fields=status,message,country,regionName,city,isp,query,reverse", nil)
+	if err != nil {
+		return fmt.Errorf("create request failed: %v", err)
 	}
 
-	// If RealLatency was not set by the fast check, use the time to first byte of IP API
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["query"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["regionName"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			result.ISP, _ = ipInfo["isp"].(string)
-			hostname, _ := ipInfo["reverse"].(string)
-			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["query"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["regionName"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	result.ISP, _ = ipInfo["isp"].(string)
+	hostname, _ := ipInfo["reverse"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, hostname)
+	}
+	return nil
 }
 
 // tryIPInfo attempts to get IP info from ipinfo.io
 func (s *NodeTestService) tryIPInfo(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
-	// ipinfo.io IP: 34.117.59.81
-	destination := M.ParseSocksaddr("34.117.59.81:80")
-	
-	conn, err := outbound.DialContext(ctx, N.NetworkTCP, destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /json HTTP/1.1\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createOutboundHTTPClient(ctx, outbound)
 
 	ipStart := time.Now()
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://ipinfo.io/json", nil)
+	if err != nil {
+		return fmt.Errorf("create request failed: %v", err)
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["ip"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["region"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			// ipinfo.io returns "org" which includes ISP info
-			if org, ok := ipInfo["org"].(string); ok {
-				result.ISP = org
-			}
-			// Attempt to guess type from org/isp if not provided (ipinfo free doesn't provide type)
-			hostname, _ := ipInfo["hostname"].(string)
-			if result.IPType == "" {
-				result.IPType = s.inferIPType(result.ISP, hostname)
-			}
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["ip"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["region"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	if org, ok := ipInfo["org"].(string); ok {
+		result.ISP = org
+	}
+	hostname, _ := ipInfo["hostname"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, hostname)
+	}
+	return nil
 }
 
-// tryIPWhois attempts to get IP info from ipwhois.io
+// tryIPWhois attempts to get IP info from ipwhois.app
 func (s *NodeTestService) tryIPWhois(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
-	// ipwhois.io uses Cloudflare, try common CF IP
-	destination := M.ParseSocksaddr("104.21.14.178:80")
-	
-	conn, err := outbound.DialContext(ctx, N.NetworkTCP, destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /json/ HTTP/1.1\r\nHost: ipwhois.app\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createOutboundHTTPClient(ctx, outbound)
 
 	ipStart := time.Now()
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://ipwhois.app/json/", nil)
+	if err != nil {
+		return fmt.Errorf("create request failed: %v", err)
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["ip"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["region"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			result.ISP, _ = ipInfo["isp"].(string)
-			hostname, _ := ipInfo["reverse"].(string)
-			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["ip"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["region"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	result.ISP, _ = ipInfo["isp"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, "")
+	}
+	return nil
 }
 
 // tryIPAPIWithDialer attempts to get IP info from ip-api.com using a dialer
 func (s *NodeTestService) tryIPAPIWithDialer(dialer proxy.Dialer, result *NodeTestResult) error {
-	// Dial to ip-api.com through the proxy
-	destination := "208.95.112.1:80"
-	
-	conn, err := dialer.Dial("tcp", destination)
-	if err != nil {
-		return fmt.Errorf("dial via proxy failed: %v", err)
-	}
-	defer conn.Close()
+	client := s.createDialerHTTPClient(dialer)
 
-	// Send HTTP request
-	req := "GET /json/?fields=status,message,country,regionName,city,isp,query,reverse HTTP/1.1\r\nHost: ip-api.com\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
-	
 	ipStart := time.Now()
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	resp, err := client.Get("http://ip-api.com/json/?fields=status,message,country,regionName,city,isp,query,reverse")
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
 	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["query"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["regionName"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			result.ISP, _ = ipInfo["isp"].(string)
-			hostname, _ := ipInfo["reverse"].(string)
-			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, hostname) }
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["query"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["regionName"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	result.ISP, _ = ipInfo["isp"].(string)
+	hostname, _ := ipInfo["reverse"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, hostname)
+	}
+	return nil
 }
 
 // tryIPInfoWithDialer attempts to get IP info from ipinfo.io using a dialer
 func (s *NodeTestService) tryIPInfoWithDialer(dialer proxy.Dialer, result *NodeTestResult) error {
-	destination := "34.117.59.81:80"
-	
-	conn, err := dialer.Dial("tcp", destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /json HTTP/1.1\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createDialerHTTPClient(dialer)
 
 	ipStart := time.Now()
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	resp, err := client.Get("http://ipinfo.io/json")
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
 	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["ip"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["region"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			if org, ok := ipInfo["org"].(string); ok {
-				result.ISP = org
-			}
-			// Attempt to guess type from org/isp
-			hostname, _ := ipInfo["hostname"].(string)
-			if result.IPType == "" {
-				result.IPType = s.inferIPType(result.ISP, hostname)
-			}
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["ip"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["region"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	if org, ok := ipInfo["org"].(string); ok {
+		result.ISP = org
+	}
+	hostname, _ := ipInfo["hostname"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, hostname)
+	}
+	return nil
 }
 
-// tryIPWhoisWithDialer attempts to get IP info from ipwhois.io using a dialer
+// tryIPWhoisWithDialer attempts to get IP info from ipwhois.app using a dialer
 func (s *NodeTestService) tryIPWhoisWithDialer(dialer proxy.Dialer, result *NodeTestResult) error {
-	destination := "104.21.14.178:80"
-	
-	conn, err := dialer.Dial("tcp", destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /json/ HTTP/1.1\r\nHost: ipwhois.app\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createDialerHTTPClient(dialer)
 
 	ipStart := time.Now()
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	resp, err := client.Get("http://ipwhois.app/json/")
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
 	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		var ipInfo map[string]interface{}
-		if err := json.Unmarshal([]byte(body), &ipInfo); err == nil {
-			result.LandingIP, _ = ipInfo["ip"].(string)
-			result.Country, _ = ipInfo["country"].(string)
-			result.Region, _ = ipInfo["region"].(string)
-			result.City, _ = ipInfo["city"].(string)
-			result.ISP, _ = ipInfo["isp"].(string)
-			// ipwhois.io doesn't strictly have a hostname field often, but let's check just in case or pass empty
-			// Actually ipwhois.app has 'org' and 'isp'. No specific hostname/reverse field documented as standard free.
-			// But since we changed signature, we MUST update call.
-			if result.IPType == "" { result.IPType = s.inferIPType(result.ISP, "") }
-			return nil
-		}
+	var ipInfo map[string]interface{}
+	if err := json.Unmarshal(body, &ipInfo); err != nil {
 		return fmt.Errorf("parse IP info failed: %v", err)
 	}
-	return fmt.Errorf("invalid HTTP response")
+
+	result.LandingIP, _ = ipInfo["ip"].(string)
+	result.Country, _ = ipInfo["country"].(string)
+	result.Region, _ = ipInfo["region"].(string)
+	result.City, _ = ipInfo["city"].(string)
+	result.ISP, _ = ipInfo["isp"].(string)
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, "")
+	}
+	return nil
+}
+
+// parsePing0Response parses the text response from ping0.cc/geo
+func (s *NodeTestService) parsePing0Response(body string, result *NodeTestResult) error {
+	lines := strings.Split(body, "\n")
+	if len(lines) < 2 {
+		return fmt.Errorf("parse IP info failed: invalid format")
+	}
+
+	// Line 1: IP (Hostname) or just IP
+	line1 := strings.TrimSpace(lines[0])
+	var hostname string
+	if idx := strings.Index(line1, "("); idx > 0 && strings.HasSuffix(line1, ")") {
+		result.LandingIP = strings.TrimSpace(line1[:idx])
+		hostname = strings.TrimSpace(line1[idx+1 : len(line1)-1])
+	} else {
+		result.LandingIP = line1
+	}
+
+	// Line 2: "Country Region City — ISP"
+	locationPart := lines[1]
+	if parts := strings.Split(lines[1], "—"); len(parts) > 1 {
+		locationPart = strings.TrimSpace(parts[0])
+	}
+
+	locParts := strings.Fields(locationPart)
+	if len(locParts) > 0 {
+		result.Country = locParts[0]
+	}
+	if len(locParts) > 1 {
+		result.Region = locParts[1]
+	}
+	if len(locParts) > 2 {
+		result.City = locParts[2]
+	}
+
+	// ISP from Line 4 (English) preferred
+	if len(lines) >= 4 && strings.TrimSpace(lines[3]) != "" {
+		result.ISP = strings.TrimSpace(lines[3])
+	}
+
+	if result.IPType == "" {
+		result.IPType = s.inferIPType(result.ISP, hostname)
+	}
+
+	return nil
 }
 
 // tryPing0 attempts to get IP info from ping0.cc
 func (s *NodeTestService) tryPing0(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
-	// ping0.cc IP (one of them): 172.67.166.195 (Cloudflare) - utilizing domain for SNI might be needed if behind CF
-	// Since we need HTTPS for /geo usually, or HTTP. The user provided http://ping0.cc/
-	// Let's try HTTP with Host header first or HTTPS if supported.
-	// ping0.cc usually forces HTTPS.
-	// We'll use a fixed IP for ping0.cc to avoid DNS resolution, but we need SNI.
-	// For simplicity in this codebase context where we manually construct HTTP requests, handling HTTPS (TLS) manually via a TCP dialer is complex (need TLS handshake).
-	// If the outbound supports connection reuse or we can just use HTTP, it's easier.
-	// However, `read_url_content` showed `https://ping0.cc/geo` works. 
-	// Most `outbound.DialContext` returns a net.Conn. If we need TLS, we have to wrap it.
-	// For now, let's try HTTP to `ping0.cc:80`. If it redirects to HTTPS, we might fail since we don't handle 301.
-	// But `curl http://ping0.cc/geo` usually works or returns 301.
-	// Let's assume we can try to connect to port 80.
-	
-	// Actually, `ping0.cc` is behind Cloudflare. Direct IP access with Host header `ping0.cc` on port 80 should work if they allow HTTP.
-	// If they enforce HTTPS, we cannot easily do it without a TLS client.
-	// Given the constraints and previous patterns (using `http.Client` with custom transport in `getScamalyticsScore`), we should probably use that approach if we need HTTPS.
-	// BUT `tryIPAPI` and others utilize raw TCP + HTTP payload.
-	// valid IP for ping0.cc: 104.21.16.196 (CF)
-	
-	destination := M.ParseSocksaddr("104.21.16.196:80")
-	conn, err := outbound.DialContext(ctx, N.NetworkTCP, destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /geo HTTP/1.1\r\nHost: ping0.cc\r\nUser-Agent: curl/7.68.0\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createOutboundHTTPClient(ctx, outbound)
 
 	ipStart := time.Now()
-	buf := make([]byte, 8192)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://ping0.cc/geo", nil)
+	if err != nil {
+		return fmt.Errorf("create request failed: %v", err)
 	}
+	req.Header.Set("User-Agent", "curl/7.68.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		lines := strings.Split(body, "\n")
-		if len(lines) >= 2 {
-			// Line 1: IP (Hostname) or just IP
-			line1 := strings.TrimSpace(lines[0])
-			var hostname string
-			if idx := strings.Index(line1, "("); idx > 0 && strings.HasSuffix(line1, ")") {
-				result.LandingIP = strings.TrimSpace(line1[:idx])
-				hostname = strings.TrimSpace(line1[idx+1 : len(line1)-1])
-			} else {
-				result.LandingIP = line1
-			}
-			
-			// Line 2: "Country Region City — ISP" or just "Country Region City"
-			// Example: "美国 弗吉尼亚州 阿什本 — 甲骨文云 Oracle"
-			locationPart := lines[1]
-			if parts := strings.Split(lines[1], "—"); len(parts) > 1 {
-				locationPart = strings.TrimSpace(parts[0])
-				// ISP might be in the second part
-			}
-			
-			locParts := strings.Fields(locationPart)
-			if len(locParts) > 0 {
-				result.Country = locParts[0]
-			}
-			if len(locParts) > 1 {
-				result.Region = locParts[1]
-			}
-			if len(locParts) > 2 {
-				result.City = locParts[2]
-			}
-			
-			// ISP from Line 4 (English) preferred, or fallback to parsed Chinese ISP
-			if len(lines) >= 4 && strings.TrimSpace(lines[3]) != "" {
-				result.ISP = strings.TrimSpace(lines[3])
-			} else if len(lines) >= 3 && strings.HasPrefix(lines[2], "AS") {
-                 // Sometimes formatting varies, maybe AS is useful
-            }
-            
-            // If we didn't get ISP from line 4, check if hostname helps
-            if result.IPType == "" {
-            	result.IPType = s.inferIPType(result.ISP, hostname)
-            }
-            
-			return nil
-		}
-		return fmt.Errorf("parse IP info failed: invalid format")
-	}
-	return fmt.Errorf("invalid HTTP response")
+	return s.parsePing0Response(string(body), result)
 }
 
 // tryPing0WithDialer attempts to get IP info from ping0.cc using a dialer
 func (s *NodeTestService) tryPing0WithDialer(dialer proxy.Dialer, result *NodeTestResult) error {
-	destination := "104.21.16.196:80"
-	conn, err := dialer.Dial("tcp", destination)
-	if err != nil {
-		return fmt.Errorf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	req := "GET /geo HTTP/1.1\r\nHost: ping0.cc\r\nUser-Agent: curl/7.68.0\r\nConnection: close\r\n\r\n"
-	_, err = conn.Write([]byte(req))
-	if err != nil {
-		return fmt.Errorf("write failed: %v", err)
-	}
+	client := s.createDialerHTTPClient(dialer)
 
 	ipStart := time.Now()
-	buf := make([]byte, 8192)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read failed: %v", err)
+	req, err := http.NewRequest("GET", "https://ping0.cc/geo", nil)
+	if err != nil {
+		return fmt.Errorf("create request failed: %v", err)
 	}
+	req.Header.Set("User-Agent", "curl/7.68.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
 
 	if result.RealLatency == 0 {
 		result.RealLatency = time.Since(ipStart).Milliseconds()
 	}
 
-	response := string(buf[:n])
-	bodyStart := -1
-	for i := 0; i < len(response)-3; i++ {
-		if response[i:i+4] == "\r\n\r\n" {
-			bodyStart = i + 4
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body failed: %v", err)
 	}
 
-	if bodyStart > 0 && bodyStart < len(response) {
-		body := response[bodyStart:]
-		lines := strings.Split(body, "\n")
-		if len(lines) >= 2 {
-			// Line 1: IP (Hostname) or just IP
-			line1 := strings.TrimSpace(lines[0])
-			var hostname string
-			if idx := strings.Index(line1, "("); idx > 0 && strings.HasSuffix(line1, ")") {
-				result.LandingIP = strings.TrimSpace(line1[:idx])
-				hostname = strings.TrimSpace(line1[idx+1 : len(line1)-1])
-			} else {
-				result.LandingIP = line1
-			}
-
-			locationPart := lines[1]
-			if parts := strings.Split(lines[1], "—"); len(parts) > 1 {
-				locationPart = strings.TrimSpace(parts[0])
-			}
-			locParts := strings.Fields(locationPart)
-			if len(locParts) > 0 {
-				result.Country = locParts[0]
-			}
-			if len(locParts) > 1 {
-				result.Region = locParts[1]
-			}
-			if len(locParts) > 2 {
-				result.City = locParts[2]
-			}
-			if len(lines) >= 4 && strings.TrimSpace(lines[3]) != "" {
-				result.ISP = strings.TrimSpace(lines[3])
-			}
-			if result.IPType == "" {
-				result.IPType = s.inferIPType(result.ISP, hostname)
-			}
-			return nil
-		}
-		return fmt.Errorf("parse IP info failed: invalid format")
-	}
-	return fmt.Errorf("invalid HTTP response")
+	return s.parsePing0Response(string(body), result)
 }
 
 // TestAllOutbounds tests all outbounds in parallel
@@ -1280,38 +1149,115 @@ func (s *NodeTestService) executeIPLookups(ctx context.Context, baseResult *Node
 	// but we can rely on the passed ctx (dialCtx) which likely has a timeout.
 	// However, we want to return as soon as one succeeds.
 	
-	resultChan := make(chan *NodeTestResult, len(tasks))
+	type taskResult struct {
+		res *NodeTestResult
+		err error
+	}
+	resultChan := make(chan taskResult, len(tasks))
 	
 	// Launch all tasks
 	for _, task := range tasks {
 		go func(t IPLookupTask) {
 			// Create a copy of the result to avoid race conditions when writing to it
 			tempResult := *baseResult 
-			if err := t(ctx, &tempResult); err == nil {
-				resultChan <- &tempResult
+			err := t(ctx, &tempResult)
+			if err == nil {
+				resultChan <- taskResult{res: &tempResult, err: nil}
 			} else {
-				resultChan <- nil
+				resultChan <- taskResult{res: nil, err: err}
 			}
 		}(task)
 	}
 
 	// Wait for first success or all failures
 	failures := 0
+	var errs []string
 	for i := 0; i < len(tasks); i++ {
 		select {
-		case res := <-resultChan:
-			if res != nil {
+		case tr := <-resultChan:
+			if tr.res != nil {
 				// Success! Update baseResult with the successful result
-				*baseResult = *res
+				*baseResult = *tr.res
 				return
 			}
+			errs = append(errs, tr.err.Error())
 			failures++
 		case <-ctx.Done():
 			// Context timeout or cancelled
-			return 
+			errs = append(errs, ctx.Err().Error())
+			failures++
 		}
 	}
 	
 	// If we are here, all tasks failed (or returned nil)
-	// baseResult remains unchanged (failed state)
+	// baseResult remains unchanged (failed state) except for the error
+	if len(errs) > 0 {
+		simplifiedMap := make(map[string]bool)
+		for _, errStr := range errs {
+			simplifiedMap[s.simplifyError(errStr)] = true
+		}
+		
+		var uniqueErrs []string
+		for errStr := range simplifiedMap {
+			uniqueErrs = append(uniqueErrs, errStr)
+		}
+		
+		errorMsg := strings.Join(uniqueErrs, ", ")
+		baseResult.Error = fmt.Sprintf("IP lookup failed %s", errorMsg)
+	}
+}
+
+// simplifyError takes a potentially long, complex error string (like a nested network error)
+// and extracts a user-friendly, short description of what went wrong.
+func (s *NodeTestService) simplifyError(errStr string) string {
+	if strings.Contains(errStr, "unreachable network") {
+		return "Network Unreachable"
+	}
+	if strings.Contains(errStr, "no such host") {
+		return "DNS Resolution Failed"
+	}
+	if strings.Contains(errStr, "context deadline exceeded") || strings.Contains(errStr, "timeout") || strings.Contains(errStr, "Timeout") {
+		return "Timeout"
+	}
+	if strings.Contains(errStr, "connection refused") {
+		return "Connection Refused"
+	}
+	if strings.Contains(errStr, "x509: certificate signed by unknown authority") || strings.Contains(errStr, "certificate is not valid") {
+		return "TLS Certificate Error"
+	}
+	if strings.Contains(errStr, "tls: ") {
+		return "TLS Handshake Failed"
+	}
+	if strings.Contains(errStr, "EOF") {
+		return "Connection Closed (EOF)"
+	}
+	return errStr
+}
+
+// measureProxyLatency attempts to connect to gstatic.com through the proxy adapter
+func (s *NodeTestService) measureProxyLatency(ctx context.Context, outbound_adapter adapter.Outbound) (int64, error) {
+	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	rlStart := time.Now()
+	rlDest := M.ParseSocksaddr("www.gstatic.com:80")
+	rlConn, err := outbound_adapter.DialContext(dialCtx, N.NetworkTCP, rlDest)
+	if err != nil {
+		return -1, err
+	}
+	defer rlConn.Close()
+
+	req := "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n"
+	_, err = rlConn.Write([]byte(req))
+	if err != nil {
+		return -1, err
+	}
+
+	buf := make([]byte, 1)
+	_, err = rlConn.Read(buf)
+	if err != nil && err != io.EOF {
+		return -1, err
+	}
+
+	return time.Since(rlStart).Milliseconds(), nil
 }

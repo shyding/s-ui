@@ -86,14 +86,12 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	if o.LastTestTime > 0 {
 		combined["lastTestTime"] = o.LastTestTime
 	}
-	if o.FraudScore > 0 {
+	if o.LastTestTime > 0 {
 		combined["fraudScore"] = o.FraudScore
+		combined["available"] = o.Available
 	}
 	if o.IPType != "" {
 		combined["ipType"] = o.IPType
-	}
-	if o.Available {
-		combined["available"] = true
 	}
 
 	if o.Options != nil {
