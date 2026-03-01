@@ -14,6 +14,14 @@
     :tag="stats.tag"
     @close="closeStats"
   />
+  <ClientModal
+    v-model="clientModal.visible"
+    :visible="clientModal.visible"
+    :id="clientModal.id"
+    :inboundTags="inboundTags"
+    :groups="clientGroups"
+    @close="closeClientModal"
+  />
 
   <!-- Copy Dialog -->
   <v-dialog v-model="copyDialog.visible" max-width="400">
@@ -120,12 +128,15 @@
       <v-divider></v-divider>
       <v-card-text v-if="userListDialog.clients.length > 0">
         <v-list density="compact">
-          <v-list-item v-for="c in userListDialog.clients" :key="c.id">
+          <v-list-item v-for="c in userListDialog.clients" :key="c.id" @click="openClientEdit(c.id)" style="cursor: pointer;">
             <template v-slot:prepend>
               <v-icon :color="c.enable ? 'success' : 'grey'" size="small">{{ c.enable ? 'mdi-account-check' : 'mdi-account-off' }}</v-icon>
             </template>
-            <v-list-item-title>{{ c.name }}</v-list-item-title>
+            <v-list-item-title class="text-primary">{{ c.name }}</v-list-item-title>
             <v-list-item-subtitle v-if="c.group">{{ c.group }}</v-list-item-subtitle>
+            <template v-slot:append>
+              <v-icon size="small" color="grey">mdi-pencil</v-icon>
+            </template>
           </v-list-item>
         </v-list>
       </v-card-text>
@@ -322,6 +333,7 @@ import Stats from '@/layouts/modals/Stats.vue'
 import { Config } from '@/types/config'
 import { computed, ref } from 'vue'
 import { Inbound } from '@/types/inbounds'
+import ClientModal from '@/layouts/modals/Client.vue'
 import HttpUtils from '@/plugins/httputil'
 import { push } from 'notivue'
 import { i18n } from '@/locales'
@@ -349,6 +361,11 @@ const onlines = computed(() => {
 // All clients from data store
 const allClients = computed(() => {
   return Data().clients?.map((c: any) => ({ id: c.id, name: c.name, group: c.group, inbounds: c.inbounds })) ?? []
+})
+
+// Inbound tags for ClientModal
+const inboundTags = computed((): any[] => {
+  return inbounds.value?.filter((i: any) => i.tag != '' && i.users).map((i: any) => ({ title: i.tag, value: i.id })) ?? []
 })
 
 // Unique client names for filter dropdown
@@ -547,6 +564,22 @@ const userListDialog = ref({
   inboundTag: '',
   clients: <any[]>[],
 })
+
+// Client Edit Modal (from user list)
+const clientModal = ref({
+  visible: false,
+  id: 0,
+})
+
+const openClientEdit = (clientId: number) => {
+  userListDialog.value.visible = false
+  clientModal.value.id = clientId
+  clientModal.value.visible = true
+}
+
+const closeClientModal = () => {
+  clientModal.value.visible = false
+}
 
 const showUserList = (item: any) => {
   userListDialog.value.inboundTag = item.tag
