@@ -331,6 +331,8 @@ export default {
     multiDomain: "多域名",
     remark: "备注",
     mdOption: "多域名选项",
+    reassignUsers: "重新分配用户",
+    byGroup: "按用户组快速选择",
   },
   listen: {
     options: "监听选项",

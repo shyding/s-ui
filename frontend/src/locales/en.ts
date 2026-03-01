@@ -331,6 +331,8 @@ export default {
     multiDomain: "Multi Domain",
     remark: "Remark",
     mdOption: "Multi Domain Options",
+    reassignUsers: "Reassign Users",
+    byGroup: "Quick Select by Group",
   },
   listen: {
     options: "Listen Options",

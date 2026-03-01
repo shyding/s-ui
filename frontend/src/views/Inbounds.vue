@@ -55,6 +55,64 @@
     </v-card>
   </v-dialog>
 
+  <!-- Reassign Users Dialog -->
+  <v-dialog v-model="reassignDialog.visible" max-width="500">
+    <v-card rounded="lg">
+      <v-card-title>{{ $t('in.reassignUsers') || 'Reassign Users' }}</v-card-title>
+      <v-divider></v-divider>
+      <v-card-text>
+        <p class="mb-3 text-caption">{{ reassignDialog.inboundTag }}</p>
+        <v-autocomplete
+          v-model="reassignDialog.selectedClientIds"
+          :items="allClients"
+          item-title="name"
+          item-value="id"
+          :label="$t('pages.clients') || 'Clients'"
+          variant="outlined"
+          density="compact"
+          multiple
+          chips
+          closable-chips
+          clearable
+          hide-details
+        >
+          <template v-slot:item="{ item, props }">
+            <v-list-item v-bind="props">
+              <template v-slot:prepend="{ isActive }">
+                <v-list-item-action start>
+                  <v-checkbox-btn :model-value="isActive"></v-checkbox-btn>
+                </v-list-item-action>
+              </template>
+              <template v-slot:subtitle>
+                <span v-if="(item.raw as any).group">{{ (item.raw as any).group }}</span>
+              </template>
+            </v-list-item>
+          </template>
+        </v-autocomplete>
+
+        <v-divider class="my-3"></v-divider>
+        <p class="text-subtitle-2 mb-2">{{ $t('in.byGroup') || 'Quick Select by Group' }}</p>
+        <div class="d-flex flex-wrap ga-2">
+          <v-chip
+            v-for="group in clientGroups"
+            :key="group"
+            :color="isGroupFullySelected(group) ? 'primary' : 'default'"
+            variant="outlined"
+            size="small"
+            @click="toggleGroup(group)"
+          >
+            {{ group || $t('none') }}
+          </v-chip>
+        </div>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" variant="outlined" :loading="reassignDialog.loading" @click="doReassign">{{ $t('actions.save') }}</v-btn>
+        <v-btn color="error" variant="outlined" @click="reassignDialog.visible = false">{{ $t('actions.close') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- Action Buttons -->
   <v-row>
     <v-col cols="12" justify="center" align="center">
@@ -100,6 +158,18 @@
         clearable
         @update:model-value="page = 1"
       ></v-text-field>
+    </v-col>
+    <v-col cols="6" sm="3" md="2">
+      <v-autocomplete
+        v-model="filterUser"
+        :items="userOptions"
+        :label="$t('pages.clients') || 'Client'"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+        @update:model-value="page = 1"
+      ></v-autocomplete>
     </v-col>
     <v-col cols="6" sm="3" md="2">
        <v-select
@@ -180,6 +250,10 @@
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
+          <v-btn icon="mdi-account-multiple" style="margin-inline-start:0;" color="info" @click="showReassignDialog(item)">
+            <v-icon />
+            <v-tooltip activator="parent" location="top" :text="$t('in.reassignUsers') || 'Reassign Users'"></v-tooltip>
+          </v-btn>
           <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delOverlay[index] = true">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.del')"></v-tooltip>
@@ -226,6 +300,9 @@ import Stats from '@/layouts/modals/Stats.vue'
 import { Config } from '@/types/config'
 import { computed, ref } from 'vue'
 import { Inbound } from '@/types/inbounds'
+import HttpUtils from '@/plugins/httputil'
+import { push } from 'notivue'
+import { i18n } from '@/locales'
 
 const appConfig = computed((): Config => {
   return <Config> Data().config
@@ -247,6 +324,29 @@ const onlines = computed(() => {
   return Data().onlines.inbound?? []
 })
 
+// All clients from data store
+const allClients = computed(() => {
+  return Data().clients?.map((c: any) => ({ id: c.id, name: c.name, group: c.group, inbounds: c.inbounds })) ?? []
+})
+
+// Unique client names for filter dropdown
+const userOptions = computed(() => {
+  const names = new Set<string>()
+  Data().clients?.forEach((c: any) => {
+    if (c.name) names.add(c.name)
+  })
+  return Array.from(names).sort()
+})
+
+// Client groups for quick select
+const clientGroups = computed(() => {
+  const groups = new Set<string>()
+  Data().clients?.forEach((c: any) => {
+    groups.add(c.group || '')
+  })
+  return Array.from(groups).sort()
+})
+
 const modal = ref({
   visible: false,
   id: 0,
@@ -254,17 +354,31 @@ const modal = ref({
 
 // Search & Pagination
 const search = ref('')
+const filterUser = ref<string | null>(null)
 const page = ref(1)
 const pageSize = ref(12)
 
 const filteredInbounds = computed((): Inbound[] => {
-  if (!search.value) return inbounds.value;
-  const q = search.value.toLowerCase();
-  return inbounds.value.filter(i => 
-    i.tag.toLowerCase().includes(q) || 
-    i.type.toLowerCase().includes(q) || 
-    (i.listen_port && i.listen_port.toString().includes(q))
-  );
+  let items = inbounds.value;
+  
+  // Keyword search
+  if (search.value) {
+    const q = search.value.toLowerCase();
+    items = items.filter(i => 
+      i.tag.toLowerCase().includes(q) || 
+      i.type.toLowerCase().includes(q) || 
+      (i.listen_port && i.listen_port.toString().includes(q))
+    );
+  }
+  
+  // Filter by user
+  if (filterUser.value) {
+    items = items.filter(i => 
+      i.users && i.users.includes(filterUser.value!)
+    );
+  }
+  
+  return items;
 })
 
 const pageCount = computed(() => Math.ceil(filteredInbounds.value.length / pageSize.value))
@@ -309,7 +423,6 @@ const showCopyDialog = () => {
 const doCopy = async () => {
   copyDialog.value.loading = true
   
-  // Copy each selected inbound
   for (const tag of selectedTags.value) {
     const item = inbounds.value.find(i => i.tag === tag)
     if (!item) continue
@@ -336,6 +449,86 @@ const deleteSelected = async () => {
   
   selectedTags.value = []
   deleting.value = false
+}
+
+// Reassign Users Dialog
+const reassignDialog = ref({
+  visible: false,
+  inboundId: 0,
+  inboundTag: '',
+  selectedClientIds: <number[]>[],
+  loading: false,
+})
+
+const showReassignDialog = (item: any) => {
+  reassignDialog.value.inboundId = item.id
+  reassignDialog.value.inboundTag = item.tag
+  
+  // Find which clients currently have this inbound
+  const currentClientIds = Data().clients
+    ?.filter((c: any) => {
+      const ids = Array.isArray(c.inbounds) ? c.inbounds : []
+      return ids.includes(item.id)
+    })
+    .map((c: any) => c.id) ?? []
+  
+  reassignDialog.value.selectedClientIds = [...currentClientIds]
+  reassignDialog.value.visible = true
+}
+
+const isGroupFullySelected = (group: string) => {
+  const groupClients = allClients.value.filter((c: any) => (c.group || '') === group)
+  return groupClients.length > 0 && groupClients.every((c: any) => reassignDialog.value.selectedClientIds.includes(c.id))
+}
+
+const toggleGroup = (group: string) => {
+  const groupClientIds = allClients.value
+    .filter((c: any) => (c.group || '') === group)
+    .map((c: any) => c.id)
+  
+  if (isGroupFullySelected(group)) {
+    // Remove all from this group
+    reassignDialog.value.selectedClientIds = reassignDialog.value.selectedClientIds.filter(
+      id => !groupClientIds.includes(id)
+    )
+  } else {
+    // Add all from this group
+    const current = new Set(reassignDialog.value.selectedClientIds)
+    groupClientIds.forEach((id: number) => current.add(id))
+    reassignDialog.value.selectedClientIds = Array.from(current)
+  }
+}
+
+const doReassign = async () => {
+  reassignDialog.value.loading = true
+  const inboundId = reassignDialog.value.inboundId
+  const selectedIds = new Set(reassignDialog.value.selectedClientIds)
+  
+  // For each client, update their inbounds array
+  for (const client of Data().clients) {
+    const clientInbounds: number[] = Array.isArray(client.inbounds) ? [...client.inbounds] : []
+    const hasInbound = clientInbounds.includes(inboundId)
+    const shouldHave = selectedIds.has(client.id)
+    
+    if (hasInbound && !shouldHave) {
+      // Remove the inbound from this client
+      const updated = { ...client, inbounds: clientInbounds.filter((id: number) => id !== inboundId) }
+      await Data().save("clients", "edit", updated)
+    } else if (!hasInbound && shouldHave) {
+      // Add the inbound to this client
+      const updated = { ...client, inbounds: [...clientInbounds, inboundId] }
+      await Data().save("clients", "edit", updated)
+    }
+  }
+  
+  reassignDialog.value.loading = false
+  reassignDialog.value.visible = false
+  
+  push.success({
+    title: i18n.global.t('success'),
+    duration: 3000,
+    message: i18n.global.t('in.reassignUsers') || 'Users reassigned'
+  })
 }
 
 // Stats
