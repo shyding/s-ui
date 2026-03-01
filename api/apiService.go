@@ -294,24 +294,21 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 	// Ensure we only copy inbounds that don't have conflicting tags
 	// We'll generate new bounds and tag
 	for i := 0; i < count; i++ {
-		// Create a copy of the inbound data
-		inbData, err := origInbound.MarshalJSON()
+		// Create a full copy of the inbound data (MarshalFull includes id, tls_id, addrs, out_json)
+		inbMap, err := origInbound.MarshalFull()
 		if err != nil {
 			continue // Skip if error
 		}
-		
-		var inbMap map[string]interface{}
-		json.Unmarshal(inbData, &inbMap)
 		
 		// generate new random port between 10000 and 60000
 		newPort := common.RandomInt(50000) + 10000
 		newTag := fmt.Sprintf("%s-%d", origInbound.Type, newPort)
 		
-		inbMap["id"] = 0
-		inbMap["tag"] = newTag
-		inbMap["listen_port"] = newPort
+		(*inbMap)["id"] = 0
+		(*inbMap)["tag"] = newTag
+		(*inbMap)["listen_port"] = newPort
 		
-		newData, _ := json.Marshal(inbMap)
+		newData, _ := json.Marshal(*inbMap)
 		
 		var cIds []string
 		db := database.GetDB()
