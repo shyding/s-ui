@@ -334,6 +334,70 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 	}
 }
 
+func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
+	inboundIdStr := c.Request.FormValue("inboundId")
+	clientIdsStr := c.Request.FormValue("clientIds")
+
+	inboundId, err := strconv.ParseUint(inboundIdStr, 10, 32)
+	if err != nil || inboundId == 0 {
+		jsonMsg(c, "", fmt.Errorf("invalid inbound id"))
+		return
+	}
+
+	// Parse the desired client IDs (comma-separated, may be empty)
+	desiredIds := make(map[uint]bool)
+	if clientIdsStr != "" {
+		for _, idStr := range strings.Split(clientIdsStr, ",") {
+			cid, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 32)
+			if err == nil && cid > 0 {
+				desiredIds[uint(cid)] = true
+			}
+		}
+	}
+
+	db := database.GetDB()
+
+	// Get all clients
+	var clients []model.Client
+	db.Find(&clients)
+
+	for _, client := range clients {
+		var currentInbounds []uint
+		json.Unmarshal(client.Inbounds, &currentInbounds)
+
+		hasInbound := false
+		for _, id := range currentInbounds {
+			if id == uint(inboundId) {
+				hasInbound = true
+				break
+			}
+		}
+		shouldHave := desiredIds[client.Id]
+
+		if hasInbound && !shouldHave {
+			// Remove inbound from this client
+			newInbounds := []uint{}
+			for _, id := range currentInbounds {
+				if id != uint(inboundId) {
+					newInbounds = append(newInbounds, id)
+				}
+			}
+			newJson, _ := json.Marshal(newInbounds)
+			db.Model(&client).Update("inbounds", json.RawMessage(newJson))
+		} else if !hasInbound && shouldHave {
+			// Add inbound to this client
+			currentInbounds = append(currentInbounds, uint(inboundId))
+			newJson, _ := json.Marshal(currentInbounds)
+			db.Model(&client).Update("inbounds", json.RawMessage(newJson))
+		}
+	}
+
+	err = a.LoadPartialData(c, []string{"clients", "inbounds"})
+	if err != nil {
+		jsonMsg(c, "reassign", err)
+	}
+}
+
 func (a *ApiService) Login(c *gin.Context) {
 	remoteIP := getRemoteIp(c)
 	loginUser, err := a.UserService.Login(c.Request.FormValue("user"), c.Request.FormValue("pass"), remoteIP)

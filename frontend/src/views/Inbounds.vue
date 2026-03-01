@@ -502,33 +502,21 @@ const toggleGroup = (group: string) => {
 const doReassign = async () => {
   reassignDialog.value.loading = true
   const inboundId = reassignDialog.value.inboundId
-  const selectedIds = new Set(reassignDialog.value.selectedClientIds)
+  const clientIds = reassignDialog.value.selectedClientIds.join(',')
   
-  // For each client, update their inbounds array
-  for (const client of Data().clients) {
-    const clientInbounds: number[] = Array.isArray(client.inbounds) ? [...client.inbounds] : []
-    const hasInbound = clientInbounds.includes(inboundId)
-    const shouldHave = selectedIds.has(client.id)
-    
-    if (hasInbound && !shouldHave) {
-      // Remove the inbound from this client
-      const updated = { ...client, inbounds: clientInbounds.filter((id: number) => id !== inboundId) }
-      await Data().save("clients", "edit", updated)
-    } else if (!hasInbound && shouldHave) {
-      // Add the inbound to this client
-      const updated = { ...client, inbounds: [...clientInbounds, inboundId] }
-      await Data().save("clients", "edit", updated)
-    }
-  }
+  const msg = await HttpUtils.post('api/reassignInboundUsers', { inboundId, clientIds })
   
   reassignDialog.value.loading = false
   reassignDialog.value.visible = false
   
-  push.success({
-    title: i18n.global.t('success'),
-    duration: 3000,
-    message: i18n.global.t('in.reassignUsers') || 'Users reassigned'
-  })
+  if (msg.success) {
+    Data().setNewData(msg.obj)
+    push.success({
+      title: i18n.global.t('success'),
+      duration: 3000,
+      message: i18n.global.t('in.reassignUsers') || 'Users reassigned'
+    })
+  }
 }
 
 // Stats
