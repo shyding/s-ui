@@ -113,6 +113,31 @@
     </v-card>
   </v-dialog>
 
+  <!-- User List Dialog -->
+  <v-dialog v-model="userListDialog.visible" max-width="500">
+    <v-card rounded="lg">
+      <v-card-title>{{ $t('pages.clients') }} - {{ userListDialog.inboundTag }}</v-card-title>
+      <v-divider></v-divider>
+      <v-card-text v-if="userListDialog.clients.length > 0">
+        <v-list density="compact">
+          <v-list-item v-for="c in userListDialog.clients" :key="c.id">
+            <template v-slot:prepend>
+              <v-icon :color="c.enable ? 'success' : 'grey'" size="small">{{ c.enable ? 'mdi-account-check' : 'mdi-account-off' }}</v-icon>
+            </template>
+            <v-list-item-title>{{ c.name }}</v-list-item-title>
+            <v-list-item-subtitle v-if="c.group">{{ c.group }}</v-list-item-subtitle>
+          </v-list-item>
+        </v-list>
+      </v-card-text>
+      <v-card-text v-else>
+        <p class="text-center text-grey">{{ $t('noData') }}</p>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" variant="outlined" @click="userListDialog.visible = false">{{ $t('actions.close') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
   <!-- Action Buttons -->
   <v-row>
     <v-col cols="12" justify="center" align="center">
@@ -222,14 +247,11 @@
               {{ item.tls_id > 0 ? $t('enable') : $t('disable') }}
             </v-col>
           </v-row>
-          <v-row>
+          <v-row @click="showUserList(item)" style="cursor: pointer;">
             <v-col>{{ $t('pages.clients') }}</v-col>
             <v-col>
-              <template v-if="item.users">
-                <v-tooltip activator="parent" dir="ltr" location="bottom" v-if="item.users.length > 0">
-                  <span v-for="u in item.users">{{ u }}<br /></span>
-                </v-tooltip>
-                {{ item.users.length }}
+              <template v-if="item.users && item.users.length > 0">
+                <a class="text-primary text-decoration-underline">{{ item.users.length }}</a>
               </template>
               <template v-else>-</template>
             </v-col>
@@ -517,6 +539,25 @@ const doReassign = async () => {
       message: i18n.global.t('in.reassignUsers') || 'Users reassigned'
     })
   }
+}
+
+// User List Dialog
+const userListDialog = ref({
+  visible: false,
+  inboundTag: '',
+  clients: <any[]>[],
+})
+
+const showUserList = (item: any) => {
+  userListDialog.value.inboundTag = item.tag
+  // Find clients that have this inbound ID in their inbounds array
+  userListDialog.value.clients = Data().clients
+    ?.filter((c: any) => {
+      const ids = Array.isArray(c.inbounds) ? c.inbounds : []
+      return ids.includes(item.id)
+    })
+    .map((c: any) => ({ id: c.id, name: c.name, group: c.group, enable: c.enable })) ?? []
+  userListDialog.value.visible = true
 }
 
 // Stats
