@@ -51,6 +51,7 @@ interface InboundBasics extends Listen {
   tls_id: number
   addrs?: Addr[]
   out_json?: any
+  users?: string[]
 }
 
 interface ShadowTLSHandShake extends Dial {
@@ -63,9 +64,9 @@ export interface Direct extends InboundBasics {
   override_address?: string
   override_port?: number
 }
-export interface Mixed extends InboundBasics {}
-export interface SOCKS extends InboundBasics {}
-export interface HTTP extends InboundBasics {}
+export interface Mixed extends InboundBasics { }
+export interface SOCKS extends InboundBasics { }
+export interface HTTP extends InboundBasics { }
 export interface Shadowsocks extends InboundBasics {
   method: string
   password: string
@@ -100,7 +101,7 @@ export interface Hysteria extends InboundBasics {
   disable_mtu_discovery?: boolean
 }
 export interface ShadowTLS extends InboundBasics {
-  version: 1|2|3
+  version: 1 | 2 | 3
   password?: string
   handshake: ShadowTLSHandShake
   handshake_for_server_name?: {
@@ -120,7 +121,7 @@ export interface AnyTls extends InboundBasics {
   tls: iTls
 }
 export interface TUIC extends InboundBasics {
-  congestion_control: ""|"cubic"|"new_reno"|"bbr"
+  congestion_control: "" | "cubic" | "new_reno" | "bbr"
   auth_timeout?: string
   zero_rtt_handshake?: boolean
   heartbeat?: string
@@ -170,7 +171,7 @@ export interface Tun extends InboundBasics {
   // include_package?: string[]
   // exclude_package?: string[]
 }
-export interface Redirect extends InboundBasics {}
+export interface Redirect extends InboundBasics { }
 export interface TProxy extends InboundBasics {
   network?: "udp" | "tcp"
 }
@@ -214,23 +215,25 @@ const defaultValues: Record<InType, Inbound> = {
   tuic: <TUIC>{ type: InTypes.TUIC, congestion_control: "cubic", tls_id: 0 },
   hysteria2: <Hysteria2>{ type: InTypes.Hysteria2, tls_id: 0 },
   vless: <VLESS>{ type: InTypes.VLESS, tls_id: 0, multiplex: {}, transport: {} },
-  anytls: <AnyTls>{ type: InTypes.AnyTls, tls_id: 0, padding_scheme: [
-    "stop=8",
-    "0=30-30",
-    "1=100-400",
-    "2=400-500,c,500-1000,c,500-1000,c,500-1000,c,500-1000",
-    "3=9-9,500-1000",
-    "4=500-1000",
-    "5=500-1000",
-    "6=500-1000",
-    "7=500-1000"
-  ]},
+  anytls: <AnyTls>{
+    type: InTypes.AnyTls, tls_id: 0, padding_scheme: [
+      "stop=8",
+      "0=30-30",
+      "1=100-400",
+      "2=400-500,c,500-1000,c,500-1000,c,500-1000,c,500-1000",
+      "3=9-9,500-1000",
+      "4=500-1000",
+      "5=500-1000",
+      "6=500-1000",
+      "7=500-1000"
+    ]
+  },
   tun: <Tun>{ type: InTypes.Tun, mtu: 9000, stack: 'system', udp_timeout: '5m', auto_route: false },
   redirect: <Redirect>{ type: InTypes.Redirect },
   tproxy: <TProxy>{ type: InTypes.TProxy },
 }
 
-export function createInbound<T extends Inbound>(type: InType,json?: Partial<T>): Inbound {
+export function createInbound<T extends Inbound>(type: InType, json?: Partial<T>): Inbound {
   const defaultObject: Inbound = { ...defaultValues[type] ?? {}, ...(json ?? {}) }
   return defaultObject
 }

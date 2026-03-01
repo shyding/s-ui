@@ -265,6 +265,78 @@ func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error
 	return string(data["action"]), data["data"], nil
 }
 
+func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
+	hostname := getHostname(c)
+	
+	idStr := c.Request.FormValue("id")
+	countStr := c.Request.FormValue("count")
+	
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil || id == 0 {
+		jsonMsg(c, "", fmt.Errorf("invalid inbound id"))
+		return
+	}
+	
+	count, err := strconv.Atoi(countStr)
+	if err != nil || count <= 0 {
+		jsonMsg(c, "", fmt.Errorf("invalid copy count"))
+		return
+	}
+	
+	// Get the original inbound
+	inbounds, err := a.InboundService.FromIds([]uint{uint(id)})
+	if err != nil || len(inbounds) == 0 {
+		jsonMsg(c, "", fmt.Errorf("inbound not found"))
+		return
+	}
+	origInbound := inbounds[0]
+	
+	// Ensure we only copy inbounds that don't have conflicting tags
+	// We'll generate new bounds and tag
+	for i := 0; i < count; i++ {
+		// Create a copy of the inbound data
+		inbData, err := origInbound.MarshalJSON()
+		if err != nil {
+			continue // Skip if error
+		}
+		
+		var inbMap map[string]interface{}
+		json.Unmarshal(inbData, &inbMap)
+		
+		// generate new random port between 10000 and 60000
+		newPort := common.RandomInt(50000) + 10000
+		newTag := fmt.Sprintf("%s-%d", origInbound.Type, newPort)
+		
+		inbMap["id"] = 0
+		inbMap["tag"] = newTag
+		inbMap["listen_port"] = newPort
+		
+		newData, _ := json.Marshal(inbMap)
+		
+		var cIds []string
+		db := database.GetDB()
+		var clients []model.Client
+		// Search for clients that have this inbound ID in their `inbounds` JSON array
+		// Using JSON_EACH since sqlite is used
+		db.Raw("SELECT clients.id FROM clients, json_each(clients.inbounds) as je WHERE je.value = ?", id).Scan(&clients)
+		for _, client := range clients {
+			cIds = append(cIds, fmt.Sprintf("%d", client.Id))
+		}
+		initUserIds := strings.Join(cIds, ",")
+
+		_, err = a.ConfigService.Save("inbounds", "new", json.RawMessage(newData), initUserIds, loginUser, hostname)
+		if err != nil {
+			logger.Warningf("Failed to copy inbound: %v", err)
+			continue
+		}
+	}
+	
+	err = a.LoadPartialData(c, []string{"inbounds"})
+	if err != nil {
+		jsonMsg(c, "inbounds", err)
+	}
+}
+
 func (a *ApiService) Login(c *gin.Context) {
 	remoteIP := getRemoteIp(c)
 	loginUser, err := a.UserService.Login(c.Request.FormValue("user"), c.Request.FormValue("pass"), remoteIP)

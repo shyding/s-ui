@@ -144,6 +144,7 @@ export default {
     confirmDeleteSelected: "Are you sure you want to delete {count} selected nodes?",
     sort: "Sort",
     copyLink: "Copy Link",
+    copy_count: "Copy Count",
   },
   login: {
     title: "Login",

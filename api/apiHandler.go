@@ -46,6 +46,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.RestartApp(c)
 	case "restartSb":
 		a.ApiService.RestartSb(c)
+	case "copyInbound":
+		a.ApiService.CopyInbound(c, loginUser)
 	case "linkConvert":
 		a.ApiService.LinkConvert(c)
 	case "batchImport":

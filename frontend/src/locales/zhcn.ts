@@ -144,6 +144,7 @@ export default {
     confirmDeleteSelected: "确定要删除 {count} 个已选节点吗？",
     sort: "排序",
     copyLink: "复制链接",
+    copy_count: "复制数量",
   },
   login: {
     title: "登录",

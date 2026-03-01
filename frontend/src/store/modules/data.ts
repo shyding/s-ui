@@ -6,12 +6,12 @@ import { Inbound } from '@/types/inbounds'
 import { Client } from '@/types/clients'
 
 const Data = defineStore('Data', {
-  state: () => ({ 
+  state: () => ({
     lastLoad: 0,
-    reloadItems: localStorage.getItem("reloadItems")?.split(',')?? <string[]>[],
+    reloadItems: localStorage.getItem("reloadItems")?.split(',') ?? <string[]>[],
     subURI: "",
     enableTraffic: false,
-    onlines: {inbound: <string[]>[], outbound: <string[]>[], user: <string[]>[]},
+    onlines: { inbound: <string[]>[], outbound: <string[]>[], user: <string[]>[] },
     config: <any>{},
     inbounds: <any[]>[],
     outbounds: <any[]>[],
@@ -22,8 +22,8 @@ const Data = defineStore('Data', {
   }),
   actions: {
     async loadData() {
-      const msg = await HttpUtils.get('api/load', this.lastLoad >0 ? {lu: this.lastLoad} : {} )
-      if(msg.success) {
+      const msg = await HttpUtils.get('api/load', this.lastLoad > 0 ? { lu: this.lastLoad } : {})
+      if (msg.success) {
         this.onlines = msg.obj.onlines
         if (msg.obj.lastLog) {
           push.error({
@@ -32,14 +32,14 @@ const Data = defineStore('Data', {
             message: msg.obj.lastLog
           })
         }
-        
+
         if (msg.obj.config) {
           this.setNewData(msg.obj)
         }
       }
     },
     setNewData(data: any) {
-      this.lastLoad = Math.floor((new Date()).getTime()/1000)
+      this.lastLoad = Math.floor((new Date()).getTime() / 1000)
       if (data.subURI) this.subURI = data.subURI
       if (data.enableTraffic) this.enableTraffic = data.enableTraffic
       if (data.config) this.config = data.config
@@ -51,22 +51,22 @@ const Data = defineStore('Data', {
       if (Object.hasOwn(data, 'tls')) this.tlsConfigs = data.tls ?? []
     },
     async loadInbounds(ids: number[]): Promise<Inbound[]> {
-      const options = ids.length > 0 ? {id: ids.join(",")} : {}
+      const options = ids.length > 0 ? { id: ids.join(",") } : {}
       const msg = await HttpUtils.get('api/inbounds', options)
-      if(msg.success) {
+      if (msg.success) {
         return msg.obj.inbounds
       }
       return <Inbound[]>[]
     },
     async loadClients(id: number): Promise<Client> {
-      const options = id > 0 ? {id: id} : {}
+      const options = id > 0 ? { id: id } : {}
       const msg = await HttpUtils.get('api/clients', options)
-      if(msg.success) {
-        return <Client>msg.obj.clients[0]??{}
+      if (msg.success) {
+        return <Client>msg.obj.clients[0] ?? {}
       }
       return <Client>{}
     },
-    async save (object: string, action: string, data: any, initUsers?: number[]): Promise<boolean> {
+    async save(object: string, action: string, data: any, initUsers?: number[]): Promise<boolean> {
       let postData = {
         object: object,
         action: action,
@@ -85,8 +85,21 @@ const Data = defineStore('Data', {
       }
       return msg.success
     },
+    async copyInbound(id: number, count: number): Promise<boolean> {
+      const msg = await HttpUtils.post('api/copyInbound', { id, count })
+      if (msg.success) {
+        push.success({
+          title: i18n.global.t('success'),
+          duration: 5000,
+          message: i18n.global.t('actions.copy') + " " + i18n.global.t('objects.inbound')
+        })
+        this.setNewData(msg.obj)
+        return true
+      }
+      return false
+    },
     // Check duplicate client name
-    checkClientName (id: number, newName: string): boolean {
+    checkClientName(id: number, newName: string): boolean {
       const oldName = id > 0 ? this.clients.findLast((i: any) => i.id == id)?.name : null
       if (newName != oldName && this.clients.findIndex((c: any) => c.name == newName) != -1) {
         push.error({
@@ -97,7 +110,7 @@ const Data = defineStore('Data', {
       return false
     },
     // Check bulk client names
-    checkBulkClientNames (names: string[]): boolean {
+    checkBulkClientNames(names: string[]): boolean {
       const newNames = new Set(names)
       const oldNames = new Set(this.clients.map((c: any) => c.name))
       const allNames = new Set([...oldNames, ...newNames])
@@ -111,7 +124,7 @@ const Data = defineStore('Data', {
       return false
     },
     // check duplicate tag
-    checkTag (object: string, id: number, tag: string): boolean {
+    checkTag(object: string, id: number, tag: string): boolean {
       let objects = <any[]>[]
       switch (object) {
         case 'inbound':
