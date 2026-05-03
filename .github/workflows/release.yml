@@ -17,6 +17,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 's-ui.service'
+permissions:
+  contents: write
 
 jobs:
   build-linux:
