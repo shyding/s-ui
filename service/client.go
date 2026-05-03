@@ -183,6 +183,15 @@ func (s *ClientService) UpdateClientsOnInboundAdd(tx *gorm.DB, initIds string, i
 	if err != nil {
 		return err
 	}
+
+	// FillOutJson populates inbound.OutJson with the correct outbound fields
+	// (server_ports for hysteria/hysteria2 mport, transport for vless/vmess, etc.)
+	// This must be called before LinkGenerator so that hysteria links include
+	// the correct parameters.
+	if fillErr := util.FillOutJson(&inbound, hostname); fillErr != nil {
+		logger.Warningf("UpdateClientsOnInboundAdd: failed to fill out_json for inbound %d: %v", inboundId, fillErr)
+	}
+
 	for _, client := range clients {
 		// Add inbounds
 		var clientInbounds []uint
@@ -264,7 +273,14 @@ func (s *ClientService) UpdateClientsOnInboundDelete(tx *gorm.DB, id uint, tag s
 
 func (s *ClientService) UpdateLinksByInboundChange(tx *gorm.DB, inbounds *[]model.Inbound, hostname string, oldTag string) error {
 	var err error
-	for _, inbound := range *inbounds {
+	for i, inbound := range *inbounds {
+		// Ensure OutJson is populated before generating links.
+		// This is critical for hysteria/hysteria2 which read out_json for mport.
+		if fillErr := util.FillOutJson(&(*inbounds)[i], hostname); fillErr != nil {
+			logger.Warningf("UpdateLinksByInboundChange: failed to fill out_json for inbound %d: %v", inbound.Id, fillErr)
+		}
+		inbound = (*inbounds)[i]
+
 		var clients []model.Client
 		err = tx.Table("clients").
 			Where("EXISTS (SELECT 1 FROM json_each(clients.inbounds) WHERE json_each.value = ?)", inbound.Id).

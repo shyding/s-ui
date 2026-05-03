@@ -267,24 +267,24 @@ func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error
 
 func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 	hostname := getHostname(c)
-	
+
 	idStr := c.Request.FormValue("id")
 	countStr := c.Request.FormValue("count")
 	keepUsersStr := c.Request.FormValue("keepUsers")
 	clientIdsStr := c.Request.FormValue("clientIds")
-	
+
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil || id == 0 {
 		jsonMsg(c, "", fmt.Errorf("invalid inbound id"))
 		return
 	}
-	
+
 	count, err := strconv.Atoi(countStr)
 	if err != nil || count <= 0 {
 		jsonMsg(c, "", fmt.Errorf("invalid copy count"))
 		return
 	}
-	
+
 	// Get the original inbound
 	inbounds, err := a.InboundService.FromIds([]uint{uint(id)})
 	if err != nil || len(inbounds) == 0 {
@@ -292,7 +292,7 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 		return
 	}
 	origInbound := inbounds[0]
-	
+
 	// Ensure we only copy inbounds that don't have conflicting tags
 	// We'll generate new bounds and tag
 	for i := 0; i < count; i++ {
@@ -301,17 +301,17 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 		if err != nil {
 			continue // Skip if error
 		}
-		
+
 		// generate new random port between 10000 and 60000
 		newPort := common.RandomInt(50000) + 10000
 		newTag := fmt.Sprintf("%s-%d", origInbound.Type, newPort)
-		
+
 		(*inbMap)["id"] = 0
 		(*inbMap)["tag"] = newTag
 		(*inbMap)["listen_port"] = newPort
-		
+
 		newData, _ := json.Marshal(*inbMap)
-		
+
 		initUserIds := ""
 		if keepUsersStr == "true" {
 			var cIds []string
@@ -334,7 +334,7 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 			continue
 		}
 	}
-	
+
 	err = a.LoadPartialData(c, []string{"inbounds"})
 	if err != nil {
 		jsonMsg(c, "inbounds", err)
@@ -377,6 +377,11 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 
 	hostname := getHostname(c)
 
+	// Ensure OutJson is populated for link generation (hysteria/hysteria2 need it for mport)
+	if fillErr := util.FillOutJson(&inbound, hostname); fillErr != nil {
+		logger.Warningf("ReassignInboundUsers: failed to fill out_json for inbound %d: %v", inboundId, fillErr)
+	}
+
 	for _, client := range clients {
 		var currentInbounds []uint
 		json.Unmarshal(client.Inbounds, &currentInbounds)
@@ -401,7 +406,7 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 			}
 			newJson, _ := json.Marshal(newInbounds)
 			client.Inbounds = json.RawMessage(newJson)
-			
+
 			// Remove from Links
 			var clientLinks, newClientLinks []map[string]string
 			json.Unmarshal(client.Links, &clientLinks)
@@ -412,13 +417,13 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 			}
 			client.Links, _ = json.MarshalIndent(newClientLinks, "", "  ")
 			changed = true
-			
+
 		} else if !hasInbound && shouldHave {
 			// Add inbound to this client
 			currentInbounds = append(currentInbounds, uint(inboundId))
 			newJson, _ := json.Marshal(currentInbounds)
 			client.Inbounds = json.RawMessage(newJson)
-			
+
 			// Add to Links
 			var clientLinks []map[string]string
 			json.Unmarshal(client.Links, &clientLinks)
@@ -433,7 +438,7 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 			client.Links, _ = json.MarshalIndent(clientLinks, "", "  ")
 			changed = true
 		}
-		
+
 		if changed {
 			db.Save(&client)
 		}
@@ -519,79 +524,79 @@ func (a *ApiService) LinkConvert(c *gin.Context) {
 func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
 	hostname := getHostname(c)
 	links := c.Request.FormValue("links")
-	
+
 	// Split links by newline
 	lines := strings.Split(links, "\n")
-	
+
 	successCount := 0
 	failedLinks := []string{}
-	
+
 	db := database.GetDB()
 	tx := db.Begin()
-	
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		
+
 		// Parse the link
 		outboundData, _, err := util.GetOutbound(line, i+1)
 		if err != nil {
 			failedLinks = append(failedLinks, line)
 			continue
 		}
-		
+
 		// Convert to JSON for saving
 		data, err := json.Marshal(outboundData)
 		if err != nil {
 			failedLinks = append(failedLinks, line)
 			continue
 		}
-		
+
 		// Save via ConfigService
 		_, err = a.ConfigService.Save("outbounds", "new", json.RawMessage(data), "", loginUser, hostname)
 		if err != nil {
 			failedLinks = append(failedLinks, line)
 			continue
 		}
-		
+
 		successCount++
 	}
-	
+
 	tx.Commit()
-	
+
 	result := map[string]interface{}{
 		"success":     successCount,
 		"failed":      len(failedLinks),
 		"failedLinks": failedLinks,
 	}
-	
+
 	jsonObj(c, result, nil)
 }
 
 func (a *ApiService) BatchDelete(c *gin.Context, loginUser string) {
 	hostname := getHostname(c)
 	tagsStr := c.Request.FormValue("tags")
-	
+
 	if tagsStr == "" {
 		jsonMsg(c, "", fmt.Errorf("tags are required"))
 		return
 	}
-	
+
 	tags := strings.Split(tagsStr, ",")
 	successCount := 0
 	failedTags := []string{}
-	
+
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
 		if tag == "" {
 			continue
 		}
-		
+
 		// The 'del' action expects the data to be a JSON string of the tag
 		tagJson, _ := json.Marshal(tag)
-		
+
 		_, err := a.ConfigService.Save("outbounds", "del", json.RawMessage(tagJson), "", loginUser, hostname)
 		if err != nil {
 			failedTags = append(failedTags, tag)
@@ -599,13 +604,13 @@ func (a *ApiService) BatchDelete(c *gin.Context, loginUser string) {
 		}
 		successCount++
 	}
-	
+
 	result := map[string]interface{}{
-		"success":     successCount,
-		"failed":      len(failedTags),
-		"failedTags":  failedTags,
+		"success":    successCount,
+		"failed":     len(failedTags),
+		"failedTags": failedTags,
 	}
-	
+
 	jsonObj(c, result, nil)
 }
 
@@ -615,13 +620,13 @@ func (a *ApiService) TestNode(c *gin.Context) {
 		jsonMsg(c, "", fmt.Errorf("tag is required"))
 		return
 	}
-	
+
 	result, err := a.NodeTestService.TestOutbound(tag)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, result, nil)
 }
 
@@ -633,13 +638,13 @@ func (a *ApiService) TestAllNodes(c *gin.Context) {
 			concurrency = c
 		}
 	}
-	
+
 	results, err := a.NodeTestService.TestAllOutbounds(concurrency)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, results, nil)
 }
 
@@ -651,13 +656,13 @@ func (a *ApiService) TestAllNodesWithIP(c *gin.Context) {
 			concurrency = cv
 		}
 	}
-	
+
 	results, err := a.NodeTestService.TestAllAndSave(concurrency)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, results, nil)
 }
 
@@ -665,29 +670,29 @@ func (a *ApiService) TestSelectedNodes(c *gin.Context) {
 	concurrencyStr := c.Request.FormValue("concurrency")
 	tagsStr := c.Request.FormValue("tags")
 	concurrency := 50
-	
+
 	if concurrencyStr != "" {
 		if cv, err := strconv.Atoi(concurrencyStr); err == nil && cv > 0 {
 			concurrency = cv
 		}
 	}
-	
+
 	var tags []string
 	if tagsStr != "" {
 		tags = strings.Split(tagsStr, ",")
 	}
-	
+
 	if len(tags) == 0 {
 		jsonMsg(c, "", fmt.Errorf("tags are required"))
 		return
 	}
-	
+
 	results, err := a.NodeTestService.TestSelectedOutbounds(tags, concurrency)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, results, nil)
 }
 
@@ -695,45 +700,45 @@ func (a *ApiService) TestSelectedNodesWithIP(c *gin.Context) {
 	concurrencyStr := c.Request.FormValue("concurrency")
 	tagsStr := c.Request.FormValue("tags")
 	concurrency := 10 // Lower for IP lookup
-	
+
 	if concurrencyStr != "" {
 		if cv, err := strconv.Atoi(concurrencyStr); err == nil && cv > 0 {
 			concurrency = cv
 		}
 	}
-	
+
 	var tags []string
 	if tagsStr != "" {
 		tags = strings.Split(tagsStr, ",")
 	}
-	
+
 	if len(tags) == 0 {
 		jsonMsg(c, "", fmt.Errorf("tags are required"))
 		return
 	}
-	
+
 	results, err := a.NodeTestService.TestSelectedAndSave(tags, concurrency)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, results, nil)
 }
 
 func (a *ApiService) ExportOutbounds(c *gin.Context) {
 	tagsStr := c.Request.FormValue("tags")
-	
+
 	var tags []string
 	if tagsStr != "" {
 		tags = strings.Split(tagsStr, ",")
 	}
-	
+
 	if len(tags) == 0 {
 		jsonMsg(c, "", fmt.Errorf("tags are required"))
 		return
 	}
-	
+
 	db := database.GetDB()
 	var outbounds []model.Outbound
 	err := db.Where("tag IN ?", tags).Find(&outbounds).Error
@@ -741,7 +746,7 @@ func (a *ApiService) ExportOutbounds(c *gin.Context) {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	var links []string
 	for _, outbound := range outbounds {
 		// Convert to map
@@ -753,14 +758,14 @@ func (a *ApiService) ExportOutbounds(c *gin.Context) {
 		if err := json.Unmarshal(jsonData, &outMap); err != nil {
 			continue
 		}
-		
+
 		link, err := util.OutboundToLink(outMap)
 		if err != nil {
 			continue
 		}
 		links = append(links, link)
 	}
-	
+
 	jsonObj(c, links, nil)
 }
 
@@ -846,27 +851,27 @@ func (a *ApiService) AddSubscription(c *gin.Context) {
 	url := c.Request.FormValue("url")
 	updateMode := c.Request.FormValue("updateMode")
 	intervalStr := c.Request.FormValue("interval")
-	
+
 	if name == "" || url == "" {
 		jsonMsg(c, "", fmt.Errorf("name and url are required"))
 		return
 	}
-	
+
 	if updateMode == "" {
 		updateMode = "replace"
 	}
-	
+
 	interval := 0
 	if intervalStr != "" {
 		interval, _ = strconv.Atoi(intervalStr)
 	}
-	
+
 	subscription, err := a.SubscriptionService.Add(name, url, updateMode, interval)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, subscription, nil)
 }
 
@@ -877,55 +882,55 @@ func (a *ApiService) UpdateSubscription(c *gin.Context) {
 	updateMode := c.Request.FormValue("updateMode")
 	intervalStr := c.Request.FormValue("interval")
 	enabledStr := c.Request.FormValue("enabled")
-	
+
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		jsonMsg(c, "", fmt.Errorf("invalid id"))
 		return
 	}
-	
+
 	interval := 0
 	if intervalStr != "" {
 		interval, _ = strconv.Atoi(intervalStr)
 	}
-	
+
 	enabled := enabledStr == "true" || enabledStr == "1"
-	
+
 	err = a.SubscriptionService.Update(uint(id), name, url, updateMode, interval, enabled)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonMsg(c, "updated", nil)
 }
 
 func (a *ApiService) DeleteSubscription(c *gin.Context) {
 	idStr := c.Request.FormValue("id")
-	
+
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		jsonMsg(c, "", fmt.Errorf("invalid id"))
 		return
 	}
-	
+
 	err = a.SubscriptionService.Delete(uint(id))
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonMsg(c, "deleted", nil)
 }
 
 func (a *ApiService) RefreshSubscription(c *gin.Context) {
 	idsStr := c.Request.FormValue("ids")
-	
+
 	if idsStr == "" {
 		jsonMsg(c, "", fmt.Errorf("ids are required"))
 		return
 	}
-	
+
 	var ids []uint
 	for _, idStr := range strings.Split(idsStr, ",") {
 		id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 32)
@@ -933,18 +938,18 @@ func (a *ApiService) RefreshSubscription(c *gin.Context) {
 			ids = append(ids, uint(id))
 		}
 	}
-	
+
 	if len(ids) == 0 {
 		jsonMsg(c, "", fmt.Errorf("no valid ids provided"))
 		return
 	}
-	
+
 	results, err := a.SubscriptionService.RefreshMultiple(ids)
 	if err != nil {
 		jsonMsg(c, "", err)
 		return
 	}
-	
+
 	jsonObj(c, results, nil)
 }
 

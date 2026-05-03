@@ -223,6 +223,11 @@ func hysteriaLink(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
+	// userConfig may be nil when the client has no hysteria credentials configured
+	if userConfig == nil {
+		return []string{}
+	}
+
 	baseUri := "hysteria://"
 	var links []string
 
@@ -248,15 +253,12 @@ func hysteriaLink(
 		} else {
 			params = append(params, LinkParam{"fastopen", "0"})
 		}
-		var outJson map[string]interface{}
-		if outRaw, ok := inbound["out_json"].(json.RawMessage); ok && len(outRaw) >= 2 {
-			_ = json.Unmarshal(outRaw, &outJson)
-		}
+		outJson := extractOutJson(inbound["out_json"])
 		if outJson != nil {
 			if mport, ok := outJson["server_ports"].([]interface{}); ok {
 				mportList := make([]string, len(mport))
 				for i, v := range mport {
-					mportList[i] = v.(string)
+					mportList[i] = fmt.Sprintf("%v", v)
 				}
 				params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 			}
@@ -270,10 +272,56 @@ func hysteriaLink(
 	return links
 }
 
+// extractOutJson safely extracts out_json from an inbound map regardless of
+// whether the value is stored as json.RawMessage, []byte, string, or already
+// a decoded map[string]interface{}.
+func extractOutJson(raw interface{}) map[string]interface{} {
+	if raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case map[string]interface{}:
+		return v
+	case json.RawMessage:
+		if len(v) < 2 {
+			return nil
+		}
+		var out map[string]interface{}
+		if err := json.Unmarshal(v, &out); err != nil {
+			return nil
+		}
+		return out
+	case []byte:
+		if len(v) < 2 {
+			return nil
+		}
+		var out map[string]interface{}
+		if err := json.Unmarshal(v, &out); err != nil {
+			return nil
+		}
+		return out
+	case string:
+		if len(v) < 2 {
+			return nil
+		}
+		var out map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &out); err != nil {
+			return nil
+		}
+		return out
+	}
+	return nil
+}
+
 func hysteria2Link(
 	userConfig map[string]interface{},
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
+
+	// userConfig may be nil when the client has no hysteria2 credentials configured
+	if userConfig == nil {
+		return []string{}
+	}
 
 	password, _ := userConfig["password"].(string)
 	baseUri := fmt.Sprintf("%s%s@", "hysteria2://", password)
@@ -303,15 +351,12 @@ func hysteria2Link(
 		} else {
 			params = append(params, LinkParam{"fastopen", "0"})
 		}
-		var outJson map[string]interface{}
-		if outRaw, ok := inbound["out_json"].(json.RawMessage); ok && len(outRaw) >= 2 {
-			_ = json.Unmarshal(outRaw, &outJson)
-		}
+		outJson := extractOutJson(inbound["out_json"])
 		if outJson != nil {
 			if mport, ok := outJson["server_ports"].([]interface{}); ok {
 				mportList := make([]string, len(mport))
 				for i, v := range mport {
-					mportList[i] = v.(string)
+					mportList[i] = fmt.Sprintf("%v", v)
 				}
 				params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 			}
@@ -351,6 +396,11 @@ func tuicLink(
 	userConfig map[string]interface{},
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
+
+	// userConfig may be nil when the client has no tuic credentials configured
+	if userConfig == nil {
+		return []string{}
+	}
 
 	password, _ := userConfig["password"].(string)
 	uuid, _ := userConfig["uuid"].(string)
