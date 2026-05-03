@@ -333,6 +333,7 @@ export default {
     mdOption: "多域名选项",
     reassignUsers: "重新分配用户",
     byGroup: "按用户组快速选择",
+    keepUsers: "保留原用户",
   },
   listen: {
     options: "监听选项",

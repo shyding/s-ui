@@ -333,6 +333,7 @@ export default {
     mdOption: "Multi Domain Options",
     reassignUsers: "Reassign Users",
     byGroup: "Quick Select by Group",
+    keepUsers: "Keep Original Users",
   },
   listen: {
     options: "Listen Options",

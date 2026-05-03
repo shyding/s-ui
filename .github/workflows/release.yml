@@ -110,11 +110,11 @@ jobs:
 
       - name: Upload to Release
         uses: svenstaro/upload-release-action@v2
-        if: github.event_name == 'release' && github.event.action == 'published'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref }}
           file: s-ui-linux-${{ matrix.platform }}.tar.gz
           asset_name: s-ui-linux-${{ matrix.platform }}.tar.gz
-          prerelease: true
+          tag: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+          release_name: ${{ github.ref_type == 'tag' && github.ref_name || 'Latest Build' }}
           overwrite: true
+          prerelease: ${{ github.ref_type != 'tag' }}

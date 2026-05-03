@@ -249,15 +249,17 @@ func hysteriaLink(
 			params = append(params, LinkParam{"fastopen", "0"})
 		}
 		var outJson map[string]interface{}
-		if err := json.Unmarshal(inbound["out_json"].(json.RawMessage), &outJson); err != nil {
-			return []string{} // Handle error
+		if outRaw, ok := inbound["out_json"].(json.RawMessage); ok && len(outRaw) >= 2 {
+			_ = json.Unmarshal(outRaw, &outJson)
 		}
-		if mport, ok := outJson["server_ports"].([]interface{}); ok {
-			mportList := make([]string, len(mport))
-			for i, v := range mport {
-				mportList[i] = v.(string)
+		if outJson != nil {
+			if mport, ok := outJson["server_ports"].([]interface{}); ok {
+				mportList := make([]string, len(mport))
+				for i, v := range mport {
+					mportList[i] = v.(string)
+				}
+				params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 			}
-			params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 		}
 
 		port, _ := addr["server_port"].(float64)
@@ -302,15 +304,17 @@ func hysteria2Link(
 			params = append(params, LinkParam{"fastopen", "0"})
 		}
 		var outJson map[string]interface{}
-		if err := json.Unmarshal(inbound["out_json"].(json.RawMessage), &outJson); err != nil {
-			return []string{} // Handle error
+		if outRaw, ok := inbound["out_json"].(json.RawMessage); ok && len(outRaw) >= 2 {
+			_ = json.Unmarshal(outRaw, &outJson)
 		}
-		if mport, ok := outJson["server_ports"].([]interface{}); ok {
-			mportList := make([]string, len(mport))
-			for i, v := range mport {
-				mportList[i] = v.(string)
+		if outJson != nil {
+			if mport, ok := outJson["server_ports"].([]interface{}); ok {
+				mportList := make([]string, len(mport))
+				for i, v := range mport {
+					mportList[i] = v.(string)
+				}
+				params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 			}
-			params = append(params, LinkParam{"mport", strings.Join(mportList, ",")})
 		}
 
 		port, _ := addr["server_port"].(float64)
