@@ -85,8 +85,9 @@ const Data = defineStore('Data', {
       }
       return msg.success
     },
-    async copyInbound(id: number, count: number): Promise<boolean> {
-      const msg = await HttpUtils.post('api/copyInbound', { id, count })
+    async copyInbound(id: number, count: number, keepUsers: boolean, clientIds?: number[]): Promise<boolean> {
+      let postData = { id, count, keepUsers: keepUsers ? 'true' : 'false', clientIds: clientIds?.join(',') ?? '' }
+      const msg = await HttpUtils.post('api/copyInbound', postData)
       if (msg.success) {
         push.success({
           title: i18n.global.t('success'),

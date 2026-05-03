@@ -39,6 +39,43 @@
           variant="outlined"
           hide-details
         ></v-text-field>
+        <div class="mt-3">
+          <v-checkbox
+            v-model="copyDialog.keepUsers"
+            :label="$t('in.keepUsers') || 'Keep Original Users'"
+            hide-details
+            density="compact"
+          ></v-checkbox>
+          <v-autocomplete
+            v-if="!copyDialog.keepUsers"
+            v-model="copyDialog.selectedClientIds"
+            :items="allClients"
+            item-title="name"
+            item-value="id"
+            :label="$t('pages.clients') || 'Clients'"
+            variant="outlined"
+            density="compact"
+            multiple
+            chips
+            closable-chips
+            clearable
+            hide-details
+            class="mt-2"
+          >
+            <template v-slot:item="{ item, props }">
+              <v-list-item v-bind="props">
+                <template v-slot:prepend="{ isActive }">
+                  <v-list-item-action start>
+                    <v-checkbox-btn :model-value="isActive"></v-checkbox-btn>
+                  </v-list-item-action>
+                </template>
+                <template v-slot:subtitle>
+                  <span v-if="(item.raw as any).group">{{ (item.raw as any).group }}</span>
+                </template>
+              </v-list-item>
+            </template>
+          </v-autocomplete>
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
@@ -452,10 +489,14 @@ const copyDialog = ref({
   visible: false,
   count: 1,
   loading: false,
+  keepUsers: true,
+  selectedClientIds: <number[]>[],
 })
 
 const showCopyDialog = () => {
   copyDialog.value.count = 1
+  copyDialog.value.keepUsers = true
+  copyDialog.value.selectedClientIds = []
   copyDialog.value.visible = true
 }
 
@@ -465,7 +506,7 @@ const doCopy = async () => {
   for (const tag of selectedTags.value) {
     const item = inbounds.value.find(i => i.tag === tag)
     if (!item) continue
-    await Data().copyInbound(item.id, copyDialog.value.count)
+    await Data().copyInbound(item.id, copyDialog.value.count, copyDialog.value.keepUsers, copyDialog.value.selectedClientIds)
   }
   
   copyDialog.value.loading = false

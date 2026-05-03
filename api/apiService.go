@@ -270,6 +270,8 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 	
 	idStr := c.Request.FormValue("id")
 	countStr := c.Request.FormValue("count")
+	keepUsersStr := c.Request.FormValue("keepUsers")
+	clientIdsStr := c.Request.FormValue("clientIds")
 	
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil || id == 0 {
@@ -310,16 +312,21 @@ func (a *ApiService) CopyInbound(c *gin.Context, loginUser string) {
 		
 		newData, _ := json.Marshal(*inbMap)
 		
-		var cIds []string
-		db := database.GetDB()
-		var clients []model.Client
-		// Search for clients that have this inbound ID in their `inbounds` JSON array
-		// Using JSON_EACH since sqlite is used
-		db.Raw("SELECT clients.id FROM clients, json_each(clients.inbounds) as je WHERE je.value = ?", id).Scan(&clients)
-		for _, client := range clients {
-			cIds = append(cIds, fmt.Sprintf("%d", client.Id))
+		initUserIds := ""
+		if keepUsersStr == "true" {
+			var cIds []string
+			db := database.GetDB()
+			var clients []model.Client
+			// Search for clients that have this inbound ID in their `inbounds` JSON array
+			// Using JSON_EACH since sqlite is used
+			db.Raw("SELECT clients.id FROM clients, json_each(clients.inbounds) as je WHERE je.value = ?", id).Scan(&clients)
+			for _, client := range clients {
+				cIds = append(cIds, fmt.Sprintf("%d", client.Id))
+			}
+			initUserIds = strings.Join(cIds, ",")
+		} else {
+			initUserIds = clientIdsStr
 		}
-		initUserIds := strings.Join(cIds, ",")
 
 		_, err = a.ConfigService.Save("inbounds", "new", json.RawMessage(newData), initUserIds, loginUser, hostname)
 		if err != nil {
@@ -361,6 +368,15 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 	var clients []model.Client
 	db.Find(&clients)
 
+	// Get the inbound
+	var inbound model.Inbound
+	if err := db.Preload("Tls").Where("id = ?", inboundId).First(&inbound).Error; err != nil {
+		jsonMsg(c, "", fmt.Errorf("inbound not found"))
+		return
+	}
+
+	hostname := getHostname(c)
+
 	for _, client := range clients {
 		var currentInbounds []uint
 		json.Unmarshal(client.Inbounds, &currentInbounds)
@@ -374,6 +390,7 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 		}
 		shouldHave := desiredIds[client.Id]
 
+		changed := false
 		if hasInbound && !shouldHave {
 			// Remove inbound from this client
 			newInbounds := []uint{}
@@ -383,12 +400,42 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 				}
 			}
 			newJson, _ := json.Marshal(newInbounds)
-			db.Model(&client).Update("inbounds", json.RawMessage(newJson))
+			client.Inbounds = json.RawMessage(newJson)
+			
+			// Remove from Links
+			var clientLinks, newClientLinks []map[string]string
+			json.Unmarshal(client.Links, &clientLinks)
+			for _, clientLink := range clientLinks {
+				if clientLink["remark"] != inbound.Tag {
+					newClientLinks = append(newClientLinks, clientLink)
+				}
+			}
+			client.Links, _ = json.MarshalIndent(newClientLinks, "", "  ")
+			changed = true
+			
 		} else if !hasInbound && shouldHave {
 			// Add inbound to this client
 			currentInbounds = append(currentInbounds, uint(inboundId))
 			newJson, _ := json.Marshal(currentInbounds)
-			db.Model(&client).Update("inbounds", json.RawMessage(newJson))
+			client.Inbounds = json.RawMessage(newJson)
+			
+			// Add to Links
+			var clientLinks []map[string]string
+			json.Unmarshal(client.Links, &clientLinks)
+			newLinks := util.LinkGenerator(client.Config, &inbound, hostname)
+			for _, newLink := range newLinks {
+				clientLinks = append(clientLinks, map[string]string{
+					"remark": inbound.Tag,
+					"type":   "local",
+					"uri":    newLink,
+				})
+			}
+			client.Links, _ = json.MarshalIndent(clientLinks, "", "  ")
+			changed = true
+		}
+		
+		if changed {
+			db.Save(&client)
 		}
 	}
 
