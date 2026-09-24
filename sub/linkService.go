@@ -23,23 +23,46 @@ type LinkService struct {
 func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool) []string {
 	links := []Link{}
 	var result []string
+	seen := make(map[string]bool)
 	err := json.Unmarshal(*linkJson, &links)
 	if err != nil {
 		return nil
 	}
 	for _, link := range links {
+		// Filter out obsolete/unsupported protocols that standard clients cannot import
+		if strings.HasPrefix(link.Uri, "http2://") {
+			continue
+		}
+		// Sanitize legacy unresolvable domains
+		cleanUri := strings.ReplaceAll(link.Uri, "dash.icta.qzz.io", "dash.icta.top")
+		cleanUri = strings.ReplaceAll(cleanUri, "sub.icta.qzz.io", "dash.icta.top")
+
 		switch link.Type {
 		case "external":
-			result = append(result, link.Uri)
+			if !seen[cleanUri] {
+				seen[cleanUri] = true
+				result = append(result, cleanUri)
+			}
 		case "sub":
-			result = append(result, s.getExternalSub(link.Uri)...)
+			for _, subLink := range s.getExternalSub(link.Uri) {
+				subLink = strings.ReplaceAll(subLink, "dash.icta.qzz.io", "dash.icta.top")
+				subLink = strings.ReplaceAll(subLink, "sub.icta.qzz.io", "dash.icta.top")
+				if !seen[subLink] {
+					seen[subLink] = true
+					result = append(result, subLink)
+				}
+			}
 		case "local":
 			if types == "all" {
 				// Prevent returning local links for inbounds the client is not currently authorized for
 				if allowedTags != nil && !allowedTags[link.Remark] {
 					continue
 				}
-				result = append(result, s.addClientInfo(link.Uri, clientInfo))
+				finalLink := s.addClientInfo(cleanUri, clientInfo)
+				if !seen[finalLink] {
+					seen[finalLink] = true
+					result = append(result, finalLink)
+				}
 			}
 		}
 	}

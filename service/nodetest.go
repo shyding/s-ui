@@ -81,7 +81,7 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 
 	if !isUDP {
 		start := time.Now()
-		address := fmt.Sprintf("%s:%d", server, port)
+		address := net.JoinHostPort(server, fmt.Sprintf("%d", port))
 		conn, err := net.DialTimeout("tcp", address, 10*time.Second)
 		if err != nil {
 			result.Available = false

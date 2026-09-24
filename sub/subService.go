@@ -47,6 +47,8 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 
 	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
 	result := strings.Join(linksArray, "\n")
+	result = strings.ReplaceAll(result, "dash.icta.qzz.io", "dash.icta.top")
+	result = strings.ReplaceAll(result, "sub.icta.qzz.io", "dash.icta.top")
 
 	headers := s.getClientHeaders(client)
 

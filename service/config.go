@@ -284,7 +284,11 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 		if err := json.Unmarshal(singboxConfig.Dns, &dnsMap); err == nil {
 			servers, _ := dnsMap["servers"].([]interface{})
 			if len(servers) == 0 {
-				dnsMap["servers"] = []map[string]string{{"tag": "local", "address": "local"}}
+				dnsMap["servers"] = []map[string]string{
+					{"tag": "remote", "address": "udp://8.8.8.8"},
+					{"tag": "cf", "address": "udp://1.1.1.1"},
+					{"tag": "local", "address": "local"},
+				}
 				if newDns, err := json.Marshal(dnsMap); err == nil {
 					singboxConfig.Dns = newDns
 					modified = true
