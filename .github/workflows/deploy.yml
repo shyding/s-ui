@@ -90,34 +90,6 @@ jobs:
             sudo mv /tmp/sui /usr/local/s-ui/sui
             sudo chmod +x /usr/local/s-ui/sui
 
-            # Sanitize s-ui.db config
-            sudo python3 -c '
-import sqlite3, json
-try:
-    conn = sqlite3.connect("/usr/local/s-ui/db/s-ui.db")
-    c = conn.cursor()
-    c.execute("SELECT value FROM settings WHERE key=\"config\"")
-    row = c.fetchone()
-    if row:
-        cfg = json.loads(row[0])
-        modified = False
-        if "route" in cfg and "rules" in cfg["route"]:
-            new_rules = [r for r in cfg["route"]["rules"] if r.get("action") != "hijack-dns"]
-            if len(new_rules) != len(cfg["route"]["rules"]):
-                cfg["route"]["rules"] = new_rules
-                modified = True
-        if "dns" in cfg:
-            if not cfg["dns"].get("servers"):
-                cfg["dns"]["servers"] = [{"tag": "local", "address": "local"}]
-                modified = True
-        if modified:
-            c.execute("UPDATE settings SET value=? WHERE key=\"config\"", (json.dumps(cfg, indent=2),))
-            conn.commit()
-            print("Successfully sanitized s-ui.db config in sqlite!")
-    conn.close()
-except Exception as e:
-    print("DB sanitize note:", e)
-'
             sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
 
             # Start s-ui service
