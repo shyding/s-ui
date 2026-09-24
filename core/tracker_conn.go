@@ -7,7 +7,6 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	"github.com/sagernet/sing/common/network"
 )
@@ -119,21 +118,15 @@ func (w *wrappedConn) Close() error {
 	return w.ExtendedConn.Close()
 }
 
-func (w *wrappedConn) CloseWrite() error {
-	if c, ok := common.Cast[network.WriteCloser](w.ExtendedConn); ok {
-		return c.CloseWrite()
-	}
-	return w.Close()
-}
-
-func (w *wrappedConn) CloseRead() error {
-	if c, ok := common.Cast[network.ReadCloser](w.ExtendedConn); ok {
-		return c.CloseRead()
-	}
-	return w.Close()
-}
-
 func (w *wrappedConn) Upstream() any {
+	return w.ExtendedConn
+}
+
+func (w *wrappedConn) UpstreamReader() any {
+	return w.ExtendedConn
+}
+
+func (w *wrappedConn) UpstreamWriter() any {
 	return w.ExtendedConn
 }
 
