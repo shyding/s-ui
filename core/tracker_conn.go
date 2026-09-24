@@ -125,10 +125,6 @@ func (w *wrappedConn) CloseRead() error {
 	return network.CloseRead(w.Conn)
 }
 
-func (w *wrappedConn) NeedAdditionalReadDeadline() bool {
-	return network.NeedAdditionalReadDeadline(w.Conn)
-}
-
 func (w *wrappedConn) Upstream() any {
 	return w.Conn
 }
