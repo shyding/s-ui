@@ -22,19 +22,18 @@ var defaultConfig = `{
     "level": "info"
   },
   "dns": {
-    "servers": [],
+    "servers": [
+      {
+        "tag": "local",
+        "address": "local"
+      }
+    ],
     "rules": []
   },
   "route": {
     "rules": [
-		  {
-        "action": "sniff"
-      },
       {
-        "protocol": [
-          "dns"
-        ],
-        "action": "hijack-dns"
+        "action": "sniff"
       }
     ]
   },

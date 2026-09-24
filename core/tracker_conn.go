@@ -117,8 +117,28 @@ func (w *wrappedConn) Close() error {
 	return w.Conn.Close()
 }
 
+func (w *wrappedConn) CloseWrite() error {
+	return network.CloseWrite(w.Conn)
+}
+
+func (w *wrappedConn) CloseRead() error {
+	return network.CloseRead(w.Conn)
+}
+
+func (w *wrappedConn) NeedAdditionalReadDeadline() bool {
+	return network.NeedAdditionalReadDeadline(w.Conn)
+}
+
 func (w *wrappedConn) Upstream() any {
 	return w.Conn
+}
+
+func (w *wrappedConn) ReaderReplaceable() bool {
+	return true
+}
+
+func (w *wrappedConn) WriterReplaceable() bool {
+	return true
 }
 
 type wrappedPacketConn struct {
@@ -133,4 +153,12 @@ func (w *wrappedPacketConn) Close() error {
 
 func (w *wrappedPacketConn) Upstream() any {
 	return w.PacketConn
+}
+
+func (w *wrappedPacketConn) ReaderReplaceable() bool {
+	return true
+}
+
+func (w *wrappedPacketConn) WriterReplaceable() bool {
+	return true
 }
