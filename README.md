@@ -55,6 +55,7 @@
   - [03. 客户端适配: Xray Fragment (TLS分片) 与 UDP/QUIC 的底层冲突铁律](docs/knowledge_base/03_client_xray_fragment_vs_quic.md)
   - [04. 域名解析: 服务端公共递归 DNS 回退与机房防污染](docs/knowledge_base/04_dns_public_resolver_fallback.md)
   - [05. 传输加速: 宿主机 Google BBR 与 TCP 缓冲区调优](docs/knowledge_base/05_server_bbr_tcp_tuning.md)
+  - [06. 域名迁移与证书运维: Cloudflare 526 根因与 80 端口冲突排查](docs/knowledge_base/06_domain_migration_and_ssl_526.md)
 
 ## Default Installation Information
 - Panel Port: 2095

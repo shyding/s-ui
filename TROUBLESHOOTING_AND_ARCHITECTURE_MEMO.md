@@ -66,6 +66,19 @@
 
 ---
 
+### 5. 域名迁移、Cloudflare 526 证书故障与 80 端口冲突排查
+- **历史演进**: 由旧域名 `dash.icta.qzz.io` 全面迁移至现行域名 `dash.icta.top`。
+- **Cloudflare 526 根因**: 
+  - 当 Cloudflare 开启 **Full (Strict)** 严格加密时，源站出示的证书必须为受信任公共 CA 签发且**匹配当前域名 `dash.icta.top`**。若源站残留旧域名证书或自签名证书，Cloudflare 回源校验失败即报 526 错误。
+- **acme.sh 80 端口冲突**:
+  - `acme.sh --standalone` 模式需占用本地 `0.0.0.0:80` 端口响应 Let's Encrypt 挑战。若 Nginx 正在运行，签发会报错阻断。
+  - **标准操作**: 先停止 Nginx 释放 80 端口 (`systemctl stop nginx` 或 `fuser -k 80/tcp`) ➡️ 完成签发与证书安装 ➡️ 恢复 Nginx。
+- **Cloudflare 端口兼容性准则**:
+  - Cloudflare CDN (小黄云 Proxy) 仅支持部分特定 HTTPS 端口（如 2053 面板端口、2096 订阅端口）。
+  - 其余节点自定义端口（如 8444、45378、57295 等）必须保持 **DNS Only (灰云直连)**，不可开启 CDN 代理。
+
+---
+
 ## 二、客户端 (v2rayN) 关键排错与避坑准则
 
 ### 1. “真连接测速有绿色延迟，但设为活动服务器后打不开网页” 的根本原因

@@ -14,6 +14,8 @@
   - 阐述 `sanitizeConfig` 注入公共 DNS (`8.8.8.8` / `1.1.1.1`) 的机制与必要性。
 - [05. 传输加速: 宿主机 Google BBR 与 TCP 缓冲区调优](05_server_bbr_tcp_tuning.md)
   - 阐述 16MB TCP 缓冲区与 FQ + BBR 算法的生产配置。
+- [06. 域名迁移与证书运维: Cloudflare 526 根因与 80 端口冲突排查](06_domain_migration_and_ssl_526.md)
+  - 阐述历史旧域名迁移全链路避坑、acme.sh 独立签发与 80 端口释放、以及 Cloudflare 端口兼容性准则。
 
 ---
 
