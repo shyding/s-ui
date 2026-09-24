@@ -19,6 +19,24 @@
 
 ---
 
+## 源码模块配套技术文档 (Source-Adjacent Module Guides)
+
+直接与业务源码同目录存放的架构规范文档：
+- [`../../core/README.md`](../../core/README.md): Sing-Box 核心生命周期、连接追踪包装器与半关闭（Half-Close）约束。
+- [`../../sub/README.md`](../../sub/README.md): 订阅聚合引擎、域名清洗流水线、非标协议过滤与客户端内核冲突。
+- [`../../service/README.md`](../../service/README.md): 配置合规检查、公共 DNS 回退注入、TLS 证书与 Cloudflare CDN 运维约束。
+
+---
+
+## AI 研发指引 (AI Assistant Guidelines)
+
+专为 Claude Code、OpenAI Codex 等自动化编码智能体建立的项目记忆与铁律规范：
+- [`../../CLAUDE.md`](../../CLAUDE.md): Claude Code 官方规范指引。
+- [`../../CODEX.md`](../../CODEX.md): OpenAI Codex 运行态与研发铁律规范。
+- [`../../AGENTS.md`](../../AGENTS.md): 通用多智能体研发操作手册。
+
+---
+
 ## 快速回顾总览
 
 完整全景备忘录可参考项目根目录的：[`../../TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md`](../../TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)。

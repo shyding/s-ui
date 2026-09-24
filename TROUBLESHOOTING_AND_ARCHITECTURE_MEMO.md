@@ -115,3 +115,19 @@
 | **TUIC** | `tuic-57142 ♾` | 57142 | **sing-box** | ✅ 200 OK |
 | **TUIC** | `tuic-8445 ♾` | 8445 | **sing-box** | ✅ 200 OK |
 | **TUIC** | `tuic-55656 ♾` | 55656 | **sing-box** | ✅ 200 OK |
+
+---
+
+## 四、源码配套文档与 AI 智能体研发铁律索引 (Source Docs & AI Guides)
+
+为了确保后续由 **Claude (Claude Code)**、**Codex (OpenAI Codex)**、或人类开发者接手时能够即时获知全部架构约束与致命雷区，特建立源码级与智能体级文档体系：
+
+1. **AI 智能体指导手册**：
+   - [`CLAUDE.md`](CLAUDE.md): Claude Code 自动化工程接入指南、构建命令与致命避坑铁律。
+   - [`CODEX.md`](CODEX.md): OpenAI Codex 运行态规范、零存根准则与配置防错准则。
+   - [`AGENTS.md`](AGENTS.md): 通用多智能体操作手册与模块约束总表。
+2. **源码模块配套技术文档**：
+   - [`core/README.md`](core/README.md): Sing-Box 核心生命周期、连接追踪包装器与半关闭（Half-Close）约束。
+   - [`sub/README.md`](sub/README.md): 订阅聚合引擎、域名清洗流水线、非标协议过滤与客户端内核冲突。
+   - [`service/README.md`](service/README.md): 配置合规检查、公共 DNS 回退注入、TLS 证书与 Cloudflare CDN 运维约束。
+

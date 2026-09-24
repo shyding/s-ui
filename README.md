@@ -46,10 +46,18 @@
 
 [API-Documentation Wiki](https://github.com/alireza0/s-ui/wiki/API-Documentation)
 
-## Engineering Knowledge Base & Troubleshooting (核心知识库与排障备忘)
+## Engineering Knowledge Base & AI Agent Guidelines (核心知识库与 AI 指引)
 
-- 📘 [故障排查与架构调优备忘录 (All-in-One Memo)](TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)
-- 📚 [S-UI 核心工程知识库目录 (Docs Knowledge Base)](docs/knowledge_base/README.md)
+- 🤖 **AI Assistant Guides & Invariants (AI 研发指引)**:
+  - [Claude Code Guide (CLAUDE.md)](CLAUDE.md)
+  - [OpenAI Codex Guide (CODEX.md)](CODEX.md)
+  - [Autonomous Agent Handbook (AGENTS.md)](AGENTS.md)
+- 📂 **Source Module Technical Documentation (源码配套技术文档)**:
+  - [Core Module Architecture & Half-Close Rules (core/README.md)](core/README.md)
+  - [Subscription Pipeline & Sanitization Rules (sub/README.md)](sub/README.md)
+  - [Service Logic, DNS Fallback & TLS Ops (service/README.md)](service/README.md)
+- 📘 [故障排查与架构调优备忘录 (All-in-One Master Memo)](TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)
+- 📚 [S-UI 核心工程知识库深度解析 (Docs Knowledge Base)](docs/knowledge_base/README.md)
   - [01. 核心流控制: VMess/WebSocket 单向半关闭阻塞修复](docs/knowledge_base/01_core_stream_halfclose.md)
   - [02. 订阅系统: 历史死域名动态重定向与非标协议过滤](docs/knowledge_base/02_subscription_domain_sanitization.md)
   - [03. 客户端适配: Xray Fragment (TLS分片) 与 UDP/QUIC 的底层冲突铁律](docs/knowledge_base/03_client_xray_fragment_vs_quic.md)
