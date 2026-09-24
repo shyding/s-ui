@@ -46,6 +46,16 @@
 
 [API-Documentation Wiki](https://github.com/alireza0/s-ui/wiki/API-Documentation)
 
+## Engineering Knowledge Base & Troubleshooting (核心知识库与排障备忘)
+
+- 📘 [故障排查与架构调优备忘录 (All-in-One Memo)](TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)
+- 📚 [S-UI 核心工程知识库目录 (Docs Knowledge Base)](docs/knowledge_base/README.md)
+  - [01. 核心流控制: VMess/WebSocket 单向半关闭阻塞修复](docs/knowledge_base/01_core_stream_halfclose.md)
+  - [02. 订阅系统: 历史死域名动态重定向与非标协议过滤](docs/knowledge_base/02_subscription_domain_sanitization.md)
+  - [03. 客户端适配: Xray Fragment (TLS分片) 与 UDP/QUIC 的底层冲突铁律](docs/knowledge_base/03_client_xray_fragment_vs_quic.md)
+  - [04. 域名解析: 服务端公共递归 DNS 回退与机房防污染](docs/knowledge_base/04_dns_public_resolver_fallback.md)
+  - [05. 传输加速: 宿主机 Google BBR 与 TCP 缓冲区调优](docs/knowledge_base/05_server_bbr_tcp_tuning.md)
+
 ## Default Installation Information
 - Panel Port: 2095
 - Panel Path: /app/
