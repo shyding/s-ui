@@ -58,6 +58,19 @@ func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
 		return nil, err
 	}
 
+	if s.sanitizeConfig(&singboxConfig) {
+		cleanData := map[string]json.RawMessage{
+			"log":          singboxConfig.Log,
+			"dns":          singboxConfig.Dns,
+			"ntp":          singboxConfig.Ntp,
+			"route":        singboxConfig.Route,
+			"experimental": singboxConfig.Experimental,
+		}
+		if raw, err := json.Marshal(cleanData); err == nil {
+			_ = s.SettingService.SaveConfig(database.GetDB(), raw)
+		}
+	}
+
 	singboxConfig.Inbounds, err = s.InboundService.GetAllConfig(database.GetDB())
 	if err != nil {
 		return nil, err
@@ -230,4 +243,54 @@ func (s *ConfigService) GetChanges(actor string, chngKey string, count string) [
 		logger.Warning(err)
 	}
 	return chngs
+}
+
+func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
+	modified := false
+	if len(singboxConfig.Route) > 0 {
+		var routeMap map[string]interface{}
+		if err := json.Unmarshal(singboxConfig.Route, &routeMap); err == nil {
+			if rules, ok := routeMap["rules"].([]interface{}); ok {
+				newRules := make([]interface{}, 0, len(rules))
+				hasSniff := false
+				for _, r := range rules {
+					if rMap, ok := r.(map[string]interface{}); ok {
+						action, _ := rMap["action"].(string)
+						if action == "hijack-dns" {
+							modified = true
+							continue
+						}
+						if action == "sniff" {
+							hasSniff = true
+						}
+						newRules = append(newRules, r)
+					}
+				}
+				if !hasSniff {
+					newRules = append([]interface{}{map[string]interface{}{"action": "sniff"}}, newRules...)
+					modified = true
+				}
+				if modified {
+					routeMap["rules"] = newRules
+					if newRoute, err := json.Marshal(routeMap); err == nil {
+						singboxConfig.Route = newRoute
+					}
+				}
+			}
+		}
+	}
+	if len(singboxConfig.Dns) > 0 {
+		var dnsMap map[string]interface{}
+		if err := json.Unmarshal(singboxConfig.Dns, &dnsMap); err == nil {
+			servers, _ := dnsMap["servers"].([]interface{})
+			if len(servers) == 0 {
+				dnsMap["servers"] = []map[string]string{{"tag": "local", "address": "local"}}
+				if newDns, err := json.Marshal(dnsMap); err == nil {
+					singboxConfig.Dns = newDns
+					modified = true
+				}
+			}
+		}
+	}
+	return modified
 }

@@ -7,6 +7,8 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing/common"
+	"github.com/sagernet/sing/common/bufio"
 	"github.com/sagernet/sing/common/network"
 )
 
@@ -95,8 +97,8 @@ func (c *ConnTracker) untrackConnection(connID string) {
 
 func (c *ConnTracker) createWrappedConn(conn net.Conn, connID string) *wrappedConn {
 	return &wrappedConn{
-		Conn:   conn,
-		connID: connID,
+		ExtendedConn: bufio.NewExtendedConn(conn),
+		connID:       connID,
 	}
 }
 
@@ -108,25 +110,31 @@ func (c *ConnTracker) createWrappedPacketConn(conn network.PacketConn, connID st
 }
 
 type wrappedConn struct {
-	net.Conn
+	network.ExtendedConn
 	connID string
 }
 
 func (w *wrappedConn) Close() error {
 	connTracker.untrackConnection(w.connID)
-	return w.Conn.Close()
+	return w.ExtendedConn.Close()
 }
 
 func (w *wrappedConn) CloseWrite() error {
-	return network.CloseWrite(w.Conn)
+	if c, ok := common.Cast[network.WriteCloser](w.ExtendedConn); ok {
+		return c.CloseWrite()
+	}
+	return w.Close()
 }
 
 func (w *wrappedConn) CloseRead() error {
-	return network.CloseRead(w.Conn)
+	if c, ok := common.Cast[network.ReadCloser](w.ExtendedConn); ok {
+		return c.CloseRead()
+	}
+	return w.Close()
 }
 
 func (w *wrappedConn) Upstream() any {
-	return w.Conn
+	return w.ExtendedConn
 }
 
 func (w *wrappedConn) ReaderReplaceable() bool {
