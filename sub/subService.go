@@ -31,7 +31,20 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 		clientInfo = s.getClientInfo(client)
 	}
 
-	linksArray := s.LinkService.GetLinks(&client.Links, "all", clientInfo)
+	var clientInbounds []uint
+	_ = json.Unmarshal(client.Inbounds, &clientInbounds)
+
+	allowedTags := make(map[string]bool)
+	if len(clientInbounds) > 0 {
+		var activeTags []string
+		db := database.GetDB()
+		db.Model(&model.Inbound{}).Where("id in ?", clientInbounds).Pluck("tag", &activeTags)
+		for _, tag := range activeTags {
+			allowedTags[tag] = true
+		}
+	}
+
+	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
 	result := strings.Join(linksArray, "\n")
 
 	headers := s.getClientHeaders(client)

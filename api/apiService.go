@@ -382,6 +382,8 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 		logger.Warningf("ReassignInboundUsers: failed to fill out_json for inbound %d: %v", inboundId, fillErr)
 	}
 
+	tx := db.Begin()
+	anyChanged := false
 	for _, client := range clients {
 		var currentInbounds []uint
 		json.Unmarshal(client.Inbounds, &currentInbounds)
@@ -440,8 +442,26 @@ func (a *ApiService) ReassignInboundUsers(c *gin.Context, loginUser string) {
 		}
 
 		if changed {
-			db.Save(&client)
+			anyChanged = true
+			if err := tx.Save(&client).Error; err != nil {
+				tx.Rollback()
+				jsonMsg(c, "reassign", err)
+				return
+			}
 		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		jsonMsg(c, "reassign", err)
+		return
+	}
+
+	if anyChanged {
+		// Hot-reload this inbound in sing-box so that added/removed users take effect immediately in memory without restarting sing-box
+		if err := a.InboundService.RestartInbounds(db, []uint{uint(inboundId)}); err != nil {
+			logger.Warningf("ReassignInboundUsers: failed to hot-reload inbound %d: %v", inboundId, err)
+		}
+		service.LastUpdate = time.Now().Unix()
 	}
 
 	err = a.LoadPartialData(c, []string{"clients", "inbounds"})

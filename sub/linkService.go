@@ -20,7 +20,7 @@ type Link struct {
 type LinkService struct {
 }
 
-func (s *LinkService) GetLinks(linkJson *json.RawMessage, types string, clientInfo string) []string {
+func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool) []string {
 	links := []Link{}
 	var result []string
 	err := json.Unmarshal(*linkJson, &links)
@@ -35,11 +35,19 @@ func (s *LinkService) GetLinks(linkJson *json.RawMessage, types string, clientIn
 			result = append(result, s.getExternalSub(link.Uri)...)
 		case "local":
 			if types == "all" {
+				// Prevent returning local links for inbounds the client is not currently authorized for
+				if allowedTags != nil && !allowedTags[link.Remark] {
+					continue
+				}
 				result = append(result, s.addClientInfo(link.Uri, clientInfo))
 			}
 		}
 	}
 	return result
+}
+
+func (s *LinkService) GetLinks(linkJson *json.RawMessage, types string, clientInfo string) []string {
+	return s.GetAuthorizedLinks(linkJson, types, clientInfo, nil)
 }
 
 func (s *LinkService) addClientInfo(uri string, clientInfo string) string {
