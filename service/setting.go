@@ -22,24 +22,12 @@ var defaultConfig = `{
     "level": "info"
   },
   "dns": {
-    "servers": [
-      {
-        "tag": "dns-google",
-        "address": "8.8.8.8",
-        "detour": "direct"
-      },
-      {
-        "tag": "dns-cloudflare",
-        "address": "1.1.1.1",
-        "detour": "direct"
-      }
-    ],
-    "strategy": "prefer_ipv4"
+    "servers": [],
+    "rules": []
   },
   "route": {
-    "auto_detect_interface": true,
     "rules": [
-      {
+		  {
         "action": "sniff"
       },
       {
