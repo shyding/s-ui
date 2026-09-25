@@ -51,6 +51,9 @@ func DerivePassword(basePass string, regionCode string) string {
 
 // WireGuardConf holds parsed data from a standard WireGuard .conf file
 type WireGuardConf struct {
+	Name       string   `json:"name,omitempty"`
+	Country    string   `json:"country,omitempty"`
+	Load       int      `json:"load,omitempty"`
 	PrivateKey string   `json:"private_key"`
 	Address    []string `json:"address"`
 	DNS        []string `json:"dns,omitempty"`

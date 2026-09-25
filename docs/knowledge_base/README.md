@@ -20,6 +20,8 @@
   - 阐述利用 WARP 端点构建专属节点（100% 洁净新加坡出口）的完整配置闭环、gVisor 用户态模式及三大避坑铁律。
 - [08. 出口编排: 单端口·单用户·传参动态切国与 ProtonVPN 自动负载](08_single_port_parameterized_egress_protonvpn.md)
   - 阐述单端口 (2096) 多凭证确定性派生分发、ProtonVPN WireGuard 用户态节点与 URLTest 自动竞速容灾池架构。
+- [09. 自动收割: ProtonVPN 模拟浏览器全自动节点收割器与免人工干预入站出口编排系统](09_protonvpn_automated_browser_harvester.md)
+  - 阐述彻底舍弃手动输入 Token/Cookie 后，基于 Playwright 的模拟浏览器自动化收割、纯 Go SQLite 全平台驱动、本地目录秒级导入与单用户流量记账闭环。
 
 ---
 

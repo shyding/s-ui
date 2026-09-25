@@ -987,3 +987,96 @@ func (a *ApiService) GetSubscriptionNodes(c *gin.Context) {
 	}
 	jsonObj(c, nodes, nil)
 }
+
+func (a *ApiService) ProtonPull(c *gin.Context, loginUser string) {
+	type ProtonPullReq struct {
+		Token      string   `json:"token"`
+		UID        string   `json:"uid"`
+		PrivateKey string   `json:"private_key"`
+		Countries  []string `json:"countries"`
+	}
+	var req ProtonPullReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+
+	servers, err := service.FetchProtonLogicalServers(req.Token, req.UID, "linux-vpn@4.14.1")
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+
+	freeServers := service.FilterFreeLogicalServers(servers, req.Countries...)
+	if len(freeServers) == 0 {
+		jsonMsg(c, "No free ProtonVPN servers found for the requested countries", nil)
+		return
+	}
+
+	privKey := req.PrivateKey
+	if privKey == "" {
+		priv, _, err := service.GenerateNewWireGuardKeyPair()
+		if err == nil {
+			privKey = priv
+		}
+	}
+
+	configs := service.ConvertToWireGuardConfigs(freeServers, privKey, nil)
+	db := database.GetDB()
+
+	countryMap := make(map[string][]*service.WireGuardConf)
+	for _, conf := range configs {
+		countryMap[conf.Country] = append(countryMap[conf.Country], conf)
+	}
+
+	totalImported := 0
+	for country, cConfigs := range countryMap {
+		count, _ := service.BatchImportWireGuardToSUI(db, cConfigs, country)
+		totalImported += count
+	}
+
+	_ = a.ConfigService.RestartCore()
+	jsonMsg(c, fmt.Sprintf("Successfully pulled and imported %d ProtonVPN free nodes", totalImported), nil)
+}
+
+func (a *ApiService) ProtonImportDir(c *gin.Context, loginUser string) {
+	type ImportDirReq struct {
+		Directory string `json:"directory"`
+	}
+	var req ImportDirReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+
+	db := database.GetDB()
+	results, err := service.ScanAndImportProtonDirectory(db, req.Directory)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+
+	_ = a.ConfigService.RestartCore()
+	jsonObj(c, results, nil)
+}
+
+func (a *ApiService) ProtonAutoHarvest(c *gin.Context, loginUser string) {
+	type AutoHarvestReq struct {
+		Headless  bool     `json:"headless"`
+		Countries []string `json:"countries"`
+	}
+	var req AutoHarvestReq
+	_ = c.ShouldBindJSON(&req)
+
+	db := database.GetDB()
+	count, msg, err := service.HarvestProtonNodesViaBrowser(db, req.Headless, "", req.Countries...)
+	if err != nil {
+		jsonMsg(c, msg, err)
+		return
+	}
+
+	_ = a.ConfigService.RestartCore()
+	jsonMsg(c, fmt.Sprintf("%s (%d nodes)", msg, count), nil)
+}
+
+

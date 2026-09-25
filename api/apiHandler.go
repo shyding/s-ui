@@ -54,6 +54,12 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.LinkConvert(c)
 	case "batchImport":
 		a.ApiService.BatchImport(c, loginUser)
+	case "protonPull":
+		a.ApiService.ProtonPull(c, loginUser)
+	case "protonImportDir":
+		a.ApiService.ProtonImportDir(c, loginUser)
+	case "protonAutoHarvest":
+		a.ApiService.ProtonAutoHarvest(c, loginUser)
 	case "testNode":
 		a.ApiService.TestNode(c)
 	case "testAllNodes":

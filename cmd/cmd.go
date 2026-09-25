@@ -46,6 +46,7 @@ func ParseCmd() {
 		fmt.Println("    uri            Show panel URI")
 		fmt.Println("    migrate        migrate form older version")
 		fmt.Println("    setting        set/reset/show settings")
+		fmt.Println("    proton         pull/import ProtonVPN WireGuard nodes (-import-dir or -token)")
 		fmt.Println()
 		adminCmd.Usage()
 		fmt.Println()
@@ -105,6 +106,24 @@ func ParseCmd() {
 			updateSetting(port, path, subPort, subPath)
 			showSetting()
 		}
+	case "proton":
+		protonCmd := flag.NewFlagSet("proton", flag.ExitOnError)
+		var importDir string
+		var token string
+		var uid string
+		var privKey string
+		var countries string
+		var browser bool
+		var auto bool
+		protonCmd.StringVar(&importDir, "import-dir", "", "path to directory with .conf files")
+		protonCmd.StringVar(&token, "token", "", "ProtonVPN session token")
+		protonCmd.StringVar(&uid, "uid", "", "ProtonVPN user UID")
+		protonCmd.StringVar(&privKey, "privkey", "", "client WireGuard private key")
+		protonCmd.StringVar(&countries, "countries", "US,JP,NL", "comma-separated country codes")
+		protonCmd.BoolVar(&browser, "browser", false, "launch simulated browser to log in and harvest nodes")
+		protonCmd.BoolVar(&auto, "auto", false, "silent background harvest using saved browser session")
+		_ = protonCmd.Parse(os.Args[2:])
+		runProtonCmd(importDir, token, uid, privKey, countries, browser, auto)
 	default:
 		fmt.Println("Invalid subcommands")
 		flag.Usage()

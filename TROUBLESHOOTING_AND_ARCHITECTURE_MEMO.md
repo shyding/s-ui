@@ -148,6 +148,7 @@
 3. **模块化知识库深度专题**：
    - [`docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md`](docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md): Cloudflare WARP 专用入站绑定与洁净落地架构实战。
    - [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md): 单端口·单用户·传参动态切国与 ProtonVPN 自动负载架构实战指南。
+   - [`docs/knowledge_base/09_protonvpn_automated_browser_harvester.md`](docs/knowledge_base/09_protonvpn_automated_browser_harvester.md): ProtonVPN 模拟浏览器全自动节点收割器与免人工干预入站出口编排系统。
 
 ---
 
@@ -160,6 +161,13 @@
 4. **ProtonVPN 节点群与 URLTest 自动负载容灾**：
    - 官方 WireGuard 配置（如 `US-FREE#9`, `US-FREE#53`, `US-FREE#3`）以纯用户态（`system: false`）运行在 gVisor 中。
    - 编排为 `us-pool` URLTest 自动竞速组（3分钟周期测速），自动剔除拥塞/断流节点，智能切换至最低延迟物理节点。
+5. **彻底舍弃手动 Token/Cookie 方案，全面采用模拟浏览器自动化收割**：
+   - 交互展现模式：`sui proton -browser`（自动拉起可视化 Chrome 窗口，支持密码管理器，用户完成一次认证即终身免登录）。
+   - 静默后台模式：`sui proton -auto`（无头模式利用持久会话 `~/.sui_proton_profile` 自动抓取最新节点并编排入库）。
+   - 递归目录秒级导入：`sui proton -import-dir`（正则严格匹配 `(US|JP|NL|SG)` 边界，根绝 `Downloads` 子串误识别）。
+6. **跨平台纯 Go SQLite 驱动 (`github.com/glebarez/sqlite`)**：
+   - 消除 CGO 依赖，在全平台保障无 GCC 环境下的编译、测试与运行稳定性。
+
 
 
 

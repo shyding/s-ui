@@ -58,6 +58,14 @@
   4. User traffic statistics must strip region suffixes (`-us`, `-jp`, `-nl`) and roll up 100% to the root user `admin`.
 - **Reference**: See [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md).
 
+### Rule 7: Zero Manual Token/Cookie Copying & Simulated Browser Automation
+- **Constraint**:
+  1. **Strictly Forbidden**: Asking users to manually inspect DevTools (F12) to copy-paste Bearer tokens or Cookies is prohibited.
+  2. **Automated Harvesting**: Use Playwright browser automation (`scripts/proton_harvester.py`) with dedicated isolated profile (`~/.sui_proton_profile`).
+  3. **Interactive & Background Modes**: `sui proton -browser` displays Chrome for one-click authentication; `sui proton -auto` executes background headless node refreshes.
+  4. **Pure Go SQLite**: Use `github.com/glebarez/sqlite` to maintain 100% CGO-free portability across Windows and Linux.
+- **Reference**: See [`docs/knowledge_base/09_protonvpn_automated_browser_harvester.md`](docs/knowledge_base/09_protonvpn_automated_browser_harvester.md).
+
 ---
 
 ## 3. Build & CI/CD Guardrails

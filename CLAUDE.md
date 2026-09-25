@@ -121,8 +121,11 @@ i:\learn_code\s-ui\
 │   ├── egress_multiplex.go       # Egress multiplexing, UUIDv5 & WireGuard parser
 │   ├── inbounds.go               # Inbound protocol handlers & derived user expansion
 │   ├── nodetest.go               # Latency & landing IP testing
+│   ├── proton_api.go             # Proton API fetcher & automated browser caller
 │   ├── stats.go                  # User traffic aggregation & rollup
 │   └── tls.go                    # Certificate management
+├── scripts/
+│   └── proton_harvester.py       # Playwright automated browser harvester (Zero manual copy-paste)
 └── docs/knowledge_base/          # Modular deep-dive architectural records
     ├── 01_core_stream_halfclose.md
     ├── 02_subscription_domain_sanitization.md
@@ -132,6 +135,7 @@ i:\learn_code\s-ui\
     ├── 06_domain_migration_and_ssl_526.md
     ├── 07_cloudflare_warp_dedicated_egress.md
     ├── 08_single_port_parameterized_egress_protonvpn.md
+    ├── 09_protonvpn_automated_browser_harvester.md
     └── README.md
 ```
 
