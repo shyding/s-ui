@@ -1,5 +1,5 @@
 name: Deploy to Ubuntu Server
-# Trigger redeploy: 2026-09-25 15:46:50
+# Trigger redeploy: 2026-09-25 16:08:00
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'frontend/**'
+      - 'scripts/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 

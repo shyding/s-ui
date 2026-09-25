@@ -151,15 +151,27 @@ func splitHostPort(endpoint string) (string, string, error) {
 
 // BuildWireGuardEndpointJson formats the parsed WireGuard config into Sing-Box endpoint JSON
 func BuildWireGuardEndpointJson(tag string, conf *WireGuardConf) (json.RawMessage, error) {
+	keepalive := conf.Keepalive
+	if keepalive == 0 {
+		keepalive = 25
+	}
+	peers := []map[string]interface{}{
+		{
+			"address":                       conf.ServerIP,
+			"port":                          conf.ServerPort,
+			"public_key":                    conf.PublicKey,
+			"allowed_ips":                   []string{"0.0.0.0/0", "::/0"},
+			"persistent_keepalive_interval": keepalive,
+		},
+	}
 	epMap := map[string]interface{}{
-		"type":            "wireguard",
-		"tag":             tag,
-		"system":          false, // Pure user-space gVisor mode
-		"local_address":   conf.Address,
-		"private_key":     conf.PrivateKey,
-		"server":          conf.ServerIP,
-		"server_port":     conf.ServerPort,
-		"peer_public_key": conf.PublicKey,
+		"type":        "wireguard",
+		"tag":         tag,
+		"system":      false, // Pure user-space gVisor mode
+		"address":     conf.Address,
+		"private_key": conf.PrivateKey,
+		"listen_port": 0,
+		"peers":       peers,
 	}
 	return json.Marshal(epMap)
 }

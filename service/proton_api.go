@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,9 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"gorm.io/gorm"
 )
+
+//go:embed cached_logicals.json
+var embeddedCachedLogicals []byte
 
 // ProtonLogicalResponse represents the response envelope from Proton logicals endpoint
 type ProtonLogicalResponse struct {
@@ -534,8 +538,16 @@ type HarvestResult struct {
 	Message string                 `json:"message"`
 }
 
-// loadCachedLogicals tries to load pre-harvested Proton server list from cached JSON
+// loadCachedLogicals tries to load pre-harvested Proton server list from embedded or cached JSON
 func loadCachedLogicals() []*ProtonLogicalServer {
+	if len(embeddedCachedLogicals) > 0 {
+		var servers []*ProtonLogicalServer
+		if err := json.Unmarshal(embeddedCachedLogicals, &servers); err == nil && len(servers) > 0 {
+			logger.Infof("Loaded %d Proton servers from embedded logicals cache", len(servers))
+			return servers
+		}
+	}
+
 	candidates := []string{
 		filepath.Join("scripts", "cached_logicals.json"),
 		filepath.Join("/usr/local/s-ui", "scripts", "cached_logicals.json"),

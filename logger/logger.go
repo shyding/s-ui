@@ -17,6 +17,19 @@ var (
 	}
 )
 
+func init() {
+	if logger == nil {
+		backend := logging.NewLogBackend(os.Stderr, "", 0)
+		format := logging.MustStringFormatter(`%{time:2006/01/02 15:04:05} %{level} - %{message}`)
+		backendFormatter := logging.NewBackendFormatter(backend, format)
+		backendLeveled := logging.AddModuleLevel(backendFormatter)
+		backendLeveled.SetLevel(logging.INFO, "s-ui")
+		newLogger := logging.MustGetLogger("s-ui")
+		newLogger.SetBackend(backendLeveled)
+		logger = newLogger
+	}
+}
+
 func InitLogger(level logging.Level) {
 	newLogger := logging.MustGetLogger("s-ui")
 	var err error
