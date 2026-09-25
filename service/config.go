@@ -270,6 +270,9 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 					newRules = append([]interface{}{map[string]interface{}{"action": "sniff"}}, newRules...)
 					modified = true
 				}
+				activeRegions := GetActiveEgressRegions(database.GetDB())
+				newRules = InjectEgressRouteRules(newRules, "admin", activeRegions)
+				modified = true
 				if modified {
 					routeMap["rules"] = newRules
 					if newRoute, err := json.Marshal(routeMap); err == nil {

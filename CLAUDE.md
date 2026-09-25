@@ -87,6 +87,13 @@ When modifying or refactoring this codebase, **Claude MUST strictly adhere to th
 - **acme.sh Port 80**: Standalone mode conflicts with Nginx on port 80. Nginx must be stopped or `--webroot` used.
 - **Doc**: See [`docs/knowledge_base/06_domain_migration_and_ssl_526.md`](docs/knowledge_base/06_domain_migration_and_ssl_526.md).
 
+### Rule 7: Single-Port Egress Multiplexing & User-Space WireGuard
+- **Single Port Inbound**: Single port (e.g. `2096`) handles all traffic; routes to country exits via deterministic RFC 4122 UUIDv5 derived credentials (`DeriveUUID`).
+- **User-Space WireGuard**: ProtonVPN / WARP endpoints must enforce `system: false` (gVisor pure user-space).
+- **URLTest Failover Pool**: Multi-endpoint groups must use `urltest` (interval: 3m, tolerance: 50) for auto-failover.
+- **Unified Traffic Rollup**: Region-derived user traffic tags (`admin-us`, `admin-jp`, `admin-nl`) automatically roll up to root user `admin`.
+- **Doc**: See [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md).
+
 ---
 
 ## 4. Codebase Navigation Map
@@ -104,15 +111,17 @@ i:\learn_code\s-ui\
 │   └── tracker_conn.go           # Connection tracker, wrappedConn & ExtendedConn
 ├── sub/
 │   ├── README.md                 # Subscription generation & sanitization guide
-│   ├── linkService.go            # Link aggregation, sanitization & deduplication
+│   ├── linkService.go            # Link aggregation, sanitization & multi-egress expansion
 │   ├── subService.go             # Base64 subscription encoder
 │   ├── clashService.go           # Clash YAML configuration generator
 │   └── jsonService.go            # Sing-Box JSON client outbound generator
 ├── service/
 │   ├── README.md                 # Service architecture, DNS & TLS guide
 │   ├── config.go                 # Sing-Box config sanitizer & persistence
-│   ├── inbounds.go               # Inbound protocol handlers
+│   ├── egress_multiplex.go       # Egress multiplexing, UUIDv5 & WireGuard parser
+│   ├── inbounds.go               # Inbound protocol handlers & derived user expansion
 │   ├── nodetest.go               # Latency & landing IP testing
+│   ├── stats.go                  # User traffic aggregation & rollup
 │   └── tls.go                    # Certificate management
 └── docs/knowledge_base/          # Modular deep-dive architectural records
     ├── 01_core_stream_halfclose.md
@@ -121,6 +130,8 @@ i:\learn_code\s-ui\
     ├── 04_dns_public_resolver_fallback.md
     ├── 05_server_bbr_tcp_tuning.md
     ├── 06_domain_migration_and_ssl_526.md
+    ├── 07_cloudflare_warp_dedicated_egress.md
+    ├── 08_single_port_parameterized_egress_protonvpn.md
     └── README.md
 ```
 

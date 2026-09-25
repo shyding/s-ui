@@ -34,8 +34,10 @@ if strings.HasPrefix(link.Uri, "http2://") {
 }
 ```
 
-### 2.3 节点去重 (Deduplication)
-由于 `external` 和 `sub` 导入可能存在重叠，输出时必须使用 `seen[cleanUri]` 保证订阅节点唯一性，避免客户端显示重复条目。
+### 2.4 单端口多国出口订阅展开 (Multi-Egress Link Expansion)
+在 `linkService.go` 的 `ExpandEgressLinks` 中：
+- 针对本地入站（`local`），根据数据库已激活的国家出口池（WARP 新加坡、ProtonVPN 美国、日本、荷兰），自动将单一入站链接扩展为带有多国别名的节点列表。
+- 保证生成的子节点完全共用服务端的单一物理入站端口（如 `2096`），UUID 通过确定性派生，让客户端一键订阅即可获得 4 国出口选项。
 
 ---
 
@@ -64,4 +66,6 @@ if strings.HasPrefix(link.Uri, "http2://") {
 - 深度技术剖析详见：
   - [`docs/knowledge_base/02_subscription_domain_sanitization.md`](../docs/knowledge_base/02_subscription_domain_sanitization.md)
   - [`docs/knowledge_base/03_client_xray_fragment_vs_quic.md`](../docs/knowledge_base/03_client_xray_fragment_vs_quic.md)
+  - [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](../docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md)
 - 全局备忘录：[`TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md`](../TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)
+

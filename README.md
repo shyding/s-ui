@@ -64,6 +64,8 @@
   - [04. 域名解析: 服务端公共递归 DNS 回退与机房防污染](docs/knowledge_base/04_dns_public_resolver_fallback.md)
   - [05. 传输加速: 宿主机 Google BBR 与 TCP 缓冲区调优](docs/knowledge_base/05_server_bbr_tcp_tuning.md)
   - [06. 域名迁移与证书运维: Cloudflare 526 根因与 80 端口冲突排查](docs/knowledge_base/06_domain_migration_and_ssl_526.md)
+  - [07. 出口治理: Cloudflare WARP 专用入站绑定与洁净落地实战](docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md)
+  - [08. 出口编排: 单端口·单用户·传参动态切国与 ProtonVPN 自动负载](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md)
 
 ## Default Installation Information
 - Panel Port: 2095

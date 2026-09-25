@@ -50,6 +50,14 @@
 - **acme.sh Port 80**: Standalone mode conflicts with Nginx on port 80.
 - **Reference**: See [`docs/knowledge_base/06_domain_migration_and_ssl_526.md`](docs/knowledge_base/06_domain_migration_and_ssl_526.md).
 
+### Rule 6: Single-Port Egress Multiplexing & User-Space WireGuard (ProtonVPN / WARP)
+- **Constraint**:
+  1. Sing-Box single port (e.g. `2096`) multiplexes multiple egress countries (US, JP, NL, SG) using deterministic RFC 4122 UUIDv5 derived credentials (`DeriveUUID(baseUUID, regionCode)`).
+  2. WireGuard endpoints must enforce `system: false` (gVisor user-space mode) to prevent touching host routing tables and physical interfaces.
+  3. Multi-node ProtonVPN clusters must be wrapped in `urltest` outbound pools (interval: 3m, tolerance: 50) for automated failover.
+  4. User traffic statistics must strip region suffixes (`-us`, `-jp`, `-nl`) and roll up 100% to the root user `admin`.
+- **Reference**: See [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md).
+
 ---
 
 ## 3. Build & CI/CD Guardrails

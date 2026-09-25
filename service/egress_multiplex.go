@@ -1,0 +1,353 @@
+package service
+
+import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/gofrs/uuid/v5"
+	"gorm.io/gorm"
+)
+
+// EgressRegion defines a dynamic landing region (country egress)
+type EgressRegion struct {
+	Code        string `json:"code"`        // e.g. "us", "jp", "nl", "sg"
+	Name        string `json:"name"`        // e.g. "美国", "日本", "荷兰", "新加坡"
+	Flag        string `json:"flag"`        // e.g. "🇺🇸", "🇯🇵", "🇳🇱", "🇸🇬"
+	OutboundTag string `json:"outboundTag"` // e.g. "us-pool", "jp-pool", "nl-pool", "warp-6eV"
+}
+
+// StandardEgressRegions provides the predefined zero-cost country egress definitions
+var StandardEgressRegions = []EgressRegion{
+	{Code: "sg", Name: "新加坡-WARP", Flag: "🇸🇬", OutboundTag: "warp-6eV"},
+	{Code: "us", Name: "美国-ProtonVPN-智能优选", Flag: "🇺🇸", OutboundTag: "us-pool"},
+	{Code: "jp", Name: "日本-ProtonVPN-智能优选", Flag: "🇯🇵", OutboundTag: "jp-pool"},
+	{Code: "nl", Name: "荷兰-ProtonVPN-智能优选", Flag: "🇳🇱", OutboundTag: "nl-pool"},
+}
+
+// DeriveUUID generates a deterministic, standard RFC 4122 UUIDv5 for a given user UUID and region code.
+func DeriveUUID(baseUUIDStr string, regionCode string) string {
+	baseUUID, err := uuid.FromString(strings.TrimSpace(baseUUIDStr))
+	if err != nil {
+		// Fallback to SHA256 deterministic UUID format
+		h := sha256.Sum256([]byte(baseUUIDStr + ":" + regionCode))
+		return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+			h[0:4], h[4:6], h[6:8], h[8:10], h[10:16])
+	}
+	return uuid.NewV5(baseUUID, regionCode).String()
+}
+
+// DerivePassword derives a deterministic credential password for Trojan/Shadowsocks
+func DerivePassword(basePass string, regionCode string) string {
+	if regionCode == "" || regionCode == "sg" {
+		return basePass
+	}
+	return fmt.Sprintf("%s-%s", basePass, regionCode)
+}
+
+// WireGuardConf holds parsed data from a standard WireGuard .conf file
+type WireGuardConf struct {
+	PrivateKey string   `json:"private_key"`
+	Address    []string `json:"address"`
+	DNS        []string `json:"dns,omitempty"`
+	PublicKey  string   `json:"public_key"`
+	AllowedIPs []string `json:"allowed_ips,omitempty"`
+	Endpoint   string   `json:"endpoint"`
+	ServerIP   string   `json:"server_ip"`
+	ServerPort uint16   `json:"server_port"`
+	Keepalive  int      `json:"keepalive,omitempty"`
+}
+
+// ParseWireGuardConf parses a standard WireGuard .conf (INI format)
+func ParseWireGuardConf(content string) (*WireGuardConf, error) {
+	conf := &WireGuardConf{}
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	var section string
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.ToLower(line[1 : len(line)-1])
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
+		val := strings.TrimSpace(parts[1])
+
+		switch section {
+		case "interface":
+			switch key {
+			case "privatekey":
+				conf.PrivateKey = val
+			case "address":
+				addrs := strings.Split(val, ",")
+				for _, a := range addrs {
+					if trimmed := strings.TrimSpace(a); trimmed != "" {
+						conf.Address = append(conf.Address, trimmed)
+					}
+				}
+			case "dns":
+				dnsList := strings.Split(val, ",")
+				for _, d := range dnsList {
+					if trimmed := strings.TrimSpace(d); trimmed != "" {
+						conf.DNS = append(conf.DNS, trimmed)
+					}
+				}
+			}
+		case "peer":
+			switch key {
+			case "publickey":
+				conf.PublicKey = val
+			case "endpoint":
+				conf.Endpoint = val
+				if host, portStr, err := splitHostPort(val); err == nil {
+					conf.ServerIP = host
+					if p, err := strconv.Atoi(portStr); err == nil {
+						conf.ServerPort = uint16(p)
+					}
+				}
+			case "allowedips":
+				ips := strings.Split(val, ",")
+				for _, ip := range ips {
+					if trimmed := strings.TrimSpace(ip); trimmed != "" {
+						conf.AllowedIPs = append(conf.AllowedIPs, trimmed)
+					}
+				}
+			case "persistentkeepalive":
+				if ka, err := strconv.Atoi(val); err == nil {
+					conf.Keepalive = ka
+				}
+			}
+		}
+	}
+
+	if conf.PrivateKey == "" || conf.PublicKey == "" || conf.ServerIP == "" || conf.ServerPort == 0 {
+		return nil, fmt.Errorf("invalid wireguard conf: missing required fields")
+	}
+
+	return conf, nil
+}
+
+func splitHostPort(endpoint string) (string, string, error) {
+	idx := strings.LastIndex(endpoint, ":")
+	if idx == -1 {
+		return "", "", fmt.Errorf("no port in endpoint: %s", endpoint)
+	}
+	return endpoint[:idx], endpoint[idx+1:], nil
+}
+
+// BuildWireGuardEndpointJson formats the parsed WireGuard config into Sing-Box endpoint JSON
+func BuildWireGuardEndpointJson(tag string, conf *WireGuardConf) (json.RawMessage, error) {
+	epMap := map[string]interface{}{
+		"type":            "wireguard",
+		"tag":             tag,
+		"system":          false, // Pure user-space gVisor mode
+		"local_address":   conf.Address,
+		"private_key":     conf.PrivateKey,
+		"server":          conf.ServerIP,
+		"server_port":     conf.ServerPort,
+		"peer_public_key": conf.PublicKey,
+	}
+	return json.Marshal(epMap)
+}
+
+// BuildDirectOutboundJson creates a direct outbound tied to a specific endpoint
+func BuildDirectOutboundJson(tag string, endpointTag string) (json.RawMessage, error) {
+	outMap := map[string]interface{}{
+		"type":     "direct",
+		"tag":      tag,
+		"endpoint": endpointTag,
+	}
+	return json.Marshal(outMap)
+}
+
+// BuildUrlTestPoolJson creates an urltest auto-failover/load-balancing outbound
+func BuildUrlTestPoolJson(tag string, outbounds []string, interval string) (json.RawMessage, error) {
+	if interval == "" {
+		interval = "3m"
+	}
+	poolMap := map[string]interface{}{
+		"type":      "urltest",
+		"tag":       tag,
+		"outbounds": outbounds,
+		"url":       "http://www.gstatic.com/generate_204",
+		"interval":  interval,
+		"tolerance": 50,
+	}
+	return json.Marshal(poolMap)
+}
+
+// ExpandUsersForMultiplexing expands base user identities into country-specific credentials
+func ExpandUsersForMultiplexing(baseUsers []json.RawMessage, inboundType string, activeRegions []EgressRegion) []json.RawMessage {
+	if len(activeRegions) == 0 {
+		activeRegions = StandardEgressRegions
+	}
+
+	var expanded []json.RawMessage
+	for _, userRaw := range baseUsers {
+		expanded = append(expanded, userRaw) // Keep root user
+
+		var userMap map[string]interface{}
+		if err := json.Unmarshal(userRaw, &userMap); err != nil {
+			continue
+		}
+
+		baseName, _ := userMap["name"].(string)
+		if baseName == "" {
+			continue
+		}
+
+		for _, reg := range activeRegions {
+			if reg.Code == "" || reg.Code == "sg" {
+				// Base user already defaults to SG / WARP
+				continue
+			}
+
+			derivedUser := make(map[string]interface{})
+			for k, v := range userMap {
+				derivedUser[k] = v
+			}
+			derivedUser["name"] = fmt.Sprintf("%s-%s", baseName, reg.Code)
+
+			switch inboundType {
+			case "vmess", "vless", "tuic":
+				if baseUUID, ok := userMap["uuid"].(string); ok && baseUUID != "" {
+					derivedUser["uuid"] = DeriveUUID(baseUUID, reg.Code)
+				}
+			case "trojan", "shadowsocks", "anytls":
+				if basePass, ok := userMap["password"].(string); ok && basePass != "" {
+					derivedUser["password"] = DerivePassword(basePass, reg.Code)
+				}
+			}
+
+			if derivedRaw, err := json.Marshal(derivedUser); err == nil {
+				expanded = append(expanded, derivedRaw)
+			}
+		}
+	}
+	return expanded
+}
+
+// InjectEgressRouteRules ensures that auth_user rules for active egress regions are present in route rules
+func InjectEgressRouteRules(rules []interface{}, rootUsername string, activeRegions []EgressRegion) []interface{} {
+	if rootUsername == "" {
+		rootUsername = "admin"
+	}
+	if len(activeRegions) == 0 {
+		activeRegions = StandardEgressRegions
+	}
+
+	existingUserRules := make(map[string]bool)
+	for _, r := range rules {
+		if rMap, ok := r.(map[string]interface{}); ok {
+			if authUsers, ok := rMap["auth_user"].([]interface{}); ok {
+				for _, u := range authUsers {
+					if uStr, ok := u.(string); ok {
+						existingUserRules[uStr] = true
+					}
+				}
+			}
+		}
+	}
+
+	var newRules []interface{}
+	// Insert sniff action if not first
+	hasSniff := false
+	for _, r := range rules {
+		if rMap, ok := r.(map[string]interface{}); ok {
+			if act, ok := rMap["action"].(string); ok && act == "sniff" {
+				hasSniff = true
+				break
+			}
+		}
+	}
+	if !hasSniff {
+		newRules = append(newRules, map[string]interface{}{"action": "sniff"})
+	}
+
+	// Add region-specific auth_user rules
+	for _, reg := range activeRegions {
+		userName := fmt.Sprintf("%s-%s", rootUsername, reg.Code)
+		if reg.Code == "" || reg.Code == "sg" {
+			userName = rootUsername
+		}
+		if !existingUserRules[userName] {
+			rule := map[string]interface{}{
+				"auth_user": []string{userName},
+				"outbound":  reg.OutboundTag,
+			}
+			newRules = append(newRules, rule)
+			existingUserRules[userName] = true
+		}
+	}
+
+	// Append existing rules
+	for _, r := range rules {
+		newRules = append(newRules, r)
+	}
+
+	return newRules
+}
+
+// InjectEgressRouteRulesBytes takes raw Route JSON and injects egress routing rules
+func InjectEgressRouteRulesBytes(routeRaw json.RawMessage, rootUsername string, activeRegions []EgressRegion) json.RawMessage {
+	if len(routeRaw) == 0 {
+		return routeRaw
+	}
+	var routeMap map[string]interface{}
+	if err := json.Unmarshal(routeRaw, &routeMap); err != nil {
+		return routeRaw
+	}
+	rules, ok := routeMap["rules"].([]interface{})
+	if !ok {
+		rules = []interface{}{}
+	}
+	newRules := InjectEgressRouteRules(rules, rootUsername, activeRegions)
+	routeMap["rules"] = newRules
+	if newRaw, err := json.Marshal(routeMap); err == nil {
+		return newRaw
+	}
+	return routeRaw
+}
+
+// GetActiveEgressRegions returns the list of active egress regions based on outbounds/endpoints in the database
+func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
+	if db == nil {
+		return StandardEgressRegions
+	}
+	var tags []string
+	_ = db.Model(&model.Outbound{}).Pluck("tag", &tags)
+	tagMap := make(map[string]bool)
+	for _, t := range tags {
+		tagMap[t] = true
+	}
+
+	var epTags []string
+	_ = db.Model(&model.Endpoint{}).Pluck("tag", &epTags)
+	for _, ep := range epTags {
+		tagMap[ep] = true
+	}
+
+	var active []EgressRegion
+	for _, reg := range StandardEgressRegions {
+		// Include SG (WARP) if present or default, and US/JP/NL if outbound pool or endpoint exists
+		if tagMap[reg.OutboundTag] || reg.Code == "sg" {
+			active = append(active, reg)
+		}
+	}
+	if len(active) == 0 {
+		return StandardEgressRegions
+	}
+	return active
+}
+

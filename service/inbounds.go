@@ -295,10 +295,12 @@ func (s *InboundService) addUsers(db *gorm.DB, inboundJson []byte, inboundId uin
 	}
 
 	condition := fmt.Sprintf("%d IN (SELECT json_each.value FROM json_each(clients.inbounds))", inboundId)
-	inbound["users"], err = s.fetchUsers(db, inboundType, condition, inbound)
+	users, err := s.fetchUsers(db, inboundType, condition, inbound)
 	if err != nil {
 		return nil, err
 	}
+	activeRegions := GetActiveEgressRegions(db)
+	inbound["users"] = ExpandUsersForMultiplexing(users, inboundType, activeRegions)
 
 	return json.Marshal(inbound)
 }
@@ -320,10 +322,12 @@ func (s *InboundService) initUsers(db *gorm.DB, inboundJson []byte, clientIds st
 	}
 
 	condition := fmt.Sprintf("id IN (%s)", strings.Join(ClientIds, ","))
-	inbound["users"], err = s.fetchUsers(db, inboundType, condition, inbound)
+	users, err := s.fetchUsers(db, inboundType, condition, inbound)
 	if err != nil {
 		return nil, err
 	}
+	activeRegions := GetActiveEgressRegions(db)
+	inbound["users"] = ExpandUsersForMultiplexing(users, inboundType, activeRegions)
 
 	return json.Marshal(inbound)
 }

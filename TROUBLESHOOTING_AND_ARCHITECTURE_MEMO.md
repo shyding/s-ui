@@ -79,6 +79,20 @@
 
 ---
 
+### 6. Cloudflare WARP 专用入站绑定与洁净落地架构 (实测验证通过)
+- **文件**: `service/warp.go`, `Endpoints`, `Inbounds`, `Rules`
+- **业务需求**: 腾讯云新加坡原生 IP 受 Google 人机验证及 ChatGPT 403 封锁；用户需要一个专属节点，连接后 100% 全量走 Cloudflare 洁净出口，其余节点走原生直连。
+- **架构设计与三大避坑**:
+  1. **端点注册**: 在【端点管理】添加 `Warp` 端点（如 `warp-6eV`），后台 `service/warp.go` 自动向 `https://api.cloudflareclient.com` 免密注册设备并计算 `reserved` 防伪字节。
+  2. **严禁开启系统接口**: 【系统接口】必须保持关闭（灰色），强制使用 Sing-Box 的 **gVisor 纯用户态内存网络栈**，杜绝改写 Linux 内核网卡和失联风险。
+  3. **专用入站与一对一绑定**: 在【入站管理】新建标准代理节点（如 `vmess-warp-56230`），然后在【路由列表】新建规则：`入站管理 = vmess-warp-56230` ➡️ `操作 = Route` ➡️ `出站 = warp-6eV`。
+- **验收效果**:
+  - 客户端连接该节点后，落地 IP 完美置换为 **Cloudflare 新加坡 (`104.28.x.x`)**；
+  - Google 搜索免 Recaptcha 验证码秒开，ChatGPT 对话 100% 解除 403 阻断；
+  - 原有原生节点不受任何影响，保持超低直连延迟。
+
+---
+
 ## 二、客户端 (v2rayN) 关键排错与避坑准则
 
 ### 1. “真连接测速有绿色延迟，但设为活动服务器后打不开网页” 的根本原因
@@ -115,6 +129,7 @@
 | **TUIC** | `tuic-57142 ♾` | 57142 | **sing-box** | ✅ 200 OK |
 | **TUIC** | `tuic-8445 ♾` | 8445 | **sing-box** | ✅ 200 OK |
 | **TUIC** | `tuic-55656 ♾` | 55656 | **sing-box** | ✅ 200 OK |
+| **VMess (WARP洁净出口)** | `vmess-warp-56230` | 56230 | Xray / sing-box | ✅ 200 OK (落地: CF 新加坡 `104.28.x.x`) |
 
 ---
 
@@ -129,5 +144,22 @@
 2. **源码模块配套技术文档**：
    - [`core/README.md`](core/README.md): Sing-Box 核心生命周期、连接追踪包装器与半关闭（Half-Close）约束。
    - [`sub/README.md`](sub/README.md): 订阅聚合引擎、域名清洗流水线、非标协议过滤与客户端内核冲突。
-   - [`service/README.md`](service/README.md): 配置合规检查、公共 DNS 回退注入、TLS 证书与 Cloudflare CDN 运维约束。
+   - [`service/README.md`](service/README.md): 配置合规检查、公共 DNS 回退注入、WARP 洁净出口与 Cloudflare CDN 运维约束。
+3. **模块化知识库深度专题**：
+   - [`docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md`](docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md): Cloudflare WARP 专用入站绑定与洁净落地架构实战。
+   - [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md): 单端口·单用户·传参动态切国与 ProtonVPN 自动负载架构实战指南。
+
+---
+
+## 五、单端口·单用户·传参动态切国与 ProtonVPN 自动负载系统
+
+### 1. 核心设计原则
+1. **单端口统一入口 (如 2096)**：客户端无论选择哪国出口，始终只连接单端口。
+2. **单主账号管理 (admin)**：不创建 `admin-us` 等假用户，流量统一统计至 `admin`，到期与配额统一扣除。
+3. **确定性派生分发 (UUIDv5)**：通过 RFC 4122 UUIDv5 算法，为每个国家自动派生子凭据，由 Sing-Box 原生 `auth_user` 毫秒级分流。
+4. **ProtonVPN 节点群与 URLTest 自动负载容灾**：
+   - 官方 WireGuard 配置（如 `US-FREE#9`, `US-FREE#53`, `US-FREE#3`）以纯用户态（`system: false`）运行在 gVisor 中。
+   - 编排为 `us-pool` URLTest 自动竞速组（3分钟周期测速），自动剔除拥塞/断流节点，智能切换至最低延迟物理节点。
+
+
 

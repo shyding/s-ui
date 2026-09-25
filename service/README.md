@@ -49,6 +49,12 @@ targetAddr := net.JoinHostPort(host, portStr)
 **避坑指南**：
 严禁使用原始拼接 `fmt.Sprintf("%s:%s", host, port)`。当目标节点为 IPv6 地址时（例如 `2400:cb00:...`），原始拼接会生成 `http://2400:cb00:...:80`，导致 Go 的 `net/http` 解析报 `too many colons in address` 严重错误。标准做法要求包裹方括号：`http://[2400:cb00:...]:80`。
 
+### 2.3 单端口·单用户·传参动态切国与确定性派生 (Egress Multiplexing)
+在 `egress_multiplex.go` 与 `inbounds.go` / `config.go` 中，实现了单端口入站的多国出口动态编排：
+- **确定性派生 (UUIDv5)**：通过 RFC 4122 标准，根据主用户 UUID 确定性派生国家子凭证（`admin-us`, `admin-jp`, `admin-nl`），保证重启/迁移无漂移。
+- **纯用户态 WireGuard (gVisor)**：ProtonVPN 等外部 WireGuard 节点必须将 `system` 设为 `false`，彻底隔绝内核路由表污染。
+- **流量统一归集**：在 `stats.go` 中，派生用户的流量自动裁剪前缀归集至主用户 `admin`。
+
 ---
 
 ## 3. 运维与外部网络架构约束 (Cloudflare & acme.sh)
@@ -76,4 +82,7 @@ targetAddr := net.JoinHostPort(host, portStr)
 - 深度技术剖析详见：
   - [`docs/knowledge_base/04_dns_public_resolver_fallback.md`](../docs/knowledge_base/04_dns_public_resolver_fallback.md)
   - [`docs/knowledge_base/06_domain_migration_and_ssl_526.md`](../docs/knowledge_base/06_domain_migration_and_ssl_526.md)
+  - [`docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md`](../docs/knowledge_base/07_cloudflare_warp_dedicated_egress.md)
+  - [`docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md`](../docs/knowledge_base/08_single_port_parameterized_egress_protonvpn.md)
 - 全局备忘录：[`TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md`](../TROUBLESHOOTING_AND_ARCHITECTURE_MEMO.md)
+

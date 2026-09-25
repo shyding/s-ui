@@ -16,6 +16,10 @@
   - 阐述 16MB TCP 缓冲区与 FQ + BBR 算法的生产配置。
 - [06. 域名迁移与证书运维: Cloudflare 526 根因与 80 端口冲突排查](06_domain_migration_and_ssl_526.md)
   - 阐述历史旧域名迁移全链路避坑、acme.sh 独立签发与 80 端口释放、以及 Cloudflare 端口兼容性准则。
+- [07. 出口治理: Cloudflare WARP 专用入站绑定与洁净落地实战](07_cloudflare_warp_dedicated_egress.md)
+  - 阐述利用 WARP 端点构建专属节点（100% 洁净新加坡出口）的完整配置闭环、gVisor 用户态模式及三大避坑铁律。
+- [08. 出口编排: 单端口·单用户·传参动态切国与 ProtonVPN 自动负载](08_single_port_parameterized_egress_protonvpn.md)
+  - 阐述单端口 (2096) 多凭证确定性派生分发、ProtonVPN WireGuard 用户态节点与 URLTest 自动竞速容灾池架构。
 
 ---
 

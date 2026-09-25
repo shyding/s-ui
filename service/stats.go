@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -48,11 +49,15 @@ func (s *StatsService) SaveStats(enableTraffic bool) error {
 
 	for _, stat := range *stats {
 		if stat.Resource == "user" {
+			clientName := stat.Tag
+			if idx := strings.Index(clientName, "-"); idx > 0 {
+				clientName = clientName[:idx]
+			}
 			if stat.Direction {
-				err = tx.Model(model.Client{}).Where("name = ?", stat.Tag).
+				err = tx.Model(model.Client{}).Where("name = ?", clientName).
 					UpdateColumn("up", gorm.Expr("up + ?", stat.Traffic)).Error
 			} else {
-				err = tx.Model(model.Client{}).Where("name = ?", stat.Tag).
+				err = tx.Model(model.Client{}).Where("name = ?", clientName).
 					UpdateColumn("down", gorm.Expr("down + ?", stat.Traffic)).Error
 			}
 			if err != nil {

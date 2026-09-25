@@ -3,11 +3,15 @@ package sub
 import (
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/logger"
+	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util"
 )
 
@@ -59,14 +63,94 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				if !seen[finalLink] {
-					seen[finalLink] = true
-					result = append(result, finalLink)
+				activeRegions := service.GetActiveEgressRegions(database.GetDB())
+				expandedLinks := s.ExpandEgressLinks(finalLink, activeRegions)
+				for _, expLink := range expandedLinks {
+					if !seen[expLink] {
+						seen[expLink] = true
+						result = append(result, expLink)
+					}
 				}
 			}
 		}
 	}
 	return result
+}
+
+// ExpandEgressLinks expands a base inbound link across active country egress pools
+func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.EgressRegion) []string {
+	if len(activeRegions) == 0 {
+		activeRegions = service.StandardEgressRegions
+	}
+	protocol := strings.Split(uri, "://")
+	if len(protocol) < 2 {
+		return []string{uri}
+	}
+
+	proto := protocol[0]
+	switch proto {
+	case "vmess":
+		var vmessJson map[string]interface{}
+		config, err := util.B64StrToByte(protocol[1])
+		if err != nil {
+			return []string{uri}
+		}
+		if err := json.Unmarshal(config, &vmessJson); err != nil {
+			return []string{uri}
+		}
+		origPS, _ := vmessJson["ps"].(string)
+		origUUID, _ := vmessJson["id"].(string)
+
+		var expanded []string
+		for _, reg := range activeRegions {
+			copyMap := make(map[string]interface{})
+			for k, v := range vmessJson {
+				copyMap[k] = v
+			}
+			copyMap["ps"] = fmt.Sprintf("%s [%s] %s - %s", reg.Flag, strings.ToUpper(reg.Code), reg.Name, origPS)
+			if reg.Code != "" && reg.Code != "sg" {
+				copyMap["id"] = service.DeriveUUID(origUUID, reg.Code)
+			}
+			if raw, err := json.MarshalIndent(copyMap, "", "  "); err == nil {
+				expanded = append(expanded, "vmess://"+util.ByteToB64Str(raw))
+			}
+		}
+		if len(expanded) > 0 {
+			return expanded
+		}
+	case "vless", "trojan":
+		u, err := url.Parse(uri)
+		if err != nil {
+			return []string{uri}
+		}
+		origRemark := u.Fragment
+		origUser := u.User.Username()
+		origPass, hasPass := u.User.Password()
+
+		var expanded []string
+		for _, reg := range activeRegions {
+			newU := *u
+			newU.Fragment = fmt.Sprintf("%s [%s] %s - %s", reg.Flag, strings.ToUpper(reg.Code), reg.Name, origRemark)
+			if reg.Code != "" && reg.Code != "sg" {
+				if proto == "vless" {
+					derivedUUID := service.DeriveUUID(origUser, reg.Code)
+					newU.User = url.User(derivedUUID)
+				} else if proto == "trojan" {
+					if hasPass {
+						newU.User = url.UserPassword(origUser, service.DerivePassword(origPass, reg.Code))
+					} else {
+						newU.User = url.User(service.DerivePassword(origUser, reg.Code))
+					}
+				}
+			}
+			expanded = append(expanded, newU.String())
+		}
+		if len(expanded) > 0 {
+			return expanded
+		}
+	}
+
+	return []string{uri}
 }
 
 func (s *LinkService) GetLinks(linkJson *json.RawMessage, types string, clientInfo string) []string {
