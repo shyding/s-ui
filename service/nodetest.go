@@ -62,7 +62,7 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		port = int(p)
 	}
 
-	hasEndpoint := outbound.Type == "direct" && options["endpoint"] != nil
+	hasEndpoint := outbound.Type == "direct" && (options["endpoint"] != nil || options["detour"] != nil)
 	isPool := outbound.Type == "urltest"
 
 	if server == "" && outbound.LandingIP != "" {
@@ -691,8 +691,8 @@ func isTestableOutbound(ob model.Outbound) bool {
 	if ob.Type == "block" || ob.Type == "selector" {
 		return false
 	}
-	// Pure direct without endpoint has no proxy tunnel to test
-	if ob.Type == "direct" && !strings.Contains(string(ob.Options), "endpoint") {
+	// Pure direct without endpoint/detour has no proxy tunnel to test
+	if ob.Type == "direct" && !strings.Contains(string(ob.Options), "endpoint") && !strings.Contains(string(ob.Options), "detour") {
 		return false
 	}
 	return true

@@ -101,3 +101,45 @@ func TestExpandEgressLinks_VLESS(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandEgressLinks_DynamicCloudflareRegions(t *testing.T) {
+	s := &LinkService{}
+
+	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
+	baseUri := "vless://" + baseUUID + "@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vmess-in"
+
+	// Dynamically simulated Cloudflare regions ("有多少区分多少")
+	dynamicCFRegions := []service.EgressRegion{
+		{Code: "cf-us", Name: "美国-Cloudflare洁净出口", Flag: "🇺🇸", OutboundTag: "cf-us-pool"},
+		{Code: "cf-jp", Name: "日本-Cloudflare洁净出口", Flag: "🇯🇵", OutboundTag: "cf-jp-pool"},
+		{Code: "cf-sg", Name: "新加坡-Cloudflare洁净出口", Flag: "🇸🇬", OutboundTag: "cf-sg-pool"},
+		{Code: "cf-hk", Name: "中国香港-Cloudflare洁净出口", Flag: "🇭🇰", OutboundTag: "cf-hk-pool"},
+		{Code: "cf-gb", Name: "英国-Cloudflare洁净出口", Flag: "🇬🇧", OutboundTag: "cf-gb-pool"},
+		{Code: "cf-de", Name: "德国-Cloudflare洁净出口", Flag: "🇩🇪", OutboundTag: "cf-de-pool"},
+		{Code: "cf-nl", Name: "荷兰-Cloudflare洁净出口", Flag: "🇳🇱", OutboundTag: "cf-nl-pool"},
+		{Code: "cf-fr", Name: "法国-Cloudflare洁净出口", Flag: "🇫🇷", OutboundTag: "cf-fr-pool"},
+		{Code: "cf-ca", Name: "加拿大-Cloudflare洁净出口", Flag: "🇨🇦", OutboundTag: "cf-ca-pool"},
+		{Code: "cf-au", Name: "澳大利亚-Cloudflare洁净出口", Flag: "🇦🇺", OutboundTag: "cf-au-pool"},
+	}
+
+	expanded := s.ExpandEgressLinks(baseUri, dynamicCFRegions)
+
+	if len(expanded) != len(dynamicCFRegions) {
+		t.Fatalf("Expected %d expanded links for all %d dynamic Cloudflare regions, got %d",
+			len(dynamicCFRegions), len(dynamicCFRegions), len(expanded))
+	}
+
+	for _, link := range expanded {
+		u, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("Failed to parse link: %v", err)
+		}
+		if u.Host != "dash.icta.top:2096" {
+			t.Errorf("Host mismatch: %s", u.Host)
+		}
+		if !strings.Contains(u.Fragment, "Cloudflare") {
+			t.Errorf("Expected link fragment to mention Cloudflare: %s", u.Fragment)
+		}
+	}
+}
+

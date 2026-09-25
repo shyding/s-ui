@@ -2,6 +2,7 @@ package app
 
 import (
 	"log"
+	"time"
 
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/core"
@@ -38,6 +39,9 @@ func (a *APP) Init() error {
 	if err != nil {
 		return err
 	}
+
+	// Seed Cloudflare endpoints if needed
+	_ = service.SeedInitialCloudflareEndpoints(database.GetDB())
 
 	// Init Setting
 	a.SettingService.GetAllSetting()
@@ -83,6 +87,9 @@ func (a *APP) Start() error {
 	if err != nil {
 		logger.Error(err)
 	}
+
+	// Start Cloudflare dynamic multi-region updater
+	service.StartCloudflareDynamicUpdater(database.GetDB(), 15*time.Minute)
 
 	return nil
 }

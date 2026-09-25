@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/gofrs/uuid/v5"
 	"gorm.io/gorm"
@@ -181,6 +182,7 @@ func BuildDirectOutboundJson(tag string, endpointTag string) (json.RawMessage, e
 	outMap := map[string]interface{}{
 		"type":     "direct",
 		"tag":      tag,
+		"detour":   endpointTag,
 		"endpoint": endpointTag,
 	}
 	return json.Marshal(outMap)
@@ -348,31 +350,51 @@ func InjectEgressRouteRulesBytes(routeRaw json.RawMessage, rootUsername string, 
 	return routeRaw
 }
 
-// GetActiveEgressRegions returns the list of active egress regions based on outbounds/endpoints in the database
+// GetActiveEgressRegions returns the list of active egress regions based on outbounds/endpoints and dynamic Cloudflare regions in the database
 func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 	if db == nil {
-		return StandardEgressRegions
-	}
-	var tags []string
-	_ = db.Model(&model.Outbound{}).Pluck("tag", &tags)
-	tagMap := make(map[string]bool)
-	for _, t := range tags {
-		tagMap[t] = true
-	}
-
-	var epTags []string
-	_ = db.Model(&model.Endpoint{}).Pluck("tag", &epTags)
-	for _, ep := range epTags {
-		tagMap[ep] = true
+		db = database.GetDB()
 	}
 
 	var active []EgressRegion
-	for _, reg := range StandardEgressRegions {
-		// Include SG (WARP) if present or default, and US/JP/NL if outbound pool or endpoint exists
-		if tagMap[reg.OutboundTag] || reg.Code == "sg" {
-			active = append(active, reg)
+	seenCodes := make(map[string]bool)
+
+	// 1. Dynamic Cloudflare Regions directly from Cloudflare ("有多少区分多少")
+	cfRegions := GetActiveCloudflareRegions(db)
+	for _, cfReg := range cfRegions {
+		if !seenCodes[cfReg.Code] {
+			active = append(active, cfReg)
+			seenCodes[cfReg.Code] = true
 		}
 	}
+
+	// 2. Fallback to existing outbounds / endpoints ONLY if no Cloudflare regions exist (strict segregation)
+	if len(active) == 0 && db != nil {
+		var tags []string
+		_ = db.Model(&model.Outbound{}).Pluck("tag", &tags)
+		tagMap := make(map[string]bool)
+		for _, t := range tags {
+			tagMap[t] = true
+		}
+
+		var epTags []string
+		_ = db.Model(&model.Endpoint{}).Pluck("tag", &epTags)
+		for _, ep := range epTags {
+			tagMap[ep] = true
+		}
+
+		// Check StandardEgressRegions (e.g. sg, us, jp, nl)
+		for _, reg := range StandardEgressRegions {
+			if !seenCodes[reg.Code] {
+				// Only include if its specific outbound/endpoint exists in DB or is SG default
+				if tagMap[reg.OutboundTag] || reg.Code == "sg" {
+					active = append(active, reg)
+					seenCodes[reg.Code] = true
+				}
+			}
+		}
+	}
+
 	if len(active) == 0 {
 		return StandardEgressRegions
 	}

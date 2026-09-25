@@ -1,0 +1,546 @@
+package service
+
+import (
+	"bufio"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/logger"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// CloudflareIPsResponse models the response from https://api.cloudflare.com/client/v4/ips
+type CloudflareIPsResponse struct {
+	Result struct {
+		IPv4CIDRs []string `json:"ipv4_cidrs"`
+		IPv6CIDRs []string `json:"ipv6_cidrs"`
+	} `json:"result"`
+	Success bool `json:"success"`
+}
+
+// CloudflareTraceResult holds parsed key-values from /cdn-cgi/trace
+type CloudflareTraceResult struct {
+	IP        string `json:"ip"`
+	Loc       string `json:"loc"`  // ISO 3166-1 alpha-2, e.g. "US", "JP", "SG", "GB"
+	Colo      string `json:"colo"` // IATA 3-letter airport code, e.g. "LAX", "NRT", "SIN", "LHR"
+	Warp      string `json:"warp"` // "on" or "off"
+	LatencyMs int64  `json:"latency_ms"`
+}
+
+// Default candidate endpoints for Cloudflare Anycast/WARP probing
+var defaultCandidatePrefixes = []string{
+	"162.159.192",
+	"162.159.193",
+	"162.159.195",
+	"162.159.198",
+	"162.159.199",
+	"188.114.96",
+	"188.114.97",
+	"188.114.98",
+	"188.114.99",
+}
+
+var defaultCandidatePorts = []int{2408, 500, 853, 443, 8443, 1701}
+
+// CountryNameMap provides localized names for discovered ISO country codes
+var CountryNameMap = map[string]string{
+	"US": "美国", "SG": "新加坡", "JP": "日本", "HK": "中国香港", "TW": "中国台湾",
+	"KR": "韩国", "GB": "英国", "DE": "德国", "FR": "法国", "NL": "荷兰",
+	"CA": "加拿大", "AU": "澳大利亚", "IN": "印度", "BR": "巴西", "IT": "意大利",
+	"ES": "西班牙", "CH": "瑞士", "SE": "瑞典", "NO": "挪威", "FI": "芬兰",
+	"DK": "丹麦", "PL": "波兰", "RU": "俄罗斯", "TR": "土耳其", "AE": "阿联酋",
+	"ZA": "南非", "MX": "墨西哥", "AR": "阿根廷", "CL": "智利", "CO": "哥伦比亚",
+	"NZ": "新西兰", "IE": "爱尔兰", "BE": "比利时", "AT": "奥地利", "CZ": "捷克",
+	"GR": "希腊", "RO": "罗马尼亚", "TH": "泰国", "VN": "越南", "MY": "马来西亚",
+	"PH": "菲律宾", "ID": "印度尼西亚", "IL": "以色列", "UA": "乌克兰", "PT": "葡萄牙",
+}
+
+// GetCountryFlag generates national emoji flag dynamically from ISO 3166-1 alpha-2 code
+func GetCountryFlag(loc string) string {
+	loc = strings.ToUpper(strings.TrimSpace(loc))
+	if len(loc) != 2 || loc[0] < 'A' || loc[0] > 'Z' || loc[1] < 'A' || loc[1] > 'Z' {
+		return "🌐"
+	}
+	r1 := rune(0x1F1E6 + int(loc[0]-'A'))
+	r2 := rune(0x1F1E6 + int(loc[1]-'A'))
+	return string([]rune{r1, r2})
+}
+
+// GetCountryName returns localized name or code fallback
+func GetCountryName(loc string) string {
+	loc = strings.ToUpper(strings.TrimSpace(loc))
+	if name, ok := CountryNameMap[loc]; ok {
+		return name
+	}
+	return loc
+}
+
+// FetchCloudflareOfficialIPs queries Cloudflare's official IP list
+func FetchCloudflareOfficialIPs() ([]string, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("https://api.cloudflare.com/client/v4/ips")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var res CloudflareIPsResponse
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, err
+	}
+	if !res.Success {
+		return nil, fmt.Errorf("cloudflare API returned success: false")
+	}
+
+	return res.Result.IPv4CIDRs, nil
+}
+
+// ParseCloudflareTrace parses response from /cdn-cgi/trace
+func ParseCloudflareTrace(text string) *CloudflareTraceResult {
+	res := &CloudflareTraceResult{}
+	scanner := bufio.NewScanner(strings.NewReader(text))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if idx := strings.Index(line, "="); idx != -1 {
+			k := strings.TrimSpace(line[:idx])
+			v := strings.TrimSpace(line[idx+1:])
+			switch k {
+			case "ip":
+				res.IP = v
+			case "loc":
+				res.Loc = strings.ToUpper(v)
+			case "colo":
+				res.Colo = strings.ToUpper(v)
+			case "warp":
+				res.Warp = v
+			}
+		}
+	}
+	return res
+}
+
+// ProbeCloudflareTraceDirect queries Cloudflare trace directly through a specific endpoint IP:Port
+func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*CloudflareTraceResult, error) {
+	start := time.Now()
+	targetAddr := fmt.Sprintf("%s:%d", ip, port)
+
+	dialer := &net.Dialer{
+		Timeout: timeout,
+	}
+
+	// Use custom transport connecting directly to candidate IP
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", targetAddr)
+		},
+		TLSClientConfig: &tls.Config{
+			ServerName:         "www.cloudflare.com",
+			InsecureSkipVerify: true,
+		},
+		DisableKeepAlives: true,
+	}
+
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   timeout,
+	}
+
+	req, err := http.NewRequest("GET", "https://www.cloudflare.com/cdn-cgi/trace", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 Cloudflare-Egress-Scanner/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// Fallback to plain HTTP on port 80/8080 or direct trace
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	latency := time.Since(start).Milliseconds()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	res := ParseCloudflareTrace(string(body))
+	res.LatencyMs = latency
+	if res.Loc == "" && res.Colo == "" {
+		return nil, fmt.Errorf("invalid trace response")
+	}
+	return res, nil
+}
+
+// SeedInitialCloudflareEndpoints populates initial candidate endpoints across Cloudflare subnets
+func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
+	var count int64
+	db.Model(&model.CloudflareEndpoint{}).Count(&count)
+	if count > 0 {
+		return nil // Already seeded
+	}
+
+	// Initial seed endpoints representing diverse Cloudflare Anycast locations
+	initialSeeds := []struct {
+		IP   string
+		Port int
+		Loc  string
+		Colo string
+	}{
+		{"162.159.192.1", 2408, "SG", "SIN"},
+		{"162.159.193.1", 500, "US", "LAX"},
+		{"162.159.195.1", 853, "JP", "NRT"},
+		{"162.159.198.1", 443, "US", "SJC"},
+		{"162.159.198.2", 443, "SG", "SIN"},
+		{"162.159.199.1", 443, "HK", "HKG"},
+		{"162.159.199.2", 500, "TW", "TPE"},
+		{"188.114.96.1", 443, "GB", "LHR"},
+		{"188.114.97.1", 443, "DE", "FRA"},
+		{"188.114.98.1", 443, "NL", "AMS"},
+		{"188.114.99.1", 443, "FR", "CDG"},
+		{"104.16.1.1", 443, "AU", "SYD"},
+		{"172.64.0.1", 443, "CA", "YYZ"},
+		{"141.101.64.1", 443, "KR", "ICN"},
+	}
+
+	now := time.Now().Unix()
+	for _, s := range initialSeeds {
+		ep := model.CloudflareEndpoint{
+			IP:          s.IP,
+			Port:        s.Port,
+			Loc:         s.Loc,
+			Colo:        s.Colo,
+			CountryName: GetCountryName(s.Loc),
+			Flag:        GetCountryFlag(s.Loc),
+			LatencyMs:   50,
+			Status:      "online",
+			EndpointTag: fmt.Sprintf("cf-%s-%d", strings.ToLower(s.Loc), s.Port),
+			LastChecked: now,
+		}
+		_ = db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
+			DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "country_name", "flag", "status", "last_checked"}),
+		}).Create(&ep).Error
+	}
+
+	logger.Info(fmt.Sprintf("Seeded %d initial Cloudflare egress endpoints", len(initialSeeds)))
+	return nil
+}
+
+// RefreshCloudflareEndpoints probes candidate Cloudflare endpoints and dynamically updates the database
+func RefreshCloudflareEndpoints(db *gorm.DB) error {
+	logger.Info("Starting dynamic Cloudflare multi-region endpoint refresh...")
+
+	// 1. Fetch official Cloudflare IP ranges from api.cloudflare.com
+	officialCIDRs, err := FetchCloudflareOfficialIPs()
+	if err != nil {
+		logger.Warning(fmt.Sprintf("Failed to fetch official Cloudflare IPs (using fallback): %v", err))
+	}
+
+	candidateIPs := make(map[string]bool)
+
+	// Add sample IPs from official CIDRs
+	for _, cidr := range officialCIDRs {
+		if ip, ipnet, err := net.ParseCIDR(cidr); err == nil {
+			candidateIPs[ip.String()] = true
+			ipCopy := make(net.IP, len(ip))
+			copy(ipCopy, ip)
+			ipCopy[len(ipCopy)-1] += 1
+			candidateIPs[ipCopy.String()] = true
+			if len(ipnet.Mask) >= 3 && ipnet.Mask[1] < 255 {
+				ipCopy[len(ipCopy)-2] += 1
+				candidateIPs[ipCopy.String()] = true
+			}
+		}
+	}
+
+	// Always include known WARP Anycast prefixes
+	for _, prefix := range defaultCandidatePrefixes {
+		for _, host := range []int{1, 2, 5} {
+			candidateIPs[fmt.Sprintf("%s.%d", prefix, host)] = true
+		}
+	}
+
+	var candidates []string
+	for ip := range candidateIPs {
+		candidates = append(candidates, ip)
+	}
+
+	// 2. Concurrently probe endpoints with timeout
+	results := make(chan *model.CloudflareEndpoint, len(candidates)*2)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8) // Limit concurrent probes to 8
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	for _, ip := range candidates {
+		wg.Add(1)
+		go func(targetIP string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			trace, err := ProbeCloudflareTraceDirect(targetIP, 443, 3*time.Second)
+			now := time.Now().Unix()
+			if err == nil && trace != nil && trace.Loc != "" {
+				// Record WireGuard endpoint on port 2408
+				ep2408 := &model.CloudflareEndpoint{
+					IP:          targetIP,
+					Port:        2408,
+					Loc:         trace.Loc,
+					Colo:        trace.Colo,
+					CountryName: GetCountryName(trace.Loc),
+					Flag:        GetCountryFlag(trace.Loc),
+					LatencyMs:   trace.LatencyMs,
+					Status:      "online",
+					EndpointTag: fmt.Sprintf("cf-%s-2408", strings.ToLower(trace.Loc)),
+					LastChecked: now,
+				}
+				results <- ep2408
+
+				// Record HTTPS endpoint on port 443
+				ep443 := &model.CloudflareEndpoint{
+					IP:          targetIP,
+					Port:        443,
+					Loc:         trace.Loc,
+					Colo:        trace.Colo,
+					CountryName: GetCountryName(trace.Loc),
+					Flag:        GetCountryFlag(trace.Loc),
+					LatencyMs:   trace.LatencyMs,
+					Status:      "online",
+					EndpointTag: fmt.Sprintf("cf-%s-443", strings.ToLower(trace.Loc)),
+					LastChecked: now,
+				}
+				results <- ep443
+			}
+		}(ip)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// 3. Upsert probe results into database
+	updatedCount := 0
+	for ep := range results {
+		if ep.Status == "online" {
+			_ = db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
+				DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "country_name", "flag", "latency_ms", "status", "last_checked"}),
+			}).Create(ep).Error
+			updatedCount++
+		}
+	}
+
+	logger.Info(fmt.Sprintf("Cloudflare dynamic multi-region refresh finished. %d active endpoints recorded.", updatedCount))
+	return nil
+}
+
+// GetActiveCloudflareRegions queries all active country regions from the database ("有多少区分多少")
+func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
+	if db == nil {
+		db = database.GetDB()
+	}
+	if db == nil {
+		return nil
+	}
+
+	type RegionRow struct {
+		Loc         string
+		CountryName string
+		Flag        string
+	}
+	var rows []RegionRow
+	err := db.Model(&model.CloudflareEndpoint{}).
+		Select("DISTINCT loc, country_name, flag").
+		Where("status = ? AND loc != ''", "online").
+		Order("loc ASC").
+		Scan(&rows).Error
+
+	if err != nil || len(rows) == 0 {
+		// Ensure seed exists and query again
+		_ = SeedInitialCloudflareEndpoints(db)
+		_ = db.Model(&model.CloudflareEndpoint{}).
+			Select("DISTINCT loc, country_name, flag").
+			Where("status = ? AND loc != ''", "online").
+			Order("loc ASC").
+			Scan(&rows)
+	}
+
+	var regions []EgressRegion
+	for _, r := range rows {
+		locLower := strings.ToLower(r.Loc)
+		cName := r.CountryName
+		if cName == "" {
+			cName = GetCountryName(r.Loc)
+		}
+		flag := r.Flag
+		if flag == "" {
+			flag = GetCountryFlag(r.Loc)
+		}
+
+		reg := EgressRegion{
+			Code:        fmt.Sprintf("cf-%s", locLower),
+			Name:        fmt.Sprintf("%s-Cloudflare洁净出口", cName),
+			Flag:        flag,
+			OutboundTag: fmt.Sprintf("cf-%s-pool", locLower),
+		}
+		regions = append(regions, reg)
+	}
+
+	return regions
+}
+
+// StartCloudflareDynamicUpdater starts periodic background updater to maintain freshness
+func StartCloudflareDynamicUpdater(db *gorm.DB, interval time.Duration) {
+	if interval <= 0 {
+		interval = 15 * time.Minute
+	}
+
+	go func() {
+		// 1. Initial seed check
+		if db != nil {
+			_ = SeedInitialCloudflareEndpoints(db)
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if db != nil {
+				_ = RefreshCloudflareEndpoints(db)
+			}
+		}
+	}()
+}
+
+// EnsureCloudflarePoolsInOutbounds dynamically injects urltest outbounds for all active Cloudflare regions
+func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
+	if db == nil || singboxConfig == nil {
+		return
+	}
+	cfRegions := GetActiveCloudflareRegions(db)
+	if len(cfRegions) == 0 {
+		return
+	}
+
+	existingTags := make(map[string]bool)
+	for _, obRaw := range singboxConfig.Outbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err == nil {
+			if tag, ok := obMap["tag"].(string); ok {
+				existingTags[tag] = true
+			}
+		}
+	}
+
+	// Check if base WARP endpoint exists
+	var baseWarpMap map[string]interface{}
+	var warpTag string = "warp-6eV"
+	existingEpTags := make(map[string]bool)
+	for _, epRaw := range singboxConfig.Endpoints {
+		var epMap map[string]interface{}
+		if err := json.Unmarshal(epRaw, &epMap); err == nil {
+			if tag, ok := epMap["tag"].(string); ok && tag != "" {
+				existingEpTags[tag] = true
+			}
+			if t, ok := epMap["type"].(string); ok && (t == "warp" || t == "wireguard") {
+				if baseWarpMap == nil {
+					baseWarpMap = epMap
+					if tag, ok := epMap["tag"].(string); ok && tag != "" {
+						warpTag = tag
+					}
+				}
+			}
+		}
+	}
+
+	for _, reg := range cfRegions {
+		poolTag := reg.OutboundTag
+		if existingTags[poolTag] {
+			continue
+		}
+
+		targetEpTag := warpTag
+		// Check if we can build a region-specific endpoint
+		if baseWarpMap != nil {
+			regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
+			locUpper := strings.ToUpper(strings.TrimPrefix(reg.Code, "cf-"))
+			var bestEp model.CloudflareEndpoint
+			err := db.Model(&model.CloudflareEndpoint{}).
+				Where("loc = ? AND status = ?", locUpper, "online").
+				Order("latency_ms ASC").
+				First(&bestEp).Error
+
+			if err == nil && bestEp.IP != "" {
+				if !existingEpTags[regionEpTag] {
+					clonedBytes, _ := json.Marshal(baseWarpMap)
+					var clonedMap map[string]interface{}
+					_ = json.Unmarshal(clonedBytes, &clonedMap)
+					clonedMap["tag"] = regionEpTag
+
+					if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
+						if pMap, ok := peers[0].(map[string]interface{}); ok {
+							pMap["address"] = bestEp.IP
+							if bestEp.Port > 0 {
+								pMap["port"] = bestEp.Port
+							} else {
+								pMap["port"] = 2408
+							}
+						}
+					}
+					if epJson, err := json.Marshal(clonedMap); err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+						existingEpTags[regionEpTag] = true
+						targetEpTag = regionEpTag
+					}
+				} else {
+					targetEpTag = regionEpTag
+				}
+			}
+		}
+
+		// Ensure direct outbound exists
+		directTag := fmt.Sprintf("direct-%s", reg.Code)
+		if !existingTags[directTag] {
+			directOb, err := BuildDirectOutboundJson(directTag, targetEpTag)
+			if err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, directOb)
+				existingTags[directTag] = true
+			}
+		}
+
+		// Build urltest pool containing directTag (and fallback to warpTag/direct)
+		memberTags := []string{directTag}
+		if targetEpTag != warpTag && existingTags[warpTag] {
+			memberTags = append(memberTags, warpTag)
+		}
+		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
+		if err == nil {
+			singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+			existingTags[poolTag] = true
+		}
+	}
+}
