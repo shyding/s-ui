@@ -300,4 +300,54 @@ func TestInferCountryFromPath_Logic(t *testing.T) {
 	}
 }
 
+func TestInferCountryHelper(t *testing.T) {
+	testCases := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{"sui-node-US-FREE-9.conf", "[Interface]\n# US-FREE#9\n", "US"},
+		{"wg-US-FREE-3.conf", "[Interface]\n# US-FREE#3\n", "US"},
+		{"JP-server.conf", "", "JP"},
+		{"unknown.conf", "[Peer]\n# Netherlands node\n", "NL"},
+		{"sg-node-1.conf", "", "SG"},
+		{"custom.conf", "[Peer]\n# Tokyo server\n", "JP"},
+	}
+
+	for _, tc := range testCases {
+		res := InferCountry(tc.name, tc.content)
+		if res != tc.expected {
+			t.Errorf("InferCountry(%q, %q) = %s, expected %s", tc.name, tc.content, res, tc.expected)
+		}
+	}
+}
+
+func TestSplitWireGuardConfigs(t *testing.T) {
+	multi := `[Interface]
+PrivateKey = key1
+Address = 10.0.0.1/32
+[Peer]
+PublicKey = pub1
+Endpoint = 1.1.1.1:51820
+
+[Interface]
+PrivateKey = key2
+Address = 10.0.0.2/32
+[Peer]
+PublicKey = pub2
+Endpoint = 2.2.2.2:51820
+`
+	blocks := SplitWireGuardConfigs(multi)
+	if len(blocks) != 2 {
+		t.Fatalf("Expected 2 config blocks, got %d", len(blocks))
+	}
+	if !strings.Contains(blocks[0], "1.1.1.1:51820") {
+		t.Errorf("First block missing endpoint 1.1.1.1")
+	}
+	if !strings.Contains(blocks[1], "2.2.2.2:51820") {
+		t.Errorf("Second block missing endpoint 2.2.2.2")
+	}
+}
+
+
 

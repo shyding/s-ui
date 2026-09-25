@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -313,6 +314,173 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 	return importedCount, nil
 }
 
+// InferCountry infers ISO 2-letter country code from filename, path, or config content comments
+func InferCountry(name string, content string) string {
+	combined := strings.ToUpper(name + "\n" + content)
+
+	// Check explicit country codes with word boundaries in filename
+	countryRe := regexp.MustCompile(`(?i)(?:^|[^a-zA-Z])(US|JP|NL|SG|HK|UK|GB|DE|CA|AU|FR|CH)(?:[^a-zA-Z]|$)`)
+	if match := countryRe.FindStringSubmatch(strings.ToUpper(name)); len(match) > 1 {
+		code := strings.ToUpper(match[1])
+		if code == "UK" {
+			code = "GB"
+		}
+		return code
+	}
+
+	// Keywords in path or content
+	if strings.Contains(combined, "JAPAN") || strings.Contains(combined, "TOKYO") {
+		return "JP"
+	}
+	if strings.Contains(combined, "NETHERLANDS") || strings.Contains(combined, "AMSTERDAM") {
+		return "NL"
+	}
+	if strings.Contains(combined, "SINGAPORE") {
+		return "SG"
+	}
+	if strings.Contains(combined, "HONG KONG") || strings.Contains(combined, "HONGKONG") {
+		return "HK"
+	}
+	if strings.Contains(combined, "GERMANY") || strings.Contains(combined, "FRANKFURT") {
+		return "DE"
+	}
+	if strings.Contains(combined, "CANADA") {
+		return "CA"
+	}
+	if strings.Contains(combined, "AUSTRALIA") || strings.Contains(combined, "SYDNEY") {
+		return "AU"
+	}
+	if strings.Contains(combined, "FRANCE") || strings.Contains(combined, "PARIS") {
+		return "FR"
+	}
+	if strings.Contains(combined, "SWITZERLAND") || strings.Contains(combined, "ZURICH") {
+		return "CH"
+	}
+	if strings.Contains(combined, "UNITED STATES") || strings.Contains(combined, "AMERICA") || strings.Contains(combined, "NEW YORK") || strings.Contains(combined, "LOS ANGELES") {
+		return "US"
+	}
+
+	// Check comments in content (e.g. # US-FREE#3 or # NL-FREE#5)
+	if match := countryRe.FindStringSubmatch(strings.ToUpper(content)); len(match) > 1 {
+		code := strings.ToUpper(match[1])
+		if code == "UK" {
+			code = "GB"
+		}
+		return code
+	}
+
+	return "US"
+}
+
+// SplitWireGuardConfigs splits multiple [Interface] blocks into distinct configuration strings
+func SplitWireGuardConfigs(content string) []string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	if !strings.Contains(strings.ToLower(content), "[interface]") {
+		if strings.TrimSpace(content) != "" {
+			return []string{content}
+		}
+		return nil
+	}
+
+	re := regexp.MustCompile(`(?i)\[interface\]`)
+	indices := re.FindAllStringIndex(content, -1)
+	if len(indices) == 0 {
+		return []string{content}
+	}
+
+	var configs []string
+	for i := 0; i < len(indices); i++ {
+		start := indices[i][0]
+		var end int
+		if i+1 < len(indices) {
+			end = indices[i+1][0]
+		} else {
+			end = len(content)
+		}
+		block := strings.TrimSpace(content[start:end])
+		if block != "" {
+			configs = append(configs, block)
+		}
+	}
+	return configs
+}
+
+// UploadedConf represents an uploaded file or text block
+type UploadedConf struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+	Country string `json:"country,omitempty"`
+}
+
+// ImportWireGuardConfsData parses multiple uploaded or pasted WireGuard configs,
+// groups them by inferred country, and imports them into S-UI database and failover pools.
+func ImportWireGuardConfsData(db *gorm.DB, items []UploadedConf, defaultCountry string) (map[string]int, []string, error) {
+	if defaultCountry == "" {
+		defaultCountry = "US"
+	}
+	defaultCountry = strings.ToUpper(strings.TrimSpace(defaultCountry))
+
+	results := make(map[string]int)
+	var importedTags []string
+	countryConfigs := make(map[string][]*WireGuardConf)
+
+	for _, item := range items {
+		content := strings.TrimSpace(item.Content)
+		if content == "" {
+			continue
+		}
+
+		subBlocks := SplitWireGuardConfigs(content)
+		for idx, block := range subBlocks {
+			conf, err := ParseWireGuardConf(block)
+			if err != nil {
+				logger.Warningf("Failed to parse WireGuard config %s (block %d): %v", item.Name, idx, err)
+				continue
+			}
+
+			country := strings.ToUpper(strings.TrimSpace(item.Country))
+			if country == "" || country == "AUTO" {
+				country = InferCountry(item.Name, block)
+			}
+			if country == "" {
+				country = defaultCountry
+			}
+
+			name := strings.TrimSpace(item.Name)
+			if name == "" {
+				name = fmt.Sprintf("%s-%s", country, conf.ServerIP)
+			} else {
+				name = strings.TrimSuffix(name, filepath.Ext(name))
+				if len(subBlocks) > 1 {
+					name = fmt.Sprintf("%s-%d", name, idx+1)
+				}
+			}
+
+			conf.Name = name
+			conf.Country = country
+			countryConfigs[country] = append(countryConfigs[country], conf)
+		}
+	}
+
+	if len(countryConfigs) == 0 {
+		return results, importedTags, fmt.Errorf("未从上传内容中解析到有效的 WireGuard 配置，请确保包含 [Interface] 与 [Peer] 字段")
+	}
+
+	for country, configs := range countryConfigs {
+		count, err := BatchImportWireGuardToSUI(db, configs, country)
+		if err == nil && count > 0 {
+			results[country] = count
+			for _, c := range configs {
+				cleanName := SanitizeTag(c.Name)
+				importedTags = append(importedTags, fmt.Sprintf("out-proton-%s", cleanName))
+			}
+		}
+	}
+
+	return results, importedTags, nil
+}
+
 // ScanAndImportProtonDirectory scans a directory recursively for all .conf files and imports them
 func ScanAndImportProtonDirectory(db *gorm.DB, dirPath string) (map[string]int, error) {
 	results := make(map[string]int)
@@ -339,24 +507,7 @@ func ScanAndImportProtonDirectory(db *gorm.DB, dirPath string) (map[string]int, 
 					continue
 				}
 
-				// Infer country from file name or directory path
-				baseNameUpper := strings.ToUpper(e.Name())
-				fullPathUpper := strings.ToUpper(fullPath)
-				country := "US"
-
-				countryRe := regexp.MustCompile(`(?i)(?:^|[^a-zA-Z])(US|JP|NL|SG)(?:[^a-zA-Z]|$)`)
-				if match := countryRe.FindStringSubmatch(baseNameUpper); len(match) > 1 {
-					country = strings.ToUpper(match[1])
-				} else if strings.Contains(fullPathUpper, "\\US\\") || strings.Contains(fullPathUpper, "/US/") {
-					country = "US"
-				} else if strings.Contains(fullPathUpper, "\\JP\\") || strings.Contains(fullPathUpper, "/JP/") || strings.Contains(fullPathUpper, "JAPAN") {
-					country = "JP"
-				} else if strings.Contains(fullPathUpper, "\\NL\\") || strings.Contains(fullPathUpper, "/NL/") || strings.Contains(fullPathUpper, "NETHERLANDS") {
-					country = "NL"
-				} else if strings.Contains(fullPathUpper, "\\SG\\") || strings.Contains(fullPathUpper, "/SG/") || strings.Contains(fullPathUpper, "SINGAPORE") {
-					country = "SG"
-				}
-
+				country := InferCountry(e.Name(), string(content))
 				conf.Name = strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
 				conf.Country = country
 				countryConfigs[country] = append(countryConfigs[country], conf)
@@ -386,11 +537,30 @@ type HarvestResult struct {
 // HarvestProtonNodesViaBrowser executes the automated browser harvester to fetch servers
 // with ZERO manual token/cookie copy-paste. Supports username/password automated login.
 func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string, headless bool, scriptPath string, countries ...string) (int, string, error) {
+	pythonBin := "python3"
+	if runtime.GOOS == "windows" {
+		pythonBin = "python.exe"
+	}
+	if _, err := exec.LookPath(pythonBin); err != nil {
+		if runtime.GOOS == "windows" {
+			pythonBin = "python"
+			if _, err2 := exec.LookPath(pythonBin); err2 != nil {
+				return 0, "", fmt.Errorf("系统未检测到 Python 运行环境。请直接使用【文件上传 / 拖拽导入 .conf】导入本地配置文件，秒级生效")
+			}
+		} else {
+			return 0, "", fmt.Errorf("服务器无头环境未安装 Python3 / Playwright 浏览器自动化组件。由于 Proton 官方对云端 IP 启用了人机验证 (CAPTCHA)，请在界面上方直接使用【文件上传 / 拖拽导入 .conf】导入本地下载的节点配置文件，秒级生效！")
+		}
+	}
+
 	if scriptPath == "" {
 		scriptPath = filepath.Join("scripts", "proton_harvester.py")
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 			scriptPath = filepath.Join("i:", "learn_code", "s-ui", "scripts", "proton_harvester.py")
 		}
+	}
+
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return 0, "", fmt.Errorf("服务器未找到自动化收割脚本 (%s)。请在上方使用【文件上传 / 拖拽导入 .conf】直接导入本地配置文件，无需服务器安装浏览器环境！", filepath.Base(scriptPath))
 	}
 
 	args := []string{scriptPath}
@@ -404,7 +574,7 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string,
 		args = append(args, "--password", password)
 	}
 
-	cmd := exec.Command("python.exe", args...)
+	cmd := exec.Command(pythonBin, args...)
 	outputBytes, err := cmd.CombinedOutput()
 	outputStr := string(outputBytes)
 
@@ -417,7 +587,10 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string,
 	if startIndex != -1 && endIndex != -1 && endIndex > startIndex {
 		jsonStr = strings.TrimSpace(outputStr[startIndex+len(startMarker) : endIndex])
 	} else {
-		return 0, outputStr, fmt.Errorf("harvester output missing result markers: %s", outputStr)
+		if outputStr == "" && err != nil {
+			return 0, "", fmt.Errorf("执行自动化收割脚本失败: %v", err)
+		}
+		return 0, outputStr, fmt.Errorf("Proton 自动化脚本未返回有效结果: %s", outputStr)
 	}
 
 	var res HarvestResult

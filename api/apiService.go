@@ -1081,4 +1081,73 @@ func (a *ApiService) ProtonAutoHarvest(c *gin.Context, loginUser string) {
 	jsonMsg(c, fmt.Sprintf("%s (%d nodes)", msg, count), nil)
 }
 
+func (a *ApiService) ProtonUploadConfs(c *gin.Context, loginUser string) {
+	type UploadFileReq struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Country string `json:"country,omitempty"`
+	}
+	type ProtonUploadReq struct {
+		Files          []UploadFileReq `json:"files"`
+		RawContent     string          `json:"raw_content"`
+		DefaultCountry string          `json:"default_country"`
+	}
+
+	var req ProtonUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonMsg(c, "", fmt.Errorf("无效的请求数据: %v", err))
+		return
+	}
+
+	var uploadItems []service.UploadedConf
+	for _, f := range req.Files {
+		uploadItems = append(uploadItems, service.UploadedConf{
+			Name:    f.Name,
+			Content: f.Content,
+			Country: f.Country,
+		})
+	}
+
+	if strings.TrimSpace(req.RawContent) != "" {
+		uploadItems = append(uploadItems, service.UploadedConf{
+			Name:    "pasted-wireguard-conf",
+			Content: req.RawContent,
+			Country: req.DefaultCountry,
+		})
+	}
+
+	if len(uploadItems) == 0 {
+		jsonMsg(c, "", fmt.Errorf("未提供任何有效的配置文件或配置内容"))
+		return
+	}
+
+	db := database.GetDB()
+	results, tags, err := service.ImportWireGuardConfsData(db, uploadItems, req.DefaultCountry)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+
+	_ = a.ConfigService.RestartCore()
+
+	totalCount := 0
+	for _, count := range results {
+		totalCount += count
+	}
+
+	var countrySummaries []string
+	for country, count := range results {
+		countrySummaries = append(countrySummaries, fmt.Sprintf("%s: %d 个", country, count))
+	}
+
+	msg := fmt.Sprintf("成功导入 %d 个节点 (%s)，已自动加入对应国家负载均衡策略组！", totalCount, strings.Join(countrySummaries, ", "))
+	jsonObj(c, gin.H{
+		"total":     totalCount,
+		"countries": results,
+		"tags":      tags,
+		"message":   msg,
+	}, nil)
+}
+
+
 

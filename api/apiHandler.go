@@ -60,6 +60,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.ProtonImportDir(c, loginUser)
 	case "protonAutoHarvest":
 		a.ApiService.ProtonAutoHarvest(c, loginUser)
+	case "protonUploadConfs":
+		a.ApiService.ProtonUploadConfs(c, loginUser)
 	case "testNode":
 		a.ApiService.TestNode(c)
 	case "testAllNodes":
