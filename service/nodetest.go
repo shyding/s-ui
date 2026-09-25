@@ -62,13 +62,21 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		port = int(p)
 	}
 
+	hasEndpoint := outbound.Type == "direct" && options["endpoint"] != nil
+	isPool := outbound.Type == "urltest"
+
+	if server == "" && outbound.LandingIP != "" {
+		server = outbound.LandingIP
+		port = 51820
+	}
+
 	result := &NodeTestResult{
 		Tag:    tag,
 		Server: server,
 		Port:   port,
 	}
 
-	if server == "" || port == 0 {
+	if (server == "" || port == 0) && !hasEndpoint && !isPool {
 		result.Available = false
 		result.Latency = -1
 		result.Error = "invalid server or port"
@@ -76,8 +84,8 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 	}
 
 	// Test TCP connection latency
-	// Skip TCP test for UDP-based protocols
-	isUDP := outbound.Type == "hysteria2" || outbound.Type == "tuic" || outbound.Type == "wireguard" || outbound.Type == "hy2"
+	// Skip TCP test for UDP-based protocols and WireGuard endpoints/pools
+	isUDP := outbound.Type == "hysteria2" || outbound.Type == "tuic" || outbound.Type == "wireguard" || outbound.Type == "hy2" || hasEndpoint || isPool
 
 	if !isUDP {
 		start := time.Now()
@@ -678,6 +686,18 @@ func (s *NodeTestService) tryPing0WithDialer(dialer proxy.Dialer, result *NodeTe
 	return s.parsePing0Response(string(body), result)
 }
 
+// isTestableOutbound checks whether an outbound can be tested as a proxy tunnel
+func isTestableOutbound(ob model.Outbound) bool {
+	if ob.Type == "block" || ob.Type == "selector" {
+		return false
+	}
+	// Pure direct without endpoint has no proxy tunnel to test
+	if ob.Type == "direct" && !strings.Contains(string(ob.Options), "endpoint") {
+		return false
+	}
+	return true
+}
+
 // TestAllOutbounds tests all outbounds in parallel
 func (s *NodeTestService) TestAllOutbounds(concurrency int) ([]*NodeTestResult, error) {
 	db := database.GetDB()
@@ -700,8 +720,7 @@ func (s *NodeTestService) TestAllOutbounds(concurrency int) ([]*NodeTestResult, 
 
 	for _, outbound := range outbounds {
 		// Skip non-proxy outbounds
-		if outbound.Type == "direct" || outbound.Type == "selector" || 
-		   outbound.Type == "urltest" || outbound.Type == "block" {
+		if !isTestableOutbound(outbound) {
 			continue
 		}
 
@@ -747,8 +766,7 @@ func (s *NodeTestService) TestSelectedOutbounds(tags []string, concurrency int) 
 
 	for _, outbound := range outbounds {
 		// Skip non-proxy outbounds
-		if outbound.Type == "direct" || outbound.Type == "selector" || 
-		   outbound.Type == "urltest" || outbound.Type == "block" {
+		if !isTestableOutbound(outbound) {
 			continue
 		}
 
@@ -793,8 +811,7 @@ func (s *NodeTestService) TestAllOutboundsWithIP(concurrency int, ctx context.Co
 
 	for _, outbound := range outbounds {
 		// Skip non-proxy outbounds
-		if outbound.Type == "direct" || outbound.Type == "selector" || 
-		   outbound.Type == "urltest" || outbound.Type == "block" {
+		if !isTestableOutbound(outbound) {
 			continue
 		}
 
@@ -838,8 +855,7 @@ func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency
 
 	for _, outbound := range outbounds {
 		// Skip non-proxy outbounds
-		if outbound.Type == "direct" || outbound.Type == "selector" || 
-		   outbound.Type == "urltest" || outbound.Type == "block" {
+		if !isTestableOutbound(outbound) {
 			continue
 		}
 

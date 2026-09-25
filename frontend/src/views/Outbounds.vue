@@ -187,13 +187,13 @@
           <v-row>
             <v-col>{{ $t('in.addr') }}</v-col>
             <v-col>
-              {{ item.server?? '-' }}
+              {{ item.server || item.landingIP || '-' }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('in.port') }}</v-col>
             <v-col>
-              {{ item.server_port?? '-' }}
+              {{ item.server_port || (item.landingIP ? 51820 : '-') }}
             </v-col>
           </v-row>
           <v-row>

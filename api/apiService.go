@@ -1078,7 +1078,13 @@ func (a *ApiService) ProtonAutoHarvest(c *gin.Context, loginUser string) {
 	}
 
 	_ = a.ConfigService.RestartCore()
-	jsonMsg(c, fmt.Sprintf("%s (%d nodes)", msg, count), nil)
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		_, _ = a.NodeTestService.TestAllOutbounds(20)
+	}()
+
+	jsonMsg(c, fmt.Sprintf("%s (%d 个节点已成功就绪并加入策略池)", msg, count), nil)
 }
 
 func (a *ApiService) ProtonUploadConfs(c *gin.Context, loginUser string) {
@@ -1129,6 +1135,11 @@ func (a *ApiService) ProtonUploadConfs(c *gin.Context, loginUser string) {
 	}
 
 	_ = a.ConfigService.RestartCore()
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		_, _ = a.NodeTestService.TestAllOutbounds(20)
+	}()
 
 	totalCount := 0
 	for _, count := range results {

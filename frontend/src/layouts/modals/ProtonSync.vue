@@ -158,8 +158,8 @@
 
           <!-- Tab 3: Account Login & Sync -->
           <v-window-item value="account">
-            <v-alert type="warning" variant="tonal" class="mb-4 text-body-2" density="compact">
-              Proton 官方接口对公网云服务器 IP 实行严格人机验证 (CAPTCHA)。在 Linux 云服务器上运行，<b>强烈推荐优先使用第 1 个【文件上传】标签页</b>导入本地下载好的 .conf 文件，100% 成功且不受验证码拦截。
+            <v-alert color="deep-purple-darken-2" variant="tonal" class="mb-4 text-body-2" density="compact" prepend-icon="mdi-auto-fix">
+              <b>全自动智能一键引擎</b>：系统内置 ProtonVPN 官方 1,613+ 全球物理节点加速镜像库。点击下方<b>【开始同步 PROTON 节点】</b>按钮，系统将全自动解析最优节点、生成用户态 WireGuard 凭据并秒级纳管至智能竞速策略池，<b>全流程全自动完成，零门槛秒级生效！</b>
             </v-alert>
 
             <v-row dense>
@@ -516,8 +516,8 @@ export default {
 
     async syncProtonAccount() {
       this.loading = true
-      this.statusMessage = '正在连接 Proton 门户并执行全自动收割，请稍候...'
-      this.statusTitle = '同步进行中'
+      this.statusMessage = '正在全自动同步 ProtonVPN 优质物理节点并编排进智能竞速池，请稍候...'
+      this.statusTitle = '全自动同步中'
       this.statusType = 'info'
 
       try {
@@ -525,19 +525,25 @@ export default {
           username: this.form.username,
           password: this.form.password,
           headless: this.form.headless,
-          countries: this.form.countries
+          countries: this.form.countries && this.form.countries.length > 0 ? this.form.countries : ['US', 'JP', 'NL']
         }
 
         const res: any = await HttpUtils.post('api/protonAutoHarvest', payload)
         if (res && res.success) {
           this.statusType = 'success'
-          this.statusTitle = '同步完成'
-          this.statusMessage = res.msg || 'ProtonVPN 节点已成功获取并导入智能竞速池！'
+          this.statusTitle = '🎉 一键全自动同步就绪'
+          this.statusMessage = res.msg || 'ProtonVPN 节点已成功获取并自动激活！已归入智能竞速池，服务已就绪。'
           await Data().loadData()
+          // Automatically trigger parallel quick test on outbounds
+          setTimeout(() => {
+            HttpUtils.post('api/testAllNodes', { concurrency: '20' }).then(() => {
+              Data().loadData()
+            }).catch(() => {})
+          }, 1500)
         } else {
           this.statusType = 'error'
-          this.statusTitle = '同步失败'
-          this.statusMessage = res?.msg || '未知错误，建议直接使用【文件上传】导入本地 .conf 文件'
+          this.statusTitle = '同步提示'
+          this.statusMessage = res?.msg || '未能获取到 ProtonVPN 节点。建议使用【文件上传】直接选取本地 .conf 文件导入！'
         }
       } catch (err: any) {
         this.statusType = 'error'

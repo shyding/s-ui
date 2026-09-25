@@ -73,6 +73,12 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	// Add location fields if they exist
 	if o.LandingIP != "" {
 		combined["landingIP"] = o.LandingIP
+		if _, hasServer := combined["server"]; !hasServer {
+			combined["server"] = o.LandingIP
+		}
+		if _, hasPort := combined["server_port"]; !hasPort {
+			combined["server_port"] = 51820
+		}
 	}
 	if o.Country != "" {
 		combined["country"] = o.Country
