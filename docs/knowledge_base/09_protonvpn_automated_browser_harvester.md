@@ -108,6 +108,17 @@ flowchart TD
 
 ## 5. 操作手册 (CLI & API)
 
+### Web 界面使用 (Web UI)
+在面板的 **出站管理 (Outbounds)** 或 **端点管理 (Endpoints)** 页面顶部，点击 **“ProtonVPN 节点同步”** 专属按钮：
+1. **账号一键同步**：
+   - 直接输入 Proton 账号与密码；
+   - 勾选目标国家（US / JP / NL）；
+   - 点击“开始同步 Proton 节点”，后台自动化模拟浏览器执行登录并全量抓取节点；
+2. **目录秒级导入**：
+   - 输入 `.conf` 所在目录路径，点击“一键扫描并导入”。
+
+---
+
 ### 命令行使用 (CLI)
 ```bash
 # 1. 展现模拟浏览器进行登录并自动收割节点 (首次使用或更新登录态)
@@ -126,6 +137,8 @@ POST /api/protonAutoHarvest
 Content-Type: application/json
 
 {
+  "username": "user@proton.me",
+  "password": "your_password",
   "headless": true,
   "countries": ["US", "JP", "NL"]
 }
@@ -137,3 +150,4 @@ Content-Type: application/json
   "msg": "Successfully harvested and imported 12 ProtonVPN free nodes into S-UI pools (12 nodes)"
 }
 ```
+

@@ -26,7 +26,7 @@ func runProtonCmd(importDir string, token string, uid string, privKey string, co
 		}
 		fmt.Printf("Launching %s harvester (Zero manual token/cookie required)...\n", modeStr)
 
-		count, msg, err := service.HarvestProtonNodesViaBrowser(db, headless, "", countryList...)
+		count, msg, err := service.HarvestProtonNodesViaBrowser(db, "", "", headless, "", countryList...)
 		if err != nil {
 			fmt.Printf("Harvest error: %v\nDetails: %s\n", err, msg)
 			return

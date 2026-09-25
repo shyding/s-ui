@@ -12,6 +12,11 @@
     :visible="batchModal.visible"
     @close="closeBatchModal"
   />
+  <ProtonSync
+    v-model="protonModal.visible"
+    :visible="protonModal.visible"
+    @close="closeProtonModal"
+  />
   <NodeTest
     v-model="testModal.visible"
     :visible="testModal.visible"
@@ -30,6 +35,7 @@
     <v-col cols="12" justify="center" align="center">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
       <v-btn color="secondary" class="ml-2" @click="showBatchModal">{{ $t('actions.batchImport') || 'Batch Import' }}</v-btn>
+      <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
       <v-btn color="info" class="ml-2" @click="showTestModal(false)">{{ $t('actions.testAll') || 'Test All' }}</v-btn>
       <v-btn 
         color="success" 
@@ -283,6 +289,7 @@
 import Data from '@/store/modules/data'
 import OutboundVue from '@/layouts/modals/Outbound.vue'
 import BatchImport from '@/layouts/modals/BatchImport.vue'
+import ProtonSync from '@/layouts/modals/ProtonSync.vue'
 import NodeTest from '@/layouts/modals/NodeTest.vue'
 import Stats from '@/layouts/modals/Stats.vue'
 import { Outbound } from '@/types/outbounds'
@@ -310,6 +317,18 @@ const modal = ref({
 const batchModal = ref({
   visible: false,
 })
+
+const protonModal = ref({
+  visible: false,
+})
+
+const showProtonModal = () => {
+  protonModal.value.visible = true
+}
+
+const closeProtonModal = () => {
+  protonModal.value.visible = false
+}
 
 const testModal = ref({
   visible: false,

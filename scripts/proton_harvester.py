@@ -1,6 +1,6 @@
 """
 ProtonVPN Automated Browser Harvester for S-UI
-Uses Playwright with real Chrome to authenticate and harvest ProtonVPN servers and WireGuard configs.
+Supports automated login with username & password, interactive browser mode, and silent background refreshes.
 Zero manual token/cookie copy-paste required.
 """
 
@@ -16,7 +16,7 @@ CONFIGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "harveste
 WIREGUARD_PAGE = "https://account.proton.me/u/0/vpn/wireguard"
 LOGIN_PAGE = "https://account.proton.me/login"
 
-def harvest_nodes(headless=False, timeout_seconds=180):
+def harvest_nodes(username="", password="", headless=False, timeout_seconds=180):
     os.makedirs(PROFILE_DIR, exist_ok=True)
     os.makedirs(CONFIGS_DIR, exist_ok=True)
 
@@ -57,7 +57,7 @@ def harvest_nodes(headless=False, timeout_seconds=180):
 
         page.on("response", handle_response)
 
-        print(f"Opening ProtonVPN portal (Headless: {headless})...", flush=True)
+        print(f"Opening ProtonVPN portal (Headless: {headless}, AutoLogin: {bool(username)})...", flush=True)
         try:
             page.goto(WIREGUARD_PAGE, wait_until="domcontentloaded", timeout=45000)
         except Exception as e:
@@ -65,6 +65,7 @@ def harvest_nodes(headless=False, timeout_seconds=180):
 
         start_time = time.time()
         logged_in = False
+        attempted_auto_login = False
 
         while time.time() - start_time < timeout_seconds:
             current_url = page.url
@@ -72,17 +73,33 @@ def harvest_nodes(headless=False, timeout_seconds=180):
 
             # Check if user needs to log in
             is_login_page = ("login" in current_url) or ("登录" in title) or ("Login" in title)
-            
+
             if is_login_page:
-                if headless:
-                    results["message"] = "Proton session not authenticated. Please launch in browser mode (without --headless) to log in once."
+                if username and password and not attempted_auto_login:
+                    print("Automating credentials login on Proton...", flush=True)
+                    attempted_auto_login = True
+                    try:
+                        u_input = page.query_selector("input#username") or page.query_selector("input[autocomplete='username']")
+                        p_input = page.query_selector("input#password") or page.query_selector("input[type='password']")
+                        if u_input and p_input:
+                            u_input.fill(username)
+                            p_input.fill(password)
+                            sub_btn = page.query_selector("button[type='submit']")
+                            if sub_btn:
+                                sub_btn.click()
+                                print("Submitted login credentials!", flush=True)
+                                page.wait_for_timeout(4000)
+                    except Exception as e:
+                        print(f"Login filling error: {e}", flush=True)
+                elif headless and not (username and password):
+                    results["message"] = "Proton session not authenticated. Please provide username & password or launch interactive mode."
                     print(results["message"], flush=True)
                     context.close()
                     return results
-                print("Waiting for user to log in via opened Chrome window...", flush=True)
-                page.wait_for_timeout(2000)
+                else:
+                    print("Waiting for login completion...", flush=True)
+                    page.wait_for_timeout(2000)
             elif "account.proton.me" in current_url:
-                # User is logged in to account.proton.me
                 logged_in = True
                 break
             page.wait_for_timeout(1000)
@@ -142,7 +159,15 @@ def harvest_nodes(headless=False, timeout_seconds=180):
 
 if __name__ == "__main__":
     is_headless = "--headless" in sys.argv
-    res = harvest_nodes(headless=is_headless)
+    user = ""
+    pwd = ""
+    for i, a in enumerate(sys.argv):
+        if a == "--username" and i + 1 < len(sys.argv):
+            user = sys.argv[i + 1]
+        elif a == "--password" and i + 1 < len(sys.argv):
+            pwd = sys.argv[i + 1]
+
+    res = harvest_nodes(username=user, password=pwd, headless=is_headless)
     # Output single clean JSON line for caller to parse
     print("---SUI_HARVEST_START---")
     print(json.dumps(res))

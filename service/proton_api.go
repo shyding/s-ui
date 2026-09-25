@@ -384,8 +384,8 @@ type HarvestResult struct {
 }
 
 // HarvestProtonNodesViaBrowser executes the automated browser harvester to fetch servers
-// with ZERO manual token/cookie copy-paste.
-func HarvestProtonNodesViaBrowser(db *gorm.DB, headless bool, scriptPath string, countries ...string) (int, string, error) {
+// with ZERO manual token/cookie copy-paste. Supports username/password automated login.
+func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string, headless bool, scriptPath string, countries ...string) (int, string, error) {
 	if scriptPath == "" {
 		scriptPath = filepath.Join("scripts", "proton_harvester.py")
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
@@ -396,6 +396,12 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, headless bool, scriptPath string,
 	args := []string{scriptPath}
 	if headless {
 		args = append(args, "--headless")
+	}
+	if username != "" {
+		args = append(args, "--username", username)
+	}
+	if password != "" {
+		args = append(args, "--password", password)
 	}
 
 	cmd := exec.Command("python.exe", args...)

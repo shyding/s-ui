@@ -20,9 +20,15 @@
     :data="qrcode.data"
     @close="closeQrCode"
   />
+  <ProtonSync
+    v-model="protonModal.visible"
+    :visible="protonModal.visible"
+    @close="closeProtonModal"
+  />
   <v-row>
     <v-col cols="12" justify="center" align="center">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
+      <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
     </v-col>
   </v-row>
   <v-row>
@@ -106,6 +112,7 @@
 <script lang="ts" setup>
 import Data from '@/store/modules/data'
 import EndpointVue from '@/layouts/modals/Endpoint.vue'
+import ProtonSync from '@/layouts/modals/ProtonSync.vue'
 import Stats from '@/layouts/modals/Stats.vue'
 import QrCode from '@/layouts/modals/WgQrCode.vue'
 import { Endpoint } from '@/types/endpoints'
@@ -128,6 +135,18 @@ const modal = ref({
   id: 0,
   data: "",
 })
+
+const protonModal = ref({
+  visible: false,
+})
+
+const showProtonModal = () => {
+  protonModal.value.visible = true
+}
+
+const closeProtonModal = () => {
+  protonModal.value.visible = false
+}
 
 let delOverlay = ref(new Array<boolean>)
 

@@ -1062,6 +1062,8 @@ func (a *ApiService) ProtonImportDir(c *gin.Context, loginUser string) {
 
 func (a *ApiService) ProtonAutoHarvest(c *gin.Context, loginUser string) {
 	type AutoHarvestReq struct {
+		Username  string   `json:"username"`
+		Password  string   `json:"password"`
 		Headless  bool     `json:"headless"`
 		Countries []string `json:"countries"`
 	}
@@ -1069,7 +1071,7 @@ func (a *ApiService) ProtonAutoHarvest(c *gin.Context, loginUser string) {
 	_ = c.ShouldBindJSON(&req)
 
 	db := database.GetDB()
-	count, msg, err := service.HarvestProtonNodesViaBrowser(db, req.Headless, "", req.Countries...)
+	count, msg, err := service.HarvestProtonNodesViaBrowser(db, req.Username, req.Password, req.Headless, "", req.Countries...)
 	if err != nil {
 		jsonMsg(c, msg, err)
 		return
