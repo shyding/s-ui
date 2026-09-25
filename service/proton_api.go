@@ -534,6 +534,30 @@ type HarvestResult struct {
 	Message string                 `json:"message"`
 }
 
+// loadCachedLogicals tries to load pre-harvested Proton server list from cached JSON
+func loadCachedLogicals() []*ProtonLogicalServer {
+	candidates := []string{
+		filepath.Join("scripts", "cached_logicals.json"),
+		filepath.Join("/usr/local/s-ui", "scripts", "cached_logicals.json"),
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "scripts", "cached_logicals.json"))
+	}
+	candidates = append(candidates, filepath.Join("i:", "learn_code", "s-ui", "scripts", "cached_logicals.json"))
+
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err == nil && len(data) > 0 {
+			var servers []*ProtonLogicalServer
+			if err := json.Unmarshal(data, &servers); err == nil && len(servers) > 0 {
+				logger.Infof("Loaded %d Proton servers from local cache %s", len(servers), p)
+				return servers
+			}
+		}
+	}
+	return nil
+}
+
 // HarvestProtonNodesViaBrowser executes the automated browser harvester to fetch servers
 // with ZERO manual token/cookie copy-paste. Supports username/password automated login.
 func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string, headless bool, scriptPath string, countries ...string) (int, string, error) {
@@ -541,65 +565,79 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string,
 	if runtime.GOOS == "windows" {
 		pythonBin = "python.exe"
 	}
-	if _, err := exec.LookPath(pythonBin); err != nil {
-		if runtime.GOOS == "windows" {
+	hasPython := false
+	if _, err := exec.LookPath(pythonBin); err == nil {
+		hasPython = true
+	} else if runtime.GOOS == "windows" {
+		if _, err2 := exec.LookPath("python"); err2 == nil {
 			pythonBin = "python"
-			if _, err2 := exec.LookPath(pythonBin); err2 != nil {
-				return 0, "", fmt.Errorf("系统未检测到 Python 运行环境。请直接使用【文件上传 / 拖拽导入 .conf】导入本地配置文件，秒级生效")
-			}
-		} else {
-			return 0, "", fmt.Errorf("服务器无头环境未安装 Python3 / Playwright 浏览器自动化组件。由于 Proton 官方对云端 IP 启用了人机验证 (CAPTCHA)，请在界面上方直接使用【文件上传 / 拖拽导入 .conf】导入本地下载的节点配置文件，秒级生效！")
+			hasPython = true
 		}
 	}
 
 	if scriptPath == "" {
-		scriptPath = filepath.Join("scripts", "proton_harvester.py")
-		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-			scriptPath = filepath.Join("i:", "learn_code", "s-ui", "scripts", "proton_harvester.py")
+		candidates := []string{
+			filepath.Join("scripts", "proton_harvester.py"),
+			filepath.Join("/usr/local/s-ui", "scripts", "proton_harvester.py"),
 		}
-	}
-
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return 0, "", fmt.Errorf("服务器未找到自动化收割脚本 (%s)。请在上方使用【文件上传 / 拖拽导入 .conf】直接导入本地配置文件，无需服务器安装浏览器环境！", filepath.Base(scriptPath))
-	}
-
-	args := []string{scriptPath}
-	if headless {
-		args = append(args, "--headless")
-	}
-	if username != "" {
-		args = append(args, "--username", username)
-	}
-	if password != "" {
-		args = append(args, "--password", password)
-	}
-
-	cmd := exec.Command(pythonBin, args...)
-	outputBytes, err := cmd.CombinedOutput()
-	outputStr := string(outputBytes)
-
-	startMarker := "---SUI_HARVEST_START---"
-	endMarker := "---SUI_HARVEST_END---"
-	startIndex := strings.Index(outputStr, startMarker)
-	endIndex := strings.Index(outputStr, endMarker)
-
-	var jsonStr string
-	if startIndex != -1 && endIndex != -1 && endIndex > startIndex {
-		jsonStr = strings.TrimSpace(outputStr[startIndex+len(startMarker) : endIndex])
-	} else {
-		if outputStr == "" && err != nil {
-			return 0, "", fmt.Errorf("执行自动化收割脚本失败: %v", err)
+		if exe, err := os.Executable(); err == nil {
+			candidates = append(candidates, filepath.Join(filepath.Dir(exe), "scripts", "proton_harvester.py"))
 		}
-		return 0, outputStr, fmt.Errorf("Proton 自动化脚本未返回有效结果: %s", outputStr)
+		candidates = append(candidates, filepath.Join("i:", "learn_code", "s-ui", "scripts", "proton_harvester.py"))
+
+		for _, cand := range candidates {
+			if _, err := os.Stat(cand); err == nil {
+				scriptPath = cand
+				break
+			}
+		}
 	}
 
 	var res HarvestResult
-	if err := json.Unmarshal([]byte(jsonStr), &res); err != nil {
-		return 0, outputStr, fmt.Errorf("failed to parse harvester result JSON: %v, raw: %s", err, jsonStr)
+	hasHarvested := false
+
+	// Attempt live harvest if python and script are available
+	if hasPython && scriptPath != "" {
+		args := []string{scriptPath}
+		if headless {
+			args = append(args, "--headless")
+		}
+		if username != "" {
+			args = append(args, "--username", username)
+		}
+		if password != "" {
+			args = append(args, "--password", password)
+		}
+
+		cmd := exec.Command(pythonBin, args...)
+		outputBytes, _ := cmd.CombinedOutput()
+		outputStr := string(outputBytes)
+
+		startMarker := "---SUI_HARVEST_START---"
+		endMarker := "---SUI_HARVEST_END---"
+		startIndex := strings.Index(outputStr, startMarker)
+		endIndex := strings.Index(outputStr, endMarker)
+
+		if startIndex != -1 && endIndex != -1 && endIndex > startIndex {
+			jsonStr := strings.TrimSpace(outputStr[startIndex+len(startMarker) : endIndex])
+			if err := json.Unmarshal([]byte(jsonStr), &res); err == nil && res.Success && len(res.Servers) > 0 {
+				hasHarvested = true
+			}
+		}
 	}
 
-	if !res.Success || len(res.Servers) == 0 {
-		return 0, res.Message, fmt.Errorf("harvest unsuccessful: %s", res.Message)
+	// Fallback to cached logicals if live harvest did not yield servers
+	if !hasHarvested || len(res.Servers) == 0 {
+		if cached := loadCachedLogicals(); len(cached) > 0 {
+			res.Success = true
+			res.Servers = cached
+			res.Message = fmt.Sprintf("成功从本地加速缓存提取 %d 个 ProtonVPN 节点", len(cached))
+			hasHarvested = true
+		}
+	}
+
+	if !hasHarvested || len(res.Servers) == 0 {
+		return 0, "", fmt.Errorf("未能获取到 ProtonVPN 节点。建议使用【文件上传】直接选取本地 .conf 文件秒级导入！")
 	}
 
 	if len(countries) == 0 {
