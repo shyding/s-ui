@@ -110,12 +110,11 @@ func (s *Server) Start() (err error) {
 		c := &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		}
-		listener = network.NewAutoHttpsListener(listener)
-		listener = tls.NewListener(listener, c)
+		listener = network.NewDualHttpHttpsListener(listener, c)
 	}
 
 	if certFile != "" || keyFile != "" {
-		logger.Info("Sub server run https on", listener.Addr())
+		logger.Info("Sub server run http/https dual mode on", listener.Addr())
 	} else {
 		logger.Info("Sub server run http on", listener.Addr())
 	}

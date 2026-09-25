@@ -271,7 +271,23 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 					modified = true
 				}
 				activeRegions := GetActiveEgressRegions(database.GetDB())
-				newRules = InjectEgressRouteRules(newRules, "admin", activeRegions)
+				var clientNames []string
+				_ = database.GetDB().Model(&model.Client{}).Pluck("name", &clientNames)
+				if len(clientNames) == 0 {
+					clientNames = []string{"admin", "my"}
+				} else {
+					hasAdmin := false
+					for _, cn := range clientNames {
+						if cn == "admin" {
+							hasAdmin = true
+							break
+						}
+					}
+					if !hasAdmin {
+						clientNames = append(clientNames, "admin")
+					}
+				}
+				newRules = InjectEgressRouteRulesForClients(newRules, clientNames, activeRegions)
 				modified = true
 				if modified {
 					routeMap["rules"] = newRules

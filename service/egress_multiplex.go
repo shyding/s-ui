@@ -253,10 +253,10 @@ func ExpandUsersForMultiplexing(baseUsers []json.RawMessage, inboundType string,
 	return expanded
 }
 
-// InjectEgressRouteRules ensures that auth_user rules for active egress regions are present in route rules
-func InjectEgressRouteRules(rules []interface{}, rootUsername string, activeRegions []EgressRegion) []interface{} {
-	if rootUsername == "" {
-		rootUsername = "admin"
+// InjectEgressRouteRulesForClients ensures that auth_user rules for all provided clients and active egress regions are present in route rules
+func InjectEgressRouteRulesForClients(rules []interface{}, rootUsernames []string, activeRegions []EgressRegion) []interface{} {
+	if len(rootUsernames) == 0 {
+		rootUsernames = []string{"admin", "my"}
 	}
 	if len(activeRegions) == 0 {
 		activeRegions = StandardEgressRegions
@@ -290,19 +290,24 @@ func InjectEgressRouteRules(rules []interface{}, rootUsername string, activeRegi
 		newRules = append(newRules, map[string]interface{}{"action": "sniff"})
 	}
 
-	// Add region-specific auth_user rules
-	for _, reg := range activeRegions {
-		userName := fmt.Sprintf("%s-%s", rootUsername, reg.Code)
-		if reg.Code == "" || reg.Code == "sg" {
-			userName = rootUsername
+	// Add region-specific auth_user rules for each client username
+	for _, username := range rootUsernames {
+		if strings.TrimSpace(username) == "" {
+			continue
 		}
-		if !existingUserRules[userName] {
-			rule := map[string]interface{}{
-				"auth_user": []string{userName},
-				"outbound":  reg.OutboundTag,
+		for _, reg := range activeRegions {
+			userName := fmt.Sprintf("%s-%s", username, reg.Code)
+			if reg.Code == "" || reg.Code == "sg" {
+				userName = username
 			}
-			newRules = append(newRules, rule)
-			existingUserRules[userName] = true
+			if !existingUserRules[userName] {
+				rule := map[string]interface{}{
+					"auth_user": []string{userName},
+					"outbound":  reg.OutboundTag,
+				}
+				newRules = append(newRules, rule)
+				existingUserRules[userName] = true
+			}
 		}
 	}
 
@@ -312,6 +317,14 @@ func InjectEgressRouteRules(rules []interface{}, rootUsername string, activeRegi
 	}
 
 	return newRules
+}
+
+// InjectEgressRouteRules ensures that auth_user rules for active egress regions are present in route rules
+func InjectEgressRouteRules(rules []interface{}, rootUsername string, activeRegions []EgressRegion) []interface{} {
+	if rootUsername == "" {
+		rootUsername = "admin"
+	}
+	return InjectEgressRouteRulesForClients(rules, []string{rootUsername}, activeRegions)
 }
 
 // InjectEgressRouteRulesBytes takes raw Route JSON and injects egress routing rules

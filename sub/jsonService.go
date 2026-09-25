@@ -74,6 +74,42 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		}
 	}
 
+	activeRegions := service.GetActiveEgressRegions(database.GetDB())
+	var expandedOutbounds []map[string]interface{}
+	var expandedOutTags []string
+	for _, ob := range *outbounds {
+		t, _ := ob["type"].(string)
+		if t == "selector" || t == "urltest" || t == "direct" {
+			continue
+		}
+		origTag, _ := ob["tag"].(string)
+		origUUID, _ := ob["uuid"].(string)
+		origPass, _ := ob["password"].(string)
+
+		for _, reg := range activeRegions {
+			newOb := make(map[string]interface{})
+			for k, v := range ob {
+				newOb[k] = v
+			}
+			tag := fmt.Sprintf("%s [%s] %s - %s", reg.Flag, strings.ToUpper(reg.Code), reg.Name, origTag)
+			newOb["tag"] = tag
+			if reg.Code != "" && reg.Code != "sg" {
+				if origUUID != "" {
+					newOb["uuid"] = service.DeriveUUID(origUUID, reg.Code)
+				}
+				if origPass != "" {
+					newOb["password"] = service.DerivePassword(origPass, reg.Code)
+				}
+			}
+			expandedOutbounds = append(expandedOutbounds, newOb)
+			expandedOutTags = append(expandedOutTags, tag)
+		}
+	}
+	if len(expandedOutbounds) > 0 {
+		*outbounds = expandedOutbounds
+		*outTags = expandedOutTags
+	}
+
 	j.addDefaultOutbounds(outbounds, outTags)
 
 	err = json.Unmarshal([]byte(defaultJson), &jsonConfig)
@@ -88,6 +124,8 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 
 	result, _ := json.MarshalIndent(jsonConfig, "", "  ")
 	resultStr := string(result)
+	resultStr = strings.ReplaceAll(resultStr, "dash.icta.qzz.io", "dash.icta.top")
+	resultStr = strings.ReplaceAll(resultStr, "sub.icta.qzz.io", "dash.icta.top")
 
 	updateInterval, _ := j.SettingService.GetSubUpdates()
 	headers := util.GetHeaders(client, updateInterval)

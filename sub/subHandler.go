@@ -1,6 +1,8 @@
 package sub
 
 import (
+	"strings"
+
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 
@@ -30,6 +32,18 @@ func (s *SubHandler) subs(c *gin.Context) {
 	var err error
 	subId := c.Param("subid")
 	format, isFormat := c.GetQuery("format")
+
+	if !isFormat {
+		ua := strings.ToLower(c.GetHeader("User-Agent"))
+		if strings.Contains(ua, "clash") || strings.Contains(ua, "mihomo") || strings.Contains(ua, "stash") || strings.Contains(ua, "meta") {
+			format = "clash"
+			isFormat = true
+		} else if strings.Contains(ua, "sing-box") || strings.Contains(ua, "sfi") || strings.Contains(ua, "sfa") || strings.Contains(ua, "sfm") {
+			format = "json"
+			isFormat = true
+		}
+	}
+
 	if isFormat {
 		switch format {
 		case "json":
@@ -52,6 +66,14 @@ func (s *SubHandler) subs(c *gin.Context) {
 	}
 
 	s.addHeaders(c, headers)
+
+	if format == "clash" {
+		c.Header("Content-Type", "text/yaml; charset=utf-8")
+	} else if format == "json" {
+		c.Header("Content-Type", "application/json; charset=utf-8")
+	} else {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+	}
 
 	c.String(200, *result)
 }
