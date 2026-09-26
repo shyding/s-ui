@@ -82,8 +82,11 @@ jobs:
       - name: Restart s-ui service
         run: |
           ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            # Stop s-ui service
-            sudo systemctl stop s-ui
+            # Stop s-ui service and ensure no lingering processes hold ports
+            sudo systemctl stop s-ui || true
+            sudo pkill -9 -f /usr/local/s-ui/sui || true
+            sudo fuser -k 40734/udp 54142/tcp 2096/tcp 2053/tcp || true
+            sleep 1
 
             # Backup old binary
             sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S)

@@ -116,8 +116,8 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 		errMsg := err.Error()
 		logger.Error("start sing-box err:", errMsg)
 
-		// Self-healing: if an inbound failed initialization, isolate it and retry
-		if strings.Contains(errMsg, "initialize inbound") {
+		// Self-healing: if an inbound failed initialization or port bind, isolate it and retry
+		if strings.Contains(errMsg, "inbound") {
 			removed := false
 			for i, inRaw := range singboxConfig.Inbounds {
 				var inMap map[string]interface{}
