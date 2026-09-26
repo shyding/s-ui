@@ -292,7 +292,7 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 							continue
 						}
 						// Strip legacy broken outbound targets
-						if ob, _ := rMap["outbound"].(string); ob == "warp-6eV" {
+						if ob, _ := rMap["outbound"].(string); ob == "warp-6eV" || strings.HasPrefix(ob, "out-ep-") || strings.HasPrefix(ob, "out-proton-") {
 							modified = true
 							continue
 						}

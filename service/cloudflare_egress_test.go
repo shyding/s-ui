@@ -189,24 +189,21 @@ func TestEnsureCloudflarePoolsInOutbounds(t *testing.T) {
 		t.Errorf("Expected cf-gb-pool in Outbounds")
 	}
 
-	foundDirectWrap := false
-	for _, obRaw := range singboxConfig.Outbounds {
-		var obMap map[string]interface{}
-		if err := json.Unmarshal(obRaw, &obMap); err == nil {
-			tag, _ := obMap["tag"].(string)
-			if strings.HasPrefix(tag, "out-ep-cf-") || strings.HasPrefix(tag, "out-warp-") {
-				foundDirectWrap = true
-				if obMap["type"] != "direct" {
-					t.Errorf("Endpoint wrapper %s must be direct outbound, got %v", tag, obMap["type"])
-				}
-				if obMap["endpoint"] == nil && obMap["detour"] == nil {
-					t.Errorf("Endpoint wrapper %s must have endpoint/detour field", tag)
+	foundCFEndpoint := false
+	for _, epRaw := range singboxConfig.Endpoints {
+		var epMap map[string]interface{}
+		if err := json.Unmarshal(epRaw, &epMap); err == nil {
+			tag, _ := epMap["tag"].(string)
+			if strings.HasPrefix(tag, "ep-cf-") {
+				foundCFEndpoint = true
+				if epMap["type"] != "wireguard" {
+					t.Errorf("Cloudflare endpoint %s must have type wireguard, got %v", tag, epMap["type"])
 				}
 			}
 		}
 	}
-	if !foundDirectWrap {
-		t.Errorf("Expected direct outbounds wrapping endpoints (out-ep-cf-* or out-warp-*) in Outbounds")
+	if !foundCFEndpoint {
+		t.Errorf("Expected ep-cf-* WireGuard endpoints in singboxConfig.Endpoints")
 	}
 }
 

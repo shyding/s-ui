@@ -6,15 +6,25 @@ import ssl
 import sys
 import time
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 def fetch_subscription(urls):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
+    proxy_handler = urllib.request.ProxyHandler({'http': 'http://127.0.0.1:10808', 'https': 'http://127.0.0.1:10808'})
+    opener_proxy = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=ctx))
+    opener_direct = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+
     last_err = None
     for url in urls:
-        print(f"[*] Trying to fetch subscription from: {url}")
-        for attempt in range(3):
+        for opener, mode in [(opener_proxy, "Proxy (127.0.0.1:10808)"), (opener_direct, "Direct")]:
+            print(f"[*] Trying to fetch subscription from: {url} via {mode}")
             try:
                 req = urllib.request.Request(
                     url,
@@ -23,14 +33,13 @@ def fetch_subscription(urls):
                         "Accept": "*/*"
                     }
                 )
-                with urllib.request.urlopen(req, timeout=10, context=ctx if url.startswith("https") else None) as resp:
+                with opener.open(req, timeout=5) as resp:
                     data = resp.read().decode('utf-8', errors='ignore').strip()
-                    print(f"[+] Successfully fetched {len(data)} bytes from {url}")
+                    print(f"[+] Successfully fetched {len(data)} bytes from {url} via {mode}")
                     return data
             except Exception as e:
                 last_err = e
-                print(f"[-] Attempt {attempt+1} failed: {e}")
-                time.sleep(2)
+                print(f"[-] {mode} failed: {e}")
     raise RuntimeError(f"All subscription fetch attempts failed: {last_err}")
 
 def decode_subscription(raw_sub):

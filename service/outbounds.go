@@ -102,6 +102,9 @@ func (o *OutboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		return nil, err
 	}
 	for _, outbound := range outbounds {
+		if outbound.Type == "direct" && (strings.HasPrefix(outbound.Tag, "out-ep-") || strings.HasPrefix(outbound.Tag, "out-proton-")) {
+			continue
+		}
 		outboundJson, err := outbound.SingBoxJSON()
 		if err != nil {
 			return nil, err

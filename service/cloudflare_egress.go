@@ -587,6 +587,7 @@ func EnsureMasterWarpEndpoint(db *gorm.DB) map[string]interface{} {
 	var optMap map[string]interface{}
 	if err := json.Unmarshal(ep.Options, &optMap); err == nil {
 		optMap["tag"] = ep.Tag
+		optMap["type"] = "wireguard"
 		return optMap
 	}
 	return nil
@@ -616,11 +617,17 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 	var baseWarpMap map[string]interface{}
 	var warpTag string = "warp-master"
 	existingEpTags := make(map[string]bool)
-	for _, epRaw := range singboxConfig.Endpoints {
+	for i, epRaw := range singboxConfig.Endpoints {
 		var epMap map[string]interface{}
 		if err := json.Unmarshal(epRaw, &epMap); err == nil {
 			if tag, ok := epMap["tag"].(string); ok && tag != "" {
 				existingEpTags[tag] = true
+			}
+			if epMap["type"] == "" || epMap["type"] == "warp" {
+				epMap["type"] = "wireguard"
+				if updated, err := json.Marshal(epMap); err == nil {
+					singboxConfig.Endpoints[i] = updated
+				}
 			}
 			if isCloudflareWarpEndpoint(epMap) && baseWarpMap == nil {
 				baseWarpMap = epMap
@@ -669,6 +676,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					var clonedMap map[string]interface{}
 					_ = json.Unmarshal(clonedBytes, &clonedMap)
 					clonedMap["tag"] = regionEpTag
+					clonedMap["type"] = "wireguard"
 
 					if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
 						if pMap, ok := peers[0].(map[string]interface{}); ok {
@@ -691,29 +699,10 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// Build direct outbound wrapping targetEpTag so Sing-Box urltest can detour to it
-		directTag := fmt.Sprintf("out-%s", targetEpTag)
-		if !existingTags[directTag] {
-			directOb, err := BuildDirectOutboundJson(directTag, targetEpTag)
-			if err == nil {
-				singboxConfig.Outbounds = append(singboxConfig.Outbounds, directOb)
-				existingTags[directTag] = true
-			}
-		}
-
-		memberTags := []string{directTag}
+		// Direct WireGuard endpoint membership in urltest pool without dummy direct outbound wrapper
+		memberTags := []string{targetEpTag}
 		if targetEpTag != warpTag && warpTag != "" {
-			warpDirectTag := fmt.Sprintf("out-%s", warpTag)
-			if !existingTags[warpDirectTag] {
-				warpDirectOb, err := BuildDirectOutboundJson(warpDirectTag, warpTag)
-				if err == nil {
-					singboxConfig.Outbounds = append(singboxConfig.Outbounds, warpDirectOb)
-					existingTags[warpDirectTag] = true
-				}
-			}
-			if existingTags[warpDirectTag] {
-				memberTags = append(memberTags, warpDirectTag)
-			}
+			memberTags = append(memberTags, warpTag)
 		}
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
 		if err == nil {

@@ -167,10 +167,7 @@ func TestSingBoxConfig_FullValidation(t *testing.T) {
 	ep53, _ := BuildWireGuardEndpointJson("ep-us-free-53", conf53)
 	ep3, _ := BuildWireGuardEndpointJson("ep-us-free-3", conf3)
 
-	out9, _ := BuildDirectOutboundJson("out-us-9", "ep-us-free-9")
-	out53, _ := BuildDirectOutboundJson("out-us-53", "ep-us-free-53")
-	out3, _ := BuildDirectOutboundJson("out-us-3", "ep-us-free-3")
-	outPool, _ := BuildUrlTestPoolJson("us-pool", []string{"out-us-9", "out-us-53", "out-us-3"}, "3m")
+	outPool, _ := BuildUrlTestPoolJson("us-pool", []string{"ep-us-free-9", "ep-us-free-53", "ep-us-free-3"}, "3m")
 
 	baseUser := json.RawMessage(`{"name":"admin","uuid":"403db7be-930b-449e-b5f4-34537cb594c7","alterId":0}`)
 	inboundUsers := ExpandUsersForMultiplexing([]json.RawMessage{baseUser}, "vmess", StandardEgressRegions)
@@ -205,9 +202,6 @@ func TestSingBoxConfig_FullValidation(t *testing.T) {
 		"endpoints": []json.RawMessage{ep9, ep53, ep3},
 		"outbounds": []interface{}{
 			outPool,
-			out9,
-			out53,
-			out3,
 			map[string]interface{}{"type": "direct", "tag": "direct"},
 		},
 		"route": map[string]interface{}{
@@ -232,8 +226,8 @@ func TestSingBoxConfig_FullValidation(t *testing.T) {
 	if len(options.Endpoints) != 3 {
 		t.Errorf("Expected 3 endpoints, got %d", len(options.Endpoints))
 	}
-	if len(options.Outbounds) != 5 {
-		t.Errorf("Expected 5 outbounds, got %d", len(options.Outbounds))
+	if len(options.Outbounds) != 2 {
+		t.Errorf("Expected 2 outbounds, got %d", len(options.Outbounds))
 	}
 }
 
