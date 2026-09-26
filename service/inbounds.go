@@ -231,10 +231,22 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 	}
 	for _, inbound := range inbounds {
 		// Naive, Hysteria, TUIC, Hysteria2 strictly require a valid TLS certificate for QUIC server
-		// If Tls is missing, sing-box crashes on startup with: "TLS is required for QUIC server"
-		if (inbound.Type == "naive" || inbound.Type == "hysteria" || inbound.Type == "tuic" || inbound.Type == "hysteria2") && (inbound.Tls == nil || inbound.TlsId == 0) {
-			logger.Warningf("Skipping inbound %s (%s): missing required TLS configuration for QUIC server", inbound.Tag, inbound.Type)
-			continue
+		// If Tls is missing, disabled, or empty, sing-box crashes on startup with: "TLS is required for QUIC server"
+		if inbound.Type == "naive" || inbound.Type == "hysteria" || inbound.Type == "tuic" || inbound.Type == "hysteria2" {
+			hasValidTLS := false
+			if inbound.Tls != nil && len(inbound.Tls.Server) > 4 && string(inbound.Tls.Server) != "null" {
+				var tlsMap map[string]interface{}
+				if err := json.Unmarshal(inbound.Tls.Server, &tlsMap); err == nil {
+					enabled, ok := tlsMap["enabled"].(bool)
+					if (!ok || enabled) && (tlsMap["server_name"] != nil || tlsMap["certificate"] != nil || tlsMap["certificate_path"] != nil || tlsMap["acme"] != nil) {
+						hasValidTLS = true
+					}
+				}
+			}
+			if !hasValidTLS {
+				logger.Warningf("Skipping inbound %s (%s): missing required TLS configuration for QUIC server", inbound.Tag, inbound.Type)
+				continue
+			}
 		}
 
 		inboundJson, err := inbound.MarshalJSON()
