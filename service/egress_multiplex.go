@@ -418,7 +418,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				if existingEpTags[epTag] {
 					dynTags = append(dynTags, epTag)
 				}
-				if len(dynTags) >= 3 {
+				if len(dynTags) >= 5 {
 					break
 				}
 			}

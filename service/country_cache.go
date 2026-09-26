@@ -184,6 +184,20 @@ func (c *MultiCountryCache) GetCountryServers(countryCode string) []*PhysicalSer
 		copy(cp, list)
 		return cp
 	}
+	// Alias mapping between UK and GB
+	altCode := ""
+	if code == "GB" {
+		altCode = "UK"
+	} else if code == "UK" {
+		altCode = "GB"
+	}
+	if altCode != "" {
+		if list, ok := c.serversByLoc[altCode]; ok && len(list) > 0 {
+			cp := make([]*PhysicalServerEntry, len(list))
+			copy(cp, list)
+			return cp
+		}
+	}
 	return nil
 }
 

@@ -990,33 +990,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			matchedServers = countryCache.GetCountryServers(locUpper)
 		}
 
-		// 1. Prioritize Cloudflare physical endpoints discovered from official Cloudflare CIDRs
-		var cfDbEndpoints []model.CloudflareEndpoint
-		if coloUpper != "" {
-			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
-		}
-		if len(cfDbEndpoints) == 0 && locUpper != "" {
-			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Find(&cfDbEndpoints).Error
-		}
-
-		for cIdx, cfEp := range cfDbEndpoints {
-			if len(memberTags) >= 2 {
-				break
-			}
-			cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
-			if !existingEpTags[cfTag] {
-				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
-				if err == nil {
-					singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
-					existingEpTags[cfTag] = true
-				}
-			}
-			if existingEpTags[cfTag] {
-				memberTags = append(memberTags, cfTag)
-			}
-		}
-
-		// 2. Supplement with real physical servers in the target city / country
+		// 1. Populate real physical servers in the target city / country (up to 5 distinct physical IPs)
 		if len(matchedServers) > 0 {
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range matchedServers {
@@ -1036,7 +1010,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				if existingEpTags[epTag] {
 					memberTags = append(memberTags, epTag)
 				}
-				if len(memberTags) >= 3 {
+				if len(memberTags) >= 5 {
 					break
 				}
 			}
