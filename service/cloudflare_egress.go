@@ -603,15 +603,19 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		return
 	}
 
-	existingTags := make(map[string]bool)
+	// Filter out stale Cloudflare pool definitions so clean ones with active endpoints are rebuilt
+	cleanOutbounds := make([]json.RawMessage, 0, len(singboxConfig.Outbounds))
 	for _, obRaw := range singboxConfig.Outbounds {
 		var obMap map[string]interface{}
 		if err := json.Unmarshal(obRaw, &obMap); err == nil {
-			if tag, ok := obMap["tag"].(string); ok {
-				existingTags[tag] = true
+			tag, _ := obMap["tag"].(string)
+			if strings.HasPrefix(tag, "cf-") && strings.HasSuffix(tag, "-pool") {
+				continue
 			}
 		}
+		cleanOutbounds = append(cleanOutbounds, obRaw)
 	}
+	singboxConfig.Outbounds = cleanOutbounds
 
 	// Check if base genuine WARP endpoint exists (strictly segregated from ProtonVPN)
 	var baseWarpMap map[string]interface{}
@@ -655,9 +659,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 	for _, reg := range cfRegions {
 		poolTag := reg.OutboundTag
-		if existingTags[poolTag] {
-			continue
-		}
 
 		targetEpTag := warpTag
 		// Check if we can build a region-specific endpoint
@@ -707,7 +708,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
 		if err == nil {
 			singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
-			existingTags[poolTag] = true
 		}
 	}
 }

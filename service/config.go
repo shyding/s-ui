@@ -90,6 +90,7 @@ func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
 	}
 	EnsureCloudflarePoolsInOutbounds(&singboxConfig, database.GetDB())
 	EnsureProtonPoolsInOutbounds(&singboxConfig, database.GetDB())
+	s.SanitizeOutboundDependencies(&singboxConfig)
 	return &singboxConfig, nil
 }
 
@@ -103,6 +104,7 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 	}
 
 	for attempt := 0; attempt < 5; attempt++ {
+		s.SanitizeOutboundDependencies(singboxConfig)
 		rawConfig, err := json.MarshalIndent(singboxConfig, "", "  ")
 		if err != nil {
 			return err
@@ -137,9 +139,95 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 			}
 		}
 
+		// Self-healing: if an outbound or dependency failed, isolate or sanitize it and retry
+		if strings.Contains(errMsg, "dependency") || strings.Contains(errMsg, "outbound") {
+			removed := false
+			for i, obRaw := range singboxConfig.Outbounds {
+				var obMap map[string]interface{}
+				if json.Unmarshal(obRaw, &obMap) == nil {
+					tag, _ := obMap["tag"].(string)
+					if tag != "" && strings.Contains(errMsg, tag) {
+						logger.Warningf("Self-healing: isolating problematic outbound '%s' and retrying startup", tag)
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds[:i], singboxConfig.Outbounds[i+1:]...)
+						removed = true
+						break
+					}
+				}
+			}
+			if removed {
+				continue
+			}
+		}
+
 		return err
 	}
 	return nil
+}
+
+func (s *ConfigService) SanitizeOutboundDependencies(singboxConfig *SingBoxConfig) {
+	if singboxConfig == nil {
+		return
+	}
+	validTags := make(map[string]bool)
+	validTags["direct"] = true
+	validTags["block"] = true
+
+	for _, epRaw := range singboxConfig.Endpoints {
+		var epMap map[string]interface{}
+		if json.Unmarshal(epRaw, &epMap) == nil {
+			if tag, ok := epMap["tag"].(string); ok && tag != "" {
+				validTags[tag] = true
+			}
+		}
+	}
+	for _, obRaw := range singboxConfig.Outbounds {
+		var obMap map[string]interface{}
+		if json.Unmarshal(obRaw, &obMap) == nil {
+			if tag, ok := obMap["tag"].(string); ok && tag != "" {
+				validTags[tag] = true
+			}
+		}
+	}
+
+	cleanOutbounds := make([]json.RawMessage, 0, len(singboxConfig.Outbounds))
+	for _, obRaw := range singboxConfig.Outbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err != nil {
+			continue
+		}
+		obType, _ := obMap["type"].(string)
+		tag, _ := obMap["tag"].(string)
+
+		if obType == "urltest" || obType == "selector" {
+			if members, ok := obMap["outbounds"].([]interface{}); ok {
+				var validMembers []string
+				for _, m := range members {
+					if mStr, ok := m.(string); ok && validTags[mStr] {
+						validMembers = append(validMembers, mStr)
+					}
+				}
+				if len(validMembers) > 0 {
+					obMap["outbounds"] = validMembers
+					if updated, err := json.Marshal(obMap); err == nil {
+						cleanOutbounds = append(cleanOutbounds, updated)
+						continue
+					}
+				} else {
+					logger.Warningf("Sanitizer: pool %s had no valid members, falling back to direct", tag)
+					obMap["type"] = "direct"
+					delete(obMap, "outbounds")
+					delete(obMap, "url")
+					delete(obMap, "interval")
+					if updated, err := json.Marshal(obMap); err == nil {
+						cleanOutbounds = append(cleanOutbounds, updated)
+						continue
+					}
+				}
+			}
+		}
+		cleanOutbounds = append(cleanOutbounds, obRaw)
+	}
+	singboxConfig.Outbounds = cleanOutbounds
 }
 
 func (s *ConfigService) RestartCore() error {

@@ -328,15 +328,19 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		return
 	}
 
-	existingTags := make(map[string]bool)
+	// Filter out stale proton pool definitions so clean ones with active endpoints are rebuilt
+	cleanOutbounds := make([]json.RawMessage, 0, len(singboxConfig.Outbounds))
 	for _, obRaw := range singboxConfig.Outbounds {
 		var obMap map[string]interface{}
 		if err := json.Unmarshal(obRaw, &obMap); err == nil {
-			if tag, ok := obMap["tag"].(string); ok {
-				existingTags[tag] = true
+			tag, _ := obMap["tag"].(string)
+			if tag == "us-pool" || tag == "jp-pool" || tag == "nl-pool" {
+				continue
 			}
 		}
+		cleanOutbounds = append(cleanOutbounds, obRaw)
 	}
+	singboxConfig.Outbounds = cleanOutbounds
 
 	// Map each region code ("us", "jp", "nl") to its matching endpoint tags
 	regionEndpoints := make(map[string][]string)
@@ -361,16 +365,16 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			continue
 		}
 		poolTag := reg.OutboundTag // e.g. "us-pool", "jp-pool", "nl-pool"
-		if existingTags[poolTag] {
-			continue
-		}
 		eps := regionEndpoints[reg.Code]
 		if len(eps) > 0 {
 			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
 			if err == nil {
 				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
-				existingTags[poolTag] = true
 			}
+		} else {
+			// Fallback direct outbound if no endpoints configured yet
+			fallbackOb, _ := json.Marshal(map[string]interface{}{"type": "direct", "tag": poolTag})
+			singboxConfig.Outbounds = append(singboxConfig.Outbounds, fallbackOb)
 		}
 	}
 }
