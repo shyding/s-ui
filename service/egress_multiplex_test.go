@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/glebarez/sqlite"
 	"github.com/sagernet/sing-box/option"
+	"gorm.io/gorm"
 )
 
 const sampleUS9Conf = `[Interface]
@@ -231,5 +234,69 @@ func TestSingBoxConfig_FullValidation(t *testing.T) {
 	}
 	if len(options.Outbounds) != 5 {
 		t.Errorf("Expected 5 outbounds, got %d", len(options.Outbounds))
+	}
+}
+
+func TestInboundFetchUsersAndExpansion(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Failed to open test in-memory sqlite: %v", err)
+	}
+
+	err = db.AutoMigrate(&model.Client{}, &model.CloudflareEndpoint{}, &model.Outbound{}, &model.Endpoint{})
+	if err != nil {
+		t.Fatalf("Failed to auto migrate: %v", err)
+	}
+
+	_ = db.Create(&model.Outbound{Tag: "us-pool", Type: "urltest"}).Error
+	_ = db.Create(&model.Outbound{Tag: "jp-pool", Type: "urltest"}).Error
+	_ = db.Create(&model.Outbound{Tag: "nl-pool", Type: "urltest"}).Error
+
+	client := model.Client{
+		Id:       1,
+		Enable:   true,
+		Name:     "my",
+		Config:   json.RawMessage(`{"vless":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","flow":""}}`),
+		Inbounds: json.RawMessage(`[1]`),
+	}
+	if err := db.Create(&client).Error; err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	_ = SeedInitialCloudflareEndpoints(db)
+	activeRegions := GetActiveEgressRegions(db)
+
+	inboundService := &InboundService{}
+	inboundMap := map[string]interface{}{"type": "vless"}
+	users, err := inboundService.fetchUsers(db, "vless", "id IN (1)", inboundMap)
+	if err != nil {
+		t.Fatalf("fetchUsers failed: %v", err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("Expected 1 user, got %d", len(users))
+	}
+
+	var rootUserMap map[string]interface{}
+	_ = json.Unmarshal(users[0], &rootUserMap)
+	if rootUserMap["name"] != "my" {
+		t.Fatalf("Expected user name 'my', got %v", rootUserMap["name"])
+	}
+
+	expanded := ExpandUsersForMultiplexing(users, "vless", activeRegions)
+	if len(expanded) < 10 {
+		t.Fatalf("Expected at least 10 expanded users for active regions, got %d", len(expanded))
+	}
+
+	expandedNames := make(map[string]bool)
+	for _, uRaw := range expanded {
+		var uMap map[string]interface{}
+		_ = json.Unmarshal(uRaw, &uMap)
+		expandedNames[uMap["name"].(string)] = true
+	}
+
+	for _, reqName := range []string{"my", "my-us", "my-jp", "my-nl", "my-cf-br", "my-cf-ar", "my-cf-cl", "my-cf-ng", "my-cf-za", "my-cf-tr"} {
+		if !expandedNames[reqName] {
+			t.Errorf("Expected expanded user '%s' to be present", reqName)
+		}
 	}
 }

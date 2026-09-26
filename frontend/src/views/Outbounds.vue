@@ -36,6 +36,7 @@
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
       <v-btn color="secondary" class="ml-2" @click="showBatchModal">{{ $t('actions.batchImport') || 'Batch Import' }}</v-btn>
       <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
+      <v-btn color="amber-darken-3" class="ml-2" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
       <v-btn color="info" class="ml-2" @click="showTestModal(false)">{{ $t('actions.testAll') || 'Test All' }}</v-btn>
       <v-btn 
         color="success" 
@@ -295,6 +296,24 @@ import Stats from '@/layouts/modals/Stats.vue'
 import { Outbound } from '@/types/outbounds'
 import { computed, ref, reactive } from 'vue'
 import HttpUtils from '@/plugins/httputil'
+import { push } from 'notivue'
+
+const cfLoading = ref(false)
+
+const refreshCloudflare = async () => {
+  cfLoading.value = true
+  try {
+    const res = await HttpUtils.post('api/cloudflareRefresh', {})
+    if (res?.success) {
+      push.success({
+        message: res.obj?.message || `Cloudflare 全球出口已同步 ${res.obj?.regionCount ?? 0} 个国家地区，${res.obj?.endpointCount ?? 0} 个在线出口端点`,
+      })
+      await Data().loadData()
+    }
+  } finally {
+    cfLoading.value = false
+  }
+}
 
 const outbounds = computed((): Outbound[] => {
   return <Outbound[]> Data().outbounds

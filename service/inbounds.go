@@ -264,21 +264,38 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 		}
 	}
 
-	var users []string
+	type clientUserRow struct {
+		Name   string `gorm:"column:name"`
+		Config string `gorm:"column:config"`
+	}
+	var rows []clientUserRow
 
 	err := db.Raw(
-		fmt.Sprintf(`SELECT json_extract(clients.config, "$.%s")
+		fmt.Sprintf(`SELECT name, json_extract(clients.config, "$.%s") AS config
 		FROM clients WHERE enable = true AND %s`,
-			inboundType, condition)).Scan(&users).Error
+			inboundType, condition)).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	var usersJson []json.RawMessage
-	for _, user := range users {
-		if inboundType == "vless" && inbound["tls"] == nil {
-			user = strings.Replace(user, "xtls-rprx-vision", "", -1)
+	for _, row := range rows {
+		if strings.TrimSpace(row.Config) == "" || row.Config == "null" {
+			continue
 		}
-		usersJson = append(usersJson, json.RawMessage(user))
+		var userMap map[string]interface{}
+		if err := json.Unmarshal([]byte(row.Config), &userMap); err != nil {
+			continue
+		}
+		// Populate client name so regional expansion and auth_user rules match
+		userMap["name"] = row.Name
+		if inboundType == "vless" && inbound["tls"] == nil {
+			if flow, ok := userMap["flow"].(string); ok && strings.Contains(flow, "xtls-rprx-vision") {
+				userMap["flow"] = ""
+			}
+		}
+		if raw, err := json.Marshal(userMap); err == nil {
+			usersJson = append(usersJson, json.RawMessage(raw))
+		}
 	}
 	return usersJson, nil
 }

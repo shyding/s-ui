@@ -1160,5 +1160,40 @@ func (a *ApiService) ProtonUploadConfs(c *gin.Context, loginUser string) {
 	}, nil)
 }
 
+func (a *ApiService) CloudflareRefresh(c *gin.Context) {
+	db := database.GetDB()
+	if db == nil {
+		jsonMsg(c, "数据库未就绪", fmt.Errorf("database not ready"))
+		return
+	}
+	err := service.RefreshCloudflareEndpoints(db)
+	if err != nil {
+		jsonMsg(c, "Cloudflare 全球出口探测刷新失败", err)
+		return
+	}
+	_ = a.ConfigService.RestartCore()
+	regions := service.GetActiveCloudflareRegions(db)
+	var endpointCount int64
+	db.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Count(&endpointCount)
+	jsonObj(c, gin.H{
+		"regions":       regions,
+		"regionCount":   len(regions),
+		"endpointCount": endpointCount,
+		"message":       fmt.Sprintf("Cloudflare 全球出口已成功刷新！共计 %d 个国家地区，%d 个在线出口端点就绪。", len(regions), endpointCount),
+	}, nil)
+}
 
-
+func (a *ApiService) GetCloudflareRegions(c *gin.Context) {
+	db := database.GetDB()
+	regions := service.GetActiveCloudflareRegions(db)
+	var endpoints []model.CloudflareEndpoint
+	if db != nil {
+		_ = db.Where("status = ?", "online").Order("loc ASC, latency_ms ASC").Find(&endpoints).Error
+	}
+	jsonObj(c, gin.H{
+		"regions":       regions,
+		"regionCount":   len(regions),
+		"endpointCount": len(endpoints),
+		"endpoints":     endpoints,
+	}, nil)
+}

@@ -38,20 +38,75 @@ type CloudflareTraceResult struct {
 	LatencyMs int64  `json:"latency_ms"`
 }
 
-// Default candidate endpoints for Cloudflare Anycast/WARP probing
+// Default candidate endpoints across all continents for Cloudflare dynamic probing
 var defaultCandidatePrefixes = []string{
-	"162.159.192",
-	"162.159.193",
-	"162.159.195",
-	"162.159.198",
-	"162.159.199",
-	"188.114.96",
-	"188.114.97",
-	"188.114.98",
-	"188.114.99",
+	// WARP Anycast Core
+	"162.159.192", "162.159.193", "162.159.195", "162.159.198", "162.159.199",
+	// Europe / Eurasia
+	"188.114.96", "188.114.97", "188.114.98", "188.114.99",
+	// Latin America (LACNIC) - Brazil, Argentina, Chile, Colombia, Mexico, Peru
+	"190.93.240", "190.93.241", "190.93.242", "190.93.243",
+	// Africa (AFRINIC) - Nigeria, South Africa, Egypt, Kenya
+	"197.234.240", "197.234.241", "197.234.242", "197.234.243",
+	// Middle East / Eurasia - Turkey, UAE, Israel, Saudi Arabia
+	"141.101.64", "141.101.65", "141.101.120", "141.101.121",
+	// Asia-Pacific (APNIC)
+	"103.21.244", "103.22.200", "103.31.4",
+	// North America (ARIN)
+	"173.245.48", "173.245.49", "198.41.128", "198.41.129", "172.64.0", "172.64.1", "104.16.0", "104.16.1",
 }
 
 var defaultCandidatePorts = []int{2408, 500, 853, 443, 8443, 1701}
+
+// ColoToCountryMap maps Cloudflare 3-letter IATA airport codes to ISO 3166-1 alpha-2 country codes
+var ColoToCountryMap = map[string]string{
+	// Latin America
+	"GRU": "BR", "GIG": "BR", "BSB": "BR", "FOR": "BR", "POA": "BR", "CWB": "BR", "SSA": "BR", "REC": "BR", "VCP": "BR", "CNF": "BR",
+	"EZE": "AR", "COR": "AR",
+	"SCL": "CL",
+	"BOG": "CO", "MDE": "CO",
+	"LIM": "PE",
+	"UIO": "EC", "GYE": "EC",
+	"ASU": "PY", "MVD": "UY", "PTY": "PA", "SJO": "CR", "GUA": "GT", "SAL": "SV",
+	"QRO": "MX", "MEX": "MX", "GDL": "MX", "MTY": "MX",
+
+	// Africa
+	"LOS": "NG", "ABV": "NG", "KAN": "NG",
+	"JNB": "ZA", "CPT": "ZA", "DUR": "ZA",
+	"CAI": "EG", "NBO": "KE", "MBA": "KE", "ACC": "GH", "DKR": "SN",
+	"LUN": "ZM", "DAR": "TZ", "KGL": "RW", "MPM": "MZ", "LAD": "AO",
+	"TUN": "TN", "CMN": "MA", "RBA": "MA", "ALG": "DZ", "MRU": "MU",
+
+	// Middle East
+	"IST": "TR", "SAW": "TR", "ADB": "TR", "ESB": "TR", "AYT": "TR",
+	"DXB": "AE", "AUH": "AE", "DOH": "QA", "BAH": "BH", "KWI": "KW", "MCT": "OM",
+	"RUH": "SA", "JED": "SA", "DMM": "SA", "TLV": "IL", "AMM": "JO", "BEY": "LB", "BGW": "IQ",
+
+	// Europe
+	"LHR": "GB", "LGW": "GB", "MAN": "GB", "EDI": "GB", "BHX": "GB",
+	"FRA": "DE", "MUC": "DE", "BER": "DE", "HAM": "DE", "DUS": "DE", "STR": "DE",
+	"AMS": "NL", "CDG": "FR", "MRS": "FR", "LYS": "FR", "BOD": "FR",
+	"MXP": "IT", "FCO": "IT", "PMO": "IT", "MAD": "ES", "BCN": "ES", "VLC": "ES",
+	"ZRH": "CH", "GVA": "CH", "VIE": "AT", "BRU": "BE", "DUB": "IE", "LIS": "PT", "OPO": "PT",
+	"WAW": "PL", "PRG": "CZ", "BUD": "HU", "OTP": "RO", "SOF": "BG", "ATH": "GR", "SKG": "GR",
+	"ARN": "SE", "OSL": "NO", "HEL": "FI", "CPH": "DK", "TLL": "EE", "RIX": "LV", "VNO": "LT",
+	"ZAG": "HR", "BEG": "RS", "KBP": "UA", "DME": "RU", "SVO": "RU", "LED": "RU",
+
+	// Asia-Pacific
+	"NRT": "JP", "HND": "JP", "KIX": "JP", "FUK": "JP", "OKA": "JP", "CTS": "JP",
+	"SIN": "SG", "HKG": "HK", "TPE": "TW", "KHH": "TW", "ICN": "KR",
+	"SYD": "AU", "MEL": "AU", "BNE": "AU", "PER": "AU", "ADL": "AU", "AKL": "NZ", "CHC": "NZ",
+	"BOM": "IN", "DEL": "IN", "BLR": "IN", "MAA": "IN", "HYD": "IN", "CCU": "IN",
+	"BKK": "TH", "HAN": "VN", "SGN": "VN", "KUL": "MY", "JHB": "MY", "CGK": "ID",
+	"MNL": "PH", "CEB": "PH", "KHI": "PK", "LHE": "PK", "ISB": "PK", "DAC": "BD",
+	"CMB": "LK", "KTM": "NP", "ULN": "MN", "PNH": "KH", "VTE": "LA", "RGN": "MM", "GUM": "GU",
+
+	// North America
+	"LAX": "US", "SJC": "US", "SFO": "US", "ORD": "US", "DFW": "US", "IAD": "US", "EWR": "US",
+	"MIA": "US", "SEA": "US", "ATL": "US", "DEN": "US", "PHX": "US", "BOS": "US", "DTW": "US",
+	"MSP": "US", "CLT": "US", "IAH": "US", "PDX": "US", "SLC": "US", "SAN": "US", "TPA": "US", "MCO": "US",
+	"YYZ": "CA", "YVR": "CA", "YUL": "CA", "YYC": "CA",
+}
 
 // CountryNameMap provides localized names for discovered ISO country codes
 var CountryNameMap = map[string]string{
@@ -64,6 +119,8 @@ var CountryNameMap = map[string]string{
 	"NZ": "新西兰", "IE": "爱尔兰", "BE": "比利时", "AT": "奥地利", "CZ": "捷克",
 	"GR": "希腊", "RO": "罗马尼亚", "TH": "泰国", "VN": "越南", "MY": "马来西亚",
 	"PH": "菲律宾", "ID": "印度尼西亚", "IL": "以色列", "UA": "乌克兰", "PT": "葡萄牙",
+	"PE": "秘鲁", "EC": "厄瓜多尔", "EG": "埃及", "KE": "肯尼亚", "GH": "加纳",
+	"MA": "摩洛哥", "SA": "沙特阿拉伯", "QA": "卡塔尔", "HU": "匈牙利", "BG": "保加利亚",
 }
 
 // GetCountryFlag generates national emoji flag dynamically from ISO 3166-1 alpha-2 code
@@ -132,6 +189,10 @@ func ParseCloudflareTrace(text string) *CloudflareTraceResult {
 			}
 		}
 	}
+	// Use Colo to determine the precise Cloudflare egress PoP region
+	if country, ok := ColoToCountryMap[res.Colo]; ok && country != "" {
+		res.Loc = country
+	}
 	return res
 }
 
@@ -190,10 +251,8 @@ func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*Cl
 
 // SeedInitialCloudflareEndpoints populates initial candidate endpoints across Cloudflare subnets
 func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
-	var count int64
-	db.Model(&model.CloudflareEndpoint{}).Count(&count)
-	if count >= 50 {
-		return nil // Already comprehensively seeded
+	if db == nil {
+		return nil
 	}
 
 	// Initial seed endpoints representing diverse Cloudflare Anycast locations across 50+ countries
@@ -203,11 +262,27 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		Loc  string
 		Colo string
 	}{
+		// Latin America (Brazil, Argentina, Chile, Colombia, Mexico, Peru)
+		{"190.93.240.1", 2408, "BR", "GRU"},
+		{"190.93.241.1", 2408, "AR", "EZE"},
+		{"190.93.242.1", 2408, "CL", "SCL"},
+		{"190.93.243.1", 2408, "CO", "BOG"},
+		{"162.159.192.5", 500, "MX", "QRO"},
+		{"190.93.240.5", 500, "PE", "LIM"},
+		// Africa (Nigeria, South Africa, Egypt, Kenya)
+		{"197.234.240.1", 2408, "NG", "LOS"},
+		{"197.234.241.1", 2408, "ZA", "JNB"},
+		{"197.234.242.1", 2408, "EG", "CAI"},
+		{"197.234.243.1", 2408, "KE", "NBO"},
+		// Middle East (Turkey, UAE, Israel, Saudi Arabia)
+		{"141.101.64.15", 2408, "TR", "IST"},
+		{"141.101.65.20", 500, "AE", "DXB"},
+		{"141.101.120.20", 2408, "IL", "TLV"},
+		{"141.101.121.20", 2408, "SA", "RUH"},
 		// North America
 		{"162.159.193.1", 500, "US", "LAX"},
 		{"162.159.198.1", 2408, "US", "SJC"},
 		{"172.64.0.1", 2408, "CA", "YYZ"},
-		{"162.159.192.5", 500, "MX", "QRO"},
 		// Asia & Pacific
 		{"162.159.192.1", 2408, "SG", "SIN"},
 		{"162.159.195.1", 853, "JP", "NRT"},
@@ -237,7 +312,6 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		{"188.114.98.10", 500, "DK", "CPH"},
 		{"188.114.99.10", 2408, "PL", "WAW"},
 		{"188.114.96.15", 500, "RU", "DME"},
-		{"188.114.97.15", 2408, "TR", "IST"},
 		{"188.114.98.15", 500, "UA", "KBP"},
 		{"188.114.99.15", 2408, "PT", "LIS"},
 		{"188.114.96.20", 500, "AT", "VIE"},
@@ -246,16 +320,6 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		{"188.114.99.20", 2408, "IE", "DUB"},
 		{"188.114.96.25", 500, "RO", "OTP"},
 		{"188.114.97.25", 2408, "GR", "ATH"},
-		// Middle East
-		{"162.159.192.20", 2408, "IL", "TLV"},
-		{"162.159.193.20", 500, "AE", "DXB"},
-		// Latin America
-		{"162.159.195.20", 2408, "BR", "GRU"},
-		{"162.159.198.20", 500, "AR", "EZE"},
-		{"162.159.199.20", 2408, "CL", "SCL"},
-		{"162.159.192.25", 500, "CO", "BOG"},
-		// Africa
-		{"162.159.193.25", 2408, "ZA", "JNB"},
 	}
 
 	now := time.Now().Unix()
@@ -278,7 +342,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		}).Create(&ep).Error
 	}
 
-	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across 50+ countries", len(initialSeeds)))
+	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across all continents", len(initialSeeds)))
 	return nil
 }
 
@@ -406,27 +470,20 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 		return nil
 	}
 
+	// Always ensure comprehensive global seeds exist in the database
+	_ = SeedInitialCloudflareEndpoints(db)
+
 	type RegionRow struct {
 		Loc         string
 		CountryName string
 		Flag        string
 	}
 	var rows []RegionRow
-	err := db.Model(&model.CloudflareEndpoint{}).
+	_ = db.Model(&model.CloudflareEndpoint{}).
 		Select("DISTINCT loc, country_name, flag").
 		Where("status = ? AND loc != ''", "online").
 		Order("loc ASC").
 		Scan(&rows).Error
-
-	if err != nil || len(rows) == 0 {
-		// Ensure seed exists and query again
-		_ = SeedInitialCloudflareEndpoints(db)
-		_ = db.Model(&model.CloudflareEndpoint{}).
-			Select("DISTINCT loc, country_name, flag").
-			Where("status = ? AND loc != ''", "online").
-			Order("loc ASC").
-			Scan(&rows)
-	}
 
 	var regions []EgressRegion
 	for _, r := range rows {

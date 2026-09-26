@@ -62,6 +62,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.ProtonAutoHarvest(c, loginUser)
 	case "protonUploadConfs":
 		a.ApiService.ProtonUploadConfs(c, loginUser)
+	case "cloudflareRefresh":
+		a.ApiService.CloudflareRefresh(c)
 	case "testNode":
 		a.ApiService.TestNode(c)
 	case "testAllNodes":
@@ -137,6 +139,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetSingboxConfig(c)
 	case "subscriptions":
 		a.ApiService.GetSubscriptions(c)
+	case "cloudflareRegions":
+		a.ApiService.GetCloudflareRegions(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
