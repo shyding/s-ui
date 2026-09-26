@@ -254,9 +254,13 @@ func BuildWireGuardEndpointJsonForServer(tag string, server *PhysicalServerEntry
 	if port <= 0 {
 		port = 51820
 	}
+	peerAddr := server.EntryIP
+	if server.Domain != "" {
+		peerAddr = server.Domain
+	}
 	peers := []map[string]interface{}{
 		{
-			"address":                       server.EntryIP,
+			"address":                       peerAddr,
 			"port":                          port,
 			"public_key":                    server.PublicKey,
 			"allowed_ips":                   []string{"0.0.0.0/0", "::/0"},

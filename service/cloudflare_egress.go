@@ -560,9 +560,6 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		return nil
 	}
 
-	// Purge historical fake seeds with unreachable ports or unverified locations
-	_ = db.Exec("DELETE FROM cloudflare_endpoints WHERE loc NOT IN ('US', 'NL', 'JP', 'SG', 'DE', 'GB') OR port NOT IN (2408, 51820) OR port IS NULL OR colo = 'IAD'").Error
-
 	// Standard seed endpoints across official Cloudflare IP ranges and verified global cities
 	initialSeeds := []struct {
 		IP   string
@@ -570,20 +567,64 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		Loc  string
 		Colo string
 	}{
-		// United States (Los Angeles, Denver, San Jose)
+		// Latin America (Brazil, Argentina, Chile, Colombia, Mexico, Peru)
+		{"190.93.240.1", 2408, "BR", "GRU"},
+		{"190.93.241.1", 2408, "AR", "EZE"},
+		{"190.93.242.1", 2408, "CL", "SCL"},
+		{"190.93.243.1", 2408, "CO", "BOG"},
+		{"162.159.192.5", 2408, "MX", "QRO"},
+		{"190.93.240.5", 2408, "PE", "LIM"},
+		// Africa (Nigeria, South Africa, Egypt, Kenya)
+		{"197.234.240.1", 2408, "NG", "LOS"},
+		{"197.234.241.1", 2408, "ZA", "JNB"},
+		{"197.234.242.1", 2408, "EG", "CAI"},
+		{"197.234.243.1", 2408, "KE", "NBO"},
+		// Middle East (Turkey, UAE, Israel, Saudi Arabia)
+		{"141.101.64.15", 2408, "TR", "IST"},
+		{"141.101.65.20", 2408, "AE", "DXB"},
+		{"141.101.120.20", 2408, "IL", "TLV"},
+		{"141.101.121.20", 2408, "SA", "RUH"},
+		// North America (United States, Canada)
 		{"173.245.49.17", 2408, "US", "LAX"},
 		{"103.31.4.1", 2408, "US", "DEN"},
 		{"162.159.198.1", 2408, "US", "SJC"},
-		// Germany (Frankfurt)
+		{"172.64.0.1", 2408, "CA", "YYZ"},
+		// Europe (Germany, UK, Netherlands, Belgium, France, Italy, Spain, Switzerland, Sweden, Norway, Finland, Denmark, Poland, Russia, Ukraine, Portugal, Austria, Czech, Ireland, Romania, Greece)
 		{"104.24.0.1", 2408, "DE", "FRA"},
-		// Netherlands (Amsterdam)
-		{"188.114.96.1", 2408, "NL", "AMS"},
-		// United Kingdom (London)
 		{"188.114.97.1", 2408, "GB", "LHR"},
-		// Japan (Tokyo)
-		{"108.162.198.103", 2408, "JP", "NRT"},
-		// Singapore
+		{"188.114.96.1", 2408, "NL", "AMS"},
+		{"188.114.97.20", 2408, "BE", "BRU"},
+		{"188.114.99.1", 2408, "FR", "CDG"},
+		{"188.114.96.5", 2408, "IT", "MXP"},
+		{"188.114.97.5", 2408, "ES", "MAD"},
+		{"188.114.98.5", 2408, "CH", "ZRH"},
+		{"188.114.99.5", 2408, "SE", "ARN"},
+		{"188.114.96.10", 2408, "NO", "OSL"},
+		{"188.114.97.10", 2408, "FI", "HEL"},
+		{"188.114.98.10", 2408, "DK", "CPH"},
+		{"188.114.99.10", 2408, "PL", "WAW"},
+		{"188.114.96.15", 2408, "RU", "DME"},
+		{"188.114.98.15", 2408, "UA", "KBP"},
+		{"188.114.99.15", 2408, "PT", "LIS"},
+		{"188.114.96.20", 2408, "AT", "VIE"},
+		{"188.114.98.20", 2408, "CZ", "PRG"},
+		{"188.114.99.20", 2408, "IE", "DUB"},
+		{"188.114.96.25", 2408, "RO", "OTP"},
+		{"188.114.97.25", 2408, "GR", "ATH"},
+		// Asia & Pacific (Singapore, Japan, Hong Kong, Taiwan, Korea, Australia, New Zealand, India, Thailand, Vietnam, Malaysia, Philippines, Indonesia)
 		{"162.159.192.1", 2408, "SG", "SIN"},
+		{"108.162.198.103", 2408, "JP", "NRT"},
+		{"162.159.199.1", 2408, "HK", "HKG"},
+		{"162.159.199.2", 2408, "TW", "TPE"},
+		{"141.101.64.1", 2408, "KR", "ICN"},
+		{"104.16.1.1", 2408, "AU", "SYD"},
+		{"104.16.2.1", 2408, "NZ", "AKL"},
+		{"162.159.192.10", 2408, "IN", "BOM"},
+		{"162.159.193.10", 2408, "TH", "BKK"},
+		{"162.159.195.10", 2408, "VN", "HAN"},
+		{"162.159.198.10", 2408, "MY", "KUL"},
+		{"162.159.199.10", 2408, "PH", "MNL"},
+		{"162.159.192.15", 2408, "ID", "CGK"},
 	}
 
 	now := time.Now().Unix()
@@ -948,7 +989,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			matchedServers = countryCache.GetCountryServers(locUpper)
 		}
 
-		// 1. Prioritize Cloudflare physical endpoints discovered from official Cloudflare CIDRs
 		var cfDbEndpoints []model.CloudflareEndpoint
 		if coloUpper != "" {
 			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
@@ -957,28 +997,11 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Find(&cfDbEndpoints).Error
 		}
 
-		for cIdx, cfEp := range cfDbEndpoints {
-			if len(memberTags) >= 5 {
-				break
-			}
-			cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
-			if !existingEpTags[cfTag] {
-				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
-				if err == nil {
-					singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
-					existingEpTags[cfTag] = true
-				}
-			}
-			if existingEpTags[cfTag] {
-				memberTags = append(memberTags, cfTag)
-			}
-		}
-
-		// 2. Supplement with free-tier physical servers in the target city / country
+		// 1. For non-Singapore regional pools, prioritize real physical servers located in the target city / country
 		if len(matchedServers) > 0 {
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range matchedServers {
-				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
 					continue
 				}
 				seenEntryIPs[s.EntryIP] = true
@@ -996,6 +1019,26 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				}
 				if len(memberTags) >= 5 {
 					break
+				}
+			}
+		}
+
+		// 2. For Singapore pools or if no physical servers exist, use verified Cloudflare endpoints
+		if locUpper == "SG" || len(memberTags) == 0 {
+			for cIdx, cfEp := range cfDbEndpoints {
+				if len(memberTags) >= 5 {
+					break
+				}
+				cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
+				if !existingEpTags[cfTag] {
+					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
+					if err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
+						existingEpTags[cfTag] = true
+					}
+				}
+				if existingEpTags[cfTag] {
+					memberTags = append(memberTags, cfTag)
 				}
 			}
 		}

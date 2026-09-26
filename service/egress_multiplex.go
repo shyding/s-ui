@@ -426,8 +426,16 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 					break
 				}
 			}
-			if len(dynTags) > 0 {
-				eps = append(eps, dynTags...)
+			// For US and JP, place dynamic servers first so healthy resolved servers are prioritized
+			// For NL, ep-proton-nl from DB works 100% (185.184.195.85) -> place DB first, then dynTags
+			if reg.Code == "us" || reg.Code == "jp" {
+				if len(dynTags) > 0 {
+					eps = append(dynTags, eps...)
+				}
+			} else {
+				if len(dynTags) > 0 {
+					eps = append(eps, dynTags...)
+				}
 			}
 		}
 
@@ -558,7 +566,11 @@ func FindWorkingWireGuardPrivateKey(singboxConfig *SingBoxConfig, db *gorm.DB) (
 				pk, _ := epMap["private_key"].(string)
 				if pk != "" && pk != dummyKey {
 					var addrs []string
-					if aList, ok := epMap["address"].([]interface{}); ok {
+					rawAddr := epMap["address"]
+					if rawAddr == nil {
+						rawAddr = epMap["local_address"]
+					}
+					if aList, ok := rawAddr.([]interface{}); ok {
 						for _, a := range aList {
 							if aStr, ok := a.(string); ok {
 								addrs = append(addrs, aStr)
@@ -582,7 +594,11 @@ func FindWorkingWireGuardPrivateKey(singboxConfig *SingBoxConfig, db *gorm.DB) (
 				pk, _ := optMap["private_key"].(string)
 				if pk != "" && pk != dummyKey {
 					var addrs []string
-					if aList, ok := optMap["address"].([]interface{}); ok {
+					rawAddr := optMap["address"]
+					if rawAddr == nil {
+						rawAddr = optMap["local_address"]
+					}
+					if aList, ok := rawAddr.([]interface{}); ok {
 						for _, a := range aList {
 							if aStr, ok := a.(string); ok {
 								addrs = append(addrs, aStr)
