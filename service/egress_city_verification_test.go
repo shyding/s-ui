@@ -161,13 +161,13 @@ func TestCityLevelMatchingAndEgressBinding(t *testing.T) {
 
 	EnsureCloudflarePoolsInOutbounds(singboxCfg, db)
 
-	// Check if cf-jp-nrt-pool and cf-ng-los-pool exist and contain physical server endpoints
+	// Check if cf-jp-nrt-pool, cf-us-lax-pool and cf-de-fra-pool exist and contain physical server endpoints
 	foundPools := make(map[string]bool)
 	for _, obRaw := range singboxCfg.Outbounds {
 		var obMap map[string]interface{}
 		if err := json.Unmarshal(obRaw, &obMap); err == nil {
 			tag, _ := obMap["tag"].(string)
-			if tag == "cf-jp-nrt-pool" || tag == "cf-ng-los-pool" || tag == "cf-be-bru-pool" {
+			if tag == "cf-jp-nrt-pool" || tag == "cf-us-lax-pool" || tag == "cf-de-fra-pool" {
 				foundPools[tag] = true
 				members, _ := obMap["outbounds"].([]interface{})
 				if len(members) == 0 {
@@ -177,7 +177,7 @@ func TestCityLevelMatchingAndEgressBinding(t *testing.T) {
 		}
 	}
 
-	for _, expectedPool := range []string{"cf-jp-nrt-pool", "cf-ng-los-pool", "cf-be-bru-pool"} {
+	for _, expectedPool := range []string{"cf-jp-nrt-pool", "cf-us-lax-pool", "cf-de-fra-pool"} {
 		if !foundPools[expectedPool] {
 			t.Errorf("Expected pool %s in outbounds", expectedPool)
 		}

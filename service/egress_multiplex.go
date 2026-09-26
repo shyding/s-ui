@@ -412,7 +412,6 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				seenEntryIPs[s.EntryIP] = true
 				sIdx := len(dynTags)
 				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
-				outTag := fmt.Sprintf("out-dyn-%s-%d", reg.Code, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey, protonClientAddrs)
 					if err == nil {
@@ -421,11 +420,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 					}
 				}
 				if existingEpTags[epTag] {
-					outJson, err := BuildDirectOutboundJson(outTag, epTag)
-					if err == nil {
-						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-						dynTags = append(dynTags, outTag)
-					}
+					dynTags = append(dynTags, epTag)
 				}
 				if len(dynTags) >= 5 {
 					break
@@ -442,8 +437,8 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
 			}
 		} else {
-			// Fallback direct outbound if no endpoints configured yet
-			fallbackOb, _ := json.Marshal(map[string]interface{}{"type": "direct", "tag": poolTag})
+			// Fallback block outbound to prevent Singapore leakage
+			fallbackOb, _ := json.Marshal(map[string]interface{}{"type": "block", "tag": poolTag})
 			singboxConfig.Outbounds = append(singboxConfig.Outbounds, fallbackOb)
 		}
 	}

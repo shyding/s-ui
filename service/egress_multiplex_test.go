@@ -278,8 +278,8 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 	}
 
 	expanded := ExpandUsersForMultiplexing(users, "vless", activeRegions)
-	if len(expanded) < 10 {
-		t.Fatalf("Expected at least 10 expanded users for active regions, got %d", len(expanded))
+	if len(expanded) < 8 {
+		t.Fatalf("Expected at least 8 expanded users for active regions, got %d", len(expanded))
 	}
 
 	expandedNames := make(map[string]bool)
@@ -289,7 +289,7 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 		expandedNames[uMap["name"].(string)] = true
 	}
 
-	for _, reqPrefix := range []string{"my", "my-us", "my-jp", "my-nl", "my-cf-br", "my-cf-ar", "my-cf-cl", "my-cf-ng", "my-cf-za", "my-cf-tr"} {
+	for _, reqPrefix := range []string{"my", "my-us", "my-jp", "my-nl", "my-cf-us", "my-cf-jp", "my-cf-de", "my-cf-gb"} {
 		found := false
 		for name := range expandedNames {
 			if strings.HasPrefix(name, reqPrefix) {

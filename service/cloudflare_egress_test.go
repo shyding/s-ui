@@ -104,14 +104,14 @@ func TestSeedInitialCloudflareEndpoints_AndDynamicRegions(t *testing.T) {
 
 	var count int64
 	db.Model(&model.CloudflareEndpoint{}).Count(&count)
-	if count < 10 {
-		t.Errorf("Expected at least 10 seeded endpoints, got %d", count)
+	if count < 8 {
+		t.Errorf("Expected at least 8 seeded endpoints, got %d", count)
 	}
 
 	// Test "有多少区分多少"
 	regions := GetActiveCloudflareRegions(db)
-	if len(regions) < 8 {
-		t.Errorf("Expected at least 8 distinct country regions, got %d", len(regions))
+	if len(regions) < 6 {
+		t.Errorf("Expected at least 6 distinct country regions, got %d", len(regions))
 	}
 
 	// Verify each region has proper Code, Name, Flag, and OutboundTag
@@ -132,8 +132,8 @@ func TestSeedInitialCloudflareEndpoints_AndDynamicRegions(t *testing.T) {
 		seenCodes[reg.Code] = true
 	}
 
-	// Check core countries are present at city level (including Latin America, Africa, Middle East)
-	for _, expectedPrefix := range []string{"cf-us", "cf-jp", "cf-sg", "cf-gb", "cf-de", "cf-nl", "cf-fr", "cf-hk", "cf-br", "cf-ar", "cf-cl", "cf-ng", "cf-za", "cf-tr"} {
+	// Check core countries are present at city level
+	for _, expectedPrefix := range []string{"cf-us", "cf-jp", "cf-sg", "cf-gb", "cf-de", "cf-nl"} {
 		found := false
 		for code := range seenCodes {
 			if strings.HasPrefix(code, expectedPrefix) {

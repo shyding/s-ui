@@ -560,16 +560,16 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		return nil
 	}
 
-	// Purge historical fake seeds with unreachable ports (e.g. 500, 853)
-	_ = db.Where("port NOT IN (2408, 51820) OR port IS NULL").Delete(&model.CloudflareEndpoint{}).Error
+	// Purge historical fake seeds with unreachable ports or unverified locations
+	_ = db.Exec("DELETE FROM cloudflare_endpoints WHERE loc NOT IN ('US', 'NL', 'JP', 'SG', 'DE', 'GB') OR port NOT IN (2408, 51820) OR port IS NULL").Error
 
 	var count int64
 	_ = db.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Count(&count).Error
-	if count >= 16 {
+	if count >= 8 {
 		return nil
 	}
 
-	// Standard seed endpoints across official Cloudflare IP ranges and global cities
+	// Standard seed endpoints across official Cloudflare IP ranges and verified global cities
 	initialSeeds := []struct {
 		IP   string
 		Port int
@@ -590,21 +590,6 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		{"108.162.198.103", 2408, "JP", "NRT"},
 		// Singapore
 		{"162.159.192.1", 2408, "SG", "SIN"},
-		// France (Paris)
-		{"188.114.99.1", 2408, "FR", "CDG"},
-		// Hong Kong
-		{"162.159.199.1", 2408, "HK", "HKG"},
-		// Belgium (Brussels)
-		{"188.114.97.20", 2408, "BE", "BRU"},
-		// Latin America (Brazil, Argentina, Chile)
-		{"190.93.240.1", 2408, "BR", "GRU"},
-		{"190.93.241.1", 2408, "AR", "EZE"},
-		{"190.93.242.1", 2408, "CL", "SCL"},
-		// Africa (Nigeria, South Africa)
-		{"197.234.240.1", 2408, "NG", "LOS"},
-		{"197.234.241.1", 2408, "ZA", "JNB"},
-		// Middle East (Turkey)
-		{"141.101.64.15", 2408, "TR", "IST"},
 	}
 
 	now := time.Now().Unix()
@@ -969,77 +954,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			matchedServers = countryCache.GetCountryServers(locUpper)
 		}
 
-		// 1. Prioritize real physical servers in the target city / country (Free tier first, then any available)
-		if len(matchedServers) > 0 {
-			sort.SliceStable(matchedServers, func(i, j int) bool {
-				return matchedServers[i].Tier < matchedServers[j].Tier
-			})
-			seenEntryIPs := make(map[string]bool)
-			for _, s := range matchedServers {
-				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
-					continue
-				}
-				seenEntryIPs[s.EntryIP] = true
-				sIdx := len(memberTags)
-				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
-				outTag := fmt.Sprintf("out-%s-%d", reg.Code, sIdx)
-				if !existingEpTags[epTag] {
-					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
-					if err == nil {
-						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-						existingEpTags[epTag] = true
-					}
-				}
-				if existingEpTags[epTag] {
-					outJson, err := BuildDirectOutboundJson(outTag, epTag)
-					if err == nil {
-						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-						memberTags = append(memberTags, outTag)
-					}
-				}
-				if len(memberTags) >= 5 {
-					break
-				}
-			}
-		}
-
-		// 2. Include known verified DB endpoints for US, JP and NL
-		if locUpper == "US" {
-			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
-				if existingEpTags[vTag] {
-					outVTag := fmt.Sprintf("out-%s", vTag)
-					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
-						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-						memberTags = append(memberTags, outVTag)
-					}
-					break
-				}
-			}
-		} else if locUpper == "NL" {
-			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
-				if existingEpTags[vTag] {
-					outVTag := fmt.Sprintf("out-%s", vTag)
-					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
-						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-						memberTags = append(memberTags, outVTag)
-					}
-					break
-				}
-			}
-		} else if locUpper == "JP" {
-			for _, vTag := range []string{"ep-proton-jp", "ep-jp", "ep-proton-jp-free-1", "ep-proton-jp-free-2"} {
-				if existingEpTags[vTag] {
-					outVTag := fmt.Sprintf("out-%s", vTag)
-					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
-						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-						memberTags = append(memberTags, outVTag)
-					}
-					break
-				}
-			}
-		}
-
-		// 3. Supplement with Cloudflare physical endpoints discovered from official Cloudflare CIDRs
+		// 1. Prioritize Cloudflare physical endpoints discovered from official Cloudflare CIDRs
 		var cfDbEndpoints []model.CloudflareEndpoint
 		if coloUpper != "" {
 			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
@@ -1053,7 +968,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				break
 			}
 			cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
-			cfOutTag := fmt.Sprintf("out-%s-cf-%d", reg.Code, cIdx)
 			if !existingEpTags[cfTag] {
 				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
 				if err == nil {
@@ -1062,10 +976,32 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				}
 			}
 			if existingEpTags[cfTag] {
-				outJson, err := BuildDirectOutboundJson(cfOutTag, cfTag)
-				if err == nil {
-					singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
-					memberTags = append(memberTags, cfOutTag)
+				memberTags = append(memberTags, cfTag)
+			}
+		}
+
+		// 2. Supplement with free-tier physical servers in the target city / country
+		if len(matchedServers) > 0 {
+			seenEntryIPs := make(map[string]bool)
+			for _, s := range matchedServers {
+				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+					continue
+				}
+				seenEntryIPs[s.EntryIP] = true
+				sIdx := len(memberTags)
+				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				if !existingEpTags[epTag] {
+					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
+					if err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+						existingEpTags[epTag] = true
+					}
+				}
+				if existingEpTags[epTag] {
+					memberTags = append(memberTags, epTag)
+				}
+				if len(memberTags) >= 5 {
+					break
 				}
 			}
 		}
