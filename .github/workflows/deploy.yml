@@ -72,78 +72,54 @@ jobs:
 
       - name: Add server to known hosts
         run: |
-          ssh-keyscan -H -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts || true
+          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to Ubuntu Server
         run: |
-          tar czf payload.tar.gz sui scripts
-          for attempt in 1 2 3 4 5; do
-            echo "Attempt $attempt: Uploading payload to server..."
-            if scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=20 -P ${{ secrets.SERVER_PORT }} payload.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/payload.tar.gz; then
-              echo "Upload successful!"
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              echo "All upload attempts failed!"
-              exit 1
-            fi
-            sleep 3
-          done
+          scp -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
+          scp -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
 
       - name: Restart s-ui service
         run: |
-          cat << 'REMOTEEOC' > /tmp/deploy_remote.sh
-          set -e
-          echo "Stopping existing s-ui service..."
-          sudo systemctl stop s-ui || true
-          sudo pkill -9 -f /usr/local/s-ui/sui || true
-          sudo fuser -k 40734/udp 54142/tcp 2096/tcp 2053/tcp || true
-          sleep 1
+          ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+            # Stop s-ui service and ensure no lingering processes hold ports
+            sudo systemctl stop s-ui || true
+            sudo pkill -9 -f /usr/local/s-ui/sui || true
+            sudo fuser -k 40734/udp 54142/tcp 2096/tcp 2053/tcp || true
+            sleep 1
 
-          echo "Extracting payload..."
-          tar xzf /tmp/payload.tar.gz -C /tmp/
-          rm -f /tmp/payload.tar.gz
+            # Backup old binary
+            sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S)
 
-          echo "Backing up old binary and installing new sui binary..."
-          sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S) || true
-          sudo mv /tmp/sui /usr/local/s-ui/sui
-          sudo chmod +x /usr/local/s-ui/sui
+            # Replace with new binary
+            sudo mv /tmp/sui /usr/local/s-ui/sui
+            sudo chmod +x /usr/local/s-ui/sui
 
-          echo "Updating scripts..."
-          sudo mkdir -p /usr/local/s-ui/scripts
-          sudo cp -rf /tmp/scripts/* /usr/local/s-ui/scripts/
-          sudo chmod +x /usr/local/s-ui/scripts/*.py || true
+            # Copy scripts and cached logicals
+            sudo mkdir -p /usr/local/s-ui/scripts
+            sudo cp -rf /tmp/scripts/* /usr/local/s-ui/scripts/
+            sudo chmod +x /usr/local/s-ui/scripts/*.py || true
 
-          if ! command -v python3 &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y python3 python3-pip || true
-          fi
-
-          echo "Configuring network optimizations..."
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
-          sudo modprobe tcp_bbr || true
-          sudo sysctl -w net.core.default_qdisc=fq || true
-          sudo sysctl -w net.ipv4.tcp_congestion_control=bbr || true
-          sudo sysctl -w net.core.rmem_max=16777216 || true
-          sudo sysctl -w net.core.wmem_max=16777216 || true
-          sudo sysctl -w net.ipv4.tcp_rmem="4096 87380 16777216" || true
-          sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 16777216" || true
-
-          echo "Starting s-ui service..."
-          sudo systemctl start s-ui
-          sleep 3
-          sudo systemctl status s-ui --no-pager
-          echo "Deployment completed successfully!"
-          REMOTEEOC
-
-          for attempt in 1 2 3 4 5; do
-            echo "Attempt $attempt: Connecting to restart s-ui service..."
-            if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=20 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' < /tmp/deploy_remote.sh; then
-              echo "Remote restart succeeded!"
-              break
+            # Ensure Python3 is available on the server
+            if ! command -v python3 &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y python3 python3-pip || true
             fi
-            if [ "$attempt" -eq 5 ]; then
-              echo "All restart attempts failed!"
-              exit 1
-            fi
+
+            sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+            sudo modprobe tcp_bbr || true
+            sudo sysctl -w net.core.default_qdisc=fq || true
+            sudo sysctl -w net.ipv4.tcp_congestion_control=bbr || true
+            sudo sysctl -w net.core.rmem_max=16777216 || true
+            sudo sysctl -w net.core.wmem_max=16777216 || true
+            sudo sysctl -w net.ipv4.tcp_rmem="4096 87380 16777216" || true
+            sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 16777216" || true
+
+            # Start s-ui service
+            sudo systemctl start s-ui
+
+            # Check status
             sleep 3
-          done
+            sudo systemctl status s-ui --no-pager
+
+            echo "Deployment completed successfully!"
+          ENDSSH
