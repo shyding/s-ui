@@ -77,11 +77,24 @@ jobs:
       - name: Deploy to Ubuntu Server
         run: |
           tar czf payload.tar.gz sui scripts
-          scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 -P ${{ secrets.SERVER_PORT }} payload.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/payload.tar.gz
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt: Uploading payload to server..."
+            if scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -P ${{ secrets.SERVER_PORT }} payload.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/payload.tar.gz; then
+              echo "Upload successful!"
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "All upload attempts failed!"
+              exit 1
+            fi
+            sleep 3
+          done
 
       - name: Restart s-ui service
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt: Connecting to restart s-ui service..."
+            if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
             # Stop s-ui service and ensure no lingering processes hold ports
             sudo systemctl stop s-ui || true
             sudo pkill -9 -f /usr/local/s-ui/sui || true
@@ -126,4 +139,14 @@ jobs:
             sudo systemctl status s-ui --no-pager
 
             echo "Deployment completed successfully!"
-          ENDSSH
+ENDSSH
+            then
+              echo "Remote restart succeeded!"
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "All restart attempts failed!"
+              exit 1
+            fi
+            sleep 3
+          done
