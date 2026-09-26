@@ -300,3 +300,44 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 		}
 	}
 }
+
+func TestGetAllConfig_SkipBrokenQuicInbounds(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Inbound{}, &model.Client{}, &model.Tls{}, &model.CloudflareEndpoint{}, &model.Outbound{}, &model.Endpoint{})
+
+	// 1. Valid VLESS inbound
+	inbound1 := model.Inbound{
+		Id:   1,
+		Type: "vless",
+		Tag:  "vless-54142",
+	}
+	db.Create(&inbound1)
+
+	// 2. Broken Naive inbound with no TLS
+	inbound2 := model.Inbound{
+		Id:   5,
+		Type: "naive",
+		Tag:  "naive-48847",
+	}
+	db.Create(&inbound2)
+
+	inboundService := &InboundService{}
+	configs, err := inboundService.GetAllConfig(db)
+	if err != nil {
+		t.Fatalf("GetAllConfig failed: %v", err)
+	}
+
+	if len(configs) != 1 {
+		t.Fatalf("Expected exactly 1 valid inbound config (skipping broken naive without TLS), got %d", len(configs))
+	}
+
+	var m map[string]interface{}
+	_ = json.Unmarshal(configs[0], &m)
+	if m["tag"] != "vless-54142" {
+		t.Errorf("Expected surviving inbound to be 'vless-54142', got %v", m["tag"])
+	}
+}
+

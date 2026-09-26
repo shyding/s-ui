@@ -8,6 +8,7 @@ import (
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/util"
 	"github.com/alireza0/s-ui/util/common"
 
@@ -229,6 +230,13 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		return nil, err
 	}
 	for _, inbound := range inbounds {
+		// Naive, Hysteria, TUIC, Hysteria2 strictly require a valid TLS certificate for QUIC server
+		// If Tls is missing, sing-box crashes on startup with: "TLS is required for QUIC server"
+		if (inbound.Type == "naive" || inbound.Type == "hysteria" || inbound.Type == "tuic" || inbound.Type == "hysteria2") && (inbound.Tls == nil || inbound.TlsId == 0) {
+			logger.Warningf("Skipping inbound %s (%s): missing required TLS configuration for QUIC server", inbound.Tag, inbound.Type)
+			continue
+		}
+
 		inboundJson, err := inbound.MarshalJSON()
 		if err != nil {
 			return nil, err

@@ -255,6 +255,12 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		return nil
 	}
 
+	var count int64
+	_ = db.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Count(&count).Error
+	if count >= 40 {
+		return nil
+	}
+
 	// Initial seed endpoints representing diverse Cloudflare Anycast locations across 50+ countries
 	initialSeeds := []struct {
 		IP   string
