@@ -412,6 +412,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				seenEntryIPs[s.EntryIP] = true
 				sIdx := len(dynTags)
 				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
+				outTag := fmt.Sprintf("out-dyn-%s-%d", reg.Code, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey, protonClientAddrs)
 					if err == nil {
@@ -420,38 +421,18 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 					}
 				}
 				if existingEpTags[epTag] {
-					dynTags = append(dynTags, epTag)
+					outJson, err := BuildDirectOutboundJson(outTag, epTag)
+					if err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+						dynTags = append(dynTags, outTag)
+					}
 				}
 				if len(dynTags) >= 5 {
 					break
 				}
 			}
 			if len(dynTags) > 0 {
-				eps = append(eps, dynTags...)
-			}
-		}
-
-		// Prioritize verified static DB endpoints for US, JP and NL if available
-		if reg.Code == "us" {
-			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
-				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
-					eps = append([]string{vTag}, eps...)
-					break
-				}
-			}
-		} else if reg.Code == "nl" {
-			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
-				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
-					eps = append([]string{vTag}, eps...)
-					break
-				}
-			}
-		} else if reg.Code == "jp" {
-			for _, vTag := range []string{"ep-proton-jp", "ep-jp", "ep-proton-jp-free-1", "ep-proton-jp-free-2"} {
-				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
-					eps = append([]string{vTag}, eps...)
-					break
-				}
+				eps = dynTags
 			}
 		}
 

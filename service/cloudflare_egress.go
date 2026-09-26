@@ -982,6 +982,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				seenEntryIPs[s.EntryIP] = true
 				sIdx := len(memberTags)
 				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				outTag := fmt.Sprintf("out-%s-%d", reg.Code, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
 					if err == nil {
@@ -990,7 +991,11 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					}
 				}
 				if existingEpTags[epTag] {
-					memberTags = append(memberTags, epTag)
+					outJson, err := BuildDirectOutboundJson(outTag, epTag)
+					if err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+						memberTags = append(memberTags, outTag)
+					}
 				}
 				if len(memberTags) >= 5 {
 					break
@@ -1001,22 +1006,34 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		// 2. Include known verified DB endpoints for US, JP and NL
 		if locUpper == "US" {
 			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
-				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
-					memberTags = append(memberTags, vTag)
+				if existingEpTags[vTag] {
+					outVTag := fmt.Sprintf("out-%s", vTag)
+					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+						memberTags = append(memberTags, outVTag)
+					}
 					break
 				}
 			}
 		} else if locUpper == "NL" {
 			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
-				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
-					memberTags = append(memberTags, vTag)
+				if existingEpTags[vTag] {
+					outVTag := fmt.Sprintf("out-%s", vTag)
+					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+						memberTags = append(memberTags, outVTag)
+					}
 					break
 				}
 			}
 		} else if locUpper == "JP" {
 			for _, vTag := range []string{"ep-proton-jp", "ep-jp", "ep-proton-jp-free-1", "ep-proton-jp-free-2"} {
-				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
-					memberTags = append(memberTags, vTag)
+				if existingEpTags[vTag] {
+					outVTag := fmt.Sprintf("out-%s", vTag)
+					if outJson, err := BuildDirectOutboundJson(outVTag, vTag); err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+						memberTags = append(memberTags, outVTag)
+					}
 					break
 				}
 			}
@@ -1036,6 +1053,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				break
 			}
 			cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
+			cfOutTag := fmt.Sprintf("out-%s-cf-%d", reg.Code, cIdx)
 			if !existingEpTags[cfTag] {
 				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
 				if err == nil {
@@ -1044,7 +1062,11 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				}
 			}
 			if existingEpTags[cfTag] {
-				memberTags = append(memberTags, cfTag)
+				outJson, err := BuildDirectOutboundJson(cfOutTag, cfTag)
+				if err == nil {
+					singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+					memberTags = append(memberTags, cfOutTag)
+				}
 			}
 		}
 
