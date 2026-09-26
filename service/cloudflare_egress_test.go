@@ -131,10 +131,17 @@ func TestSeedInitialCloudflareEndpoints_AndDynamicRegions(t *testing.T) {
 		seenCodes[reg.Code] = true
 	}
 
-	// Check core countries are present (including Latin America, Africa, Middle East)
-	for _, expectedCode := range []string{"cf-us", "cf-jp", "cf-sg", "cf-gb", "cf-de", "cf-nl", "cf-fr", "cf-hk", "cf-br", "cf-ar", "cf-cl", "cf-ng", "cf-za", "cf-tr"} {
-		if !seenCodes[expectedCode] {
-			t.Errorf("Expected discovered region %s to be present", expectedCode)
+	// Check core countries are present at city level (including Latin America, Africa, Middle East)
+	for _, expectedPrefix := range []string{"cf-us", "cf-jp", "cf-sg", "cf-gb", "cf-de", "cf-nl", "cf-fr", "cf-hk", "cf-br", "cf-ar", "cf-cl", "cf-ng", "cf-za", "cf-tr"} {
+		found := false
+		for code := range seenCodes {
+			if strings.HasPrefix(code, expectedPrefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected discovered city region with prefix %s to be present", expectedPrefix)
 		}
 	}
 }

@@ -32,4 +32,6 @@ windows/sui-*.exe
 .vscode
 scripts/monitor_deploy.py
 scripts/test_all_egress.py
+__pycache__/
+*.pyc
 

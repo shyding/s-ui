@@ -43,6 +43,8 @@ type ProtonLogicalServer struct {
 	Features     int             `json:"Features"`
 	Load         int             `json:"Load"`         // Current load percentage (0-100)
 	Score        float64         `json:"Score"`
+	City         string          `json:"City,omitempty"`
+	Region       string          `json:"Region,omitempty"`
 	Status       int             `json:"Status"`       // 1 = Online, 0 = Offline
 	Servers      []*ProtonServer `json:"Servers"`
 }

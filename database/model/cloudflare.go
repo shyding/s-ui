@@ -7,6 +7,7 @@ type CloudflareEndpoint struct {
 	Port        int    `json:"port" form:"port" gorm:"uniqueIndex:idx_cf_ip_port"`
 	Loc         string `json:"loc" form:"loc" gorm:"index"`         // ISO 3166-1 alpha-2, e.g. "US", "JP", "SG", "HK", "GB", "DE"
 	Colo        string `json:"colo" form:"colo"`                 // Cloudflare 3-letter IATA code, e.g. "LAX", "NRT", "SIN", "LHR"
+	City        string `json:"city" form:"city"`                 // Localized city name, e.g. "布鲁塞尔", "圣保罗"
 	CountryName string `json:"countryName" form:"countryName"`  // e.g. "美国", "日本", "新加坡", "英国"
 	Flag        string `json:"flag" form:"flag"`                 // e.g. "🇺🇸", "🇯🇵", "🇸🇬", "🇬🇧"
 	LatencyMs   int64  `json:"latencyMs" form:"latencyMs"`        // RTT latency in milliseconds

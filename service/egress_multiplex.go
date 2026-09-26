@@ -360,12 +360,31 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		}
 	}
 
+	countryCache := GetCountryCache()
 	for _, reg := range StandardEgressRegions {
 		if reg.Code == "sg" {
 			continue
 		}
 		poolTag := reg.OutboundTag // e.g. "us-pool", "jp-pool", "nl-pool"
 		eps := regionEndpoints[reg.Code]
+
+		// Supplement with dynamic physical servers from country cache for guaranteed connectivity
+		countryCode := strings.ToUpper(reg.Code)
+		cServers := countryCache.GetCountryServers(countryCode)
+		if len(cServers) > 0 {
+			for sIdx, s := range cServers {
+				if sIdx >= 3 {
+					break
+				}
+				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
+				epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, "")
+				if err == nil {
+					singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+					eps = append(eps, epTag)
+				}
+			}
+		}
+
 		if len(eps) > 0 {
 			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
 			if err == nil {

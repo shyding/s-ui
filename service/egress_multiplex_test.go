@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/alireza0/s-ui/database/model"
@@ -288,9 +289,16 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 		expandedNames[uMap["name"].(string)] = true
 	}
 
-	for _, reqName := range []string{"my", "my-us", "my-jp", "my-nl", "my-cf-br", "my-cf-ar", "my-cf-cl", "my-cf-ng", "my-cf-za", "my-cf-tr"} {
-		if !expandedNames[reqName] {
-			t.Errorf("Expected expanded user '%s' to be present", reqName)
+	for _, reqPrefix := range []string{"my", "my-us", "my-jp", "my-nl", "my-cf-br", "my-cf-ar", "my-cf-cl", "my-cf-ng", "my-cf-za", "my-cf-tr"} {
+		found := false
+		for name := range expandedNames {
+			if strings.HasPrefix(name, reqPrefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected expanded user with prefix '%s' to be present", reqPrefix)
 		}
 	}
 }

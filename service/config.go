@@ -42,6 +42,8 @@ type SingBoxConfig struct {
 
 func NewConfigService(core *core.Core) *ConfigService {
 	corePtr = core
+	// Initialize and start periodic auto-updater for multi-country cache
+	GetCountryCache().StartAutoUpdater(12 * time.Hour)
 	return &ConfigService{}
 }
 

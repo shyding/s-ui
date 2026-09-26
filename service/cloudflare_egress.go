@@ -143,6 +143,65 @@ func GetCountryName(loc string) string {
 	return loc
 }
 
+// ColoToCityMap maps Cloudflare 3-letter IATA codes to localized city names
+var ColoToCityMap = map[string]string{
+	// Latin America
+	"GRU": "圣保罗", "GIG": "里约热内卢", "BSB": "巴西利亚", "FOR": "福塔莱萨", "POA": "阿雷格里港", "CWB": "库里蒂巴", "SSA": "萨尔瓦多", "REC": "累西腓", "VCP": "坎皮纳斯", "CNF": "贝洛奥里藏特",
+	"EZE": "布宜诺斯艾利斯", "COR": "科尔多瓦",
+	"SCL": "圣地亚哥",
+	"BOG": "波哥大", "MDE": "麦德林",
+	"LIM": "利马",
+	"UIO": "基多", "GYE": "瓜亚基尔",
+	"ASU": "亚松森", "MVD": "蒙得维的亚", "PTY": "巴拿马城", "SJO": "圣何塞(哥斯达黎加)", "GUA": "危地马拉城", "SAL": "圣萨尔瓦多",
+	"QRO": "克雷塔罗", "MEX": "墨西哥城", "GDL": "瓜达拉哈拉", "MTY": "蒙特雷",
+
+	// Africa
+	"LOS": "拉各斯", "ABV": "阿布贾", "KAN": "卡诺",
+	"JNB": "约翰内斯堡", "CPT": "开普敦", "DUR": "德班",
+	"CAI": "开罗", "NBO": "内罗毕", "MBA": "蒙巴萨", "ACC": "阿克拉", "DKR": "达喀尔",
+	"LUN": "卢萨卡", "DAR": "达累斯萨拉姆", "KGL": "基加利", "MPM": "马普托", "LAD": "罗安达",
+	"TUN": "突尼斯", "CMN": "卡萨布兰卡", "RBA": "拉巴特", "ALG": "阿尔及尔", "MRU": "路易港",
+
+	// Middle East
+	"IST": "伊斯坦布尔", "SAW": "伊斯坦布尔(萨比哈)", "ADB": "伊兹密尔", "ESB": "安卡拉", "AYT": "安塔利亚",
+	"DXB": "迪拜", "AUH": "阿布扎比", "DOH": "多哈", "BAH": "麦纳麦", "KWI": "科威特城", "MCT": "马斯喀特",
+	"RUH": "利雅得", "JED": "吉达", "DMM": "达曼", "TLV": "特拉维夫", "AMM": "安曼", "BEY": "贝鲁特", "BGW": "巴格达",
+
+	// Europe
+	"LHR": "伦敦", "LGW": "伦敦盖特威克", "MAN": "曼彻斯特", "EDI": "爱丁堡", "BHX": "伯明翰",
+	"FRA": "法兰克福", "MUC": "慕尼黑", "BER": "柏林", "HAM": "汉堡", "DUS": "杜塞尔多夫", "STR": "斯图加特",
+	"AMS": "阿姆斯特丹", "CDG": "巴黎", "MRS": "马赛", "LYS": "里昂", "BOD": "波尔多",
+	"MXP": "米兰", "FCO": "罗马", "PMO": "巴勒莫", "MAD": "马德里", "BCN": "巴塞罗那", "VLC": "瓦伦西亚",
+	"ZRH": "苏黎世", "GVA": "日内瓦", "VIE": "维也纳", "BRU": "布鲁塞尔", "DUB": "都柏林", "LIS": "里斯本", "OPO": "波尔图",
+	"WAW": "华沙", "PRG": "布拉格", "BUD": "布达佩斯", "OTP": "布加勒斯特", "SOF": "索非亚", "ATH": "雅典", "SKG": "塞萨洛尼基",
+	"ARN": "斯德哥尔摩", "OSL": "奥斯陆", "HEL": "赫尔辛基", "CPH": "哥本哈根", "TLL": "塔林", "RIX": "里加", "VNO": "维尔纽斯",
+	"ZAG": "萨格勒布", "BEG": "贝尔格莱德", "KBP": "基辅", "DME": "莫斯科", "SVO": "莫斯科谢列梅捷沃", "LED": "圣彼得堡",
+
+	// Asia-Pacific
+	"NRT": "东京成田", "HND": "东京羽田", "KIX": "大阪", "FUK": "福冈", "OKA": "冲绳", "CTS": "札幌",
+	"SIN": "新加坡", "HKG": "香港", "TPE": "台北", "KHH": "高雄", "ICN": "首尔仁川",
+	"SYD": "悉尼", "MEL": "墨尔本", "BNE": "布里斯班", "PER": "珀斯", "ADL": "阿德莱德", "AKL": "奥克兰", "CHC": "基督城",
+	"BOM": "孟买", "DEL": "新德里", "BLR": "班加罗尔", "MAA": "金奈", "HYD": "海得拉巴", "CCU": "加尔各答",
+	"BKK": "曼谷", "HAN": "河内", "SGN": "胡志明市", "KUL": "吉隆坡", "JHB": "新山", "CGK": "雅加达",
+	"MNL": "马尼拉", "CEB": "宿务", "KHI": "卡拉奇", "LHE": "拉合尔", "ISB": "伊斯兰堡", "DAC": "达卡",
+	"CMB": "科伦坡", "KTM": "加德满都", "ULN": "乌兰巴托", "PNH": "金边", "VTE": "万象", "RGN": "仰光", "GUM": "关岛",
+
+	// North America
+	"LAX": "洛杉矶", "SJC": "圣何塞", "SFO": "旧金山", "ORD": "芝加哥", "DFW": "达拉斯", "IAD": "华盛顿", "EWR": "纽瓦克",
+	"MIA": "迈阿密", "SEA": "西雅图", "ATL": "亚特兰大", "DEN": "丹佛", "PHX": "凤凰城", "BOS": "波士顿", "DTW": "底特律",
+	"MSP": "明尼阿波利斯", "CLT": "夏洛特", "IAH": "休斯顿", "PDX": "波特兰", "SLC": "盐湖城", "SAN": "圣迭戈", "TPA": "坦帕", "MCO": "奥兰多",
+	"YYZ": "多伦多", "YVR": "温哥华", "YUL": "蒙特利尔", "YYC": "卡尔加里",
+}
+
+// GetCityName returns localized city name from IATA airport code
+func GetCityName(colo string) string {
+	colo = strings.ToUpper(strings.TrimSpace(colo))
+	if name, ok := ColoToCityMap[colo]; ok && name != "" {
+		return name
+	}
+	return colo
+}
+
 // FetchCloudflareOfficialIPs queries Cloudflare's official IP list
 func FetchCloudflareOfficialIPs() ([]string, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -335,6 +394,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 			Port:        s.Port,
 			Loc:         s.Loc,
 			Colo:        s.Colo,
+			City:        GetCityName(s.Colo),
 			CountryName: GetCountryName(s.Loc),
 			Flag:        GetCountryFlag(s.Loc),
 			LatencyMs:   50,
@@ -344,7 +404,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		}
 		_ = db.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
-			DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "country_name", "flag", "status", "last_checked"}),
+			DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "status", "last_checked"}),
 		}).Create(&ep).Error
 	}
 
@@ -419,6 +479,7 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 					Port:        2408,
 					Loc:         trace.Loc,
 					Colo:        trace.Colo,
+					City:        GetCityName(trace.Colo),
 					CountryName: GetCountryName(trace.Loc),
 					Flag:        GetCountryFlag(trace.Loc),
 					LatencyMs:   trace.LatencyMs,
@@ -434,6 +495,7 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 					Port:        443,
 					Loc:         trace.Loc,
 					Colo:        trace.Colo,
+					City:        GetCityName(trace.Colo),
 					CountryName: GetCountryName(trace.Loc),
 					Flag:        GetCountryFlag(trace.Loc),
 					LatencyMs:   trace.LatencyMs,
@@ -457,7 +519,7 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 		if ep.Status == "online" {
 			_ = db.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
-				DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "country_name", "flag", "latency_ms", "status", "last_checked"}),
+				DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "latency_ms", "status", "last_checked"}),
 			}).Create(ep).Error
 			updatedCount++
 		}
@@ -467,7 +529,7 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 	return nil
 }
 
-// GetActiveCloudflareRegions queries all active country regions from the database ("有多少区分多少")
+// GetActiveCloudflareRegions queries all active city-level regions from the database ("有多少区分多少")
 func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 	if db == nil {
 		db = database.GetDB()
@@ -481,33 +543,57 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 
 	type RegionRow struct {
 		Loc         string
+		Colo        string
+		City        string
 		CountryName string
 		Flag        string
 	}
 	var rows []RegionRow
 	_ = db.Model(&model.CloudflareEndpoint{}).
-		Select("DISTINCT loc, country_name, flag").
+		Select("DISTINCT loc, colo, city, country_name, flag").
 		Where("status = ? AND loc != ''", "online").
-		Order("loc ASC").
+		Order("loc ASC, colo ASC").
 		Scan(&rows).Error
 
 	var regions []EgressRegion
+	seenTags := make(map[string]bool)
+
 	for _, r := range rows {
 		locLower := strings.ToLower(r.Loc)
+		coloLower := strings.ToLower(r.Colo)
+		if coloLower == "" {
+			coloLower = locLower
+		}
 		cName := r.CountryName
 		if cName == "" {
 			cName = GetCountryName(r.Loc)
+		}
+		cityName := r.City
+		if cityName == "" {
+			cityName = GetCityName(r.Colo)
 		}
 		flag := r.Flag
 		if flag == "" {
 			flag = GetCountryFlag(r.Loc)
 		}
 
+		code := fmt.Sprintf("cf-%s-%s", locLower, coloLower)
+		poolTag := fmt.Sprintf("cf-%s-%s-pool", locLower, coloLower)
+		if seenTags[code] {
+			continue
+		}
+		seenTags[code] = true
+
+		displayName := fmt.Sprintf("%s·%s-Cloudflare洁净出口", cName, cityName)
+		if cityName == "" || cityName == cName {
+			displayName = fmt.Sprintf("%s-Cloudflare洁净出口", cName)
+		}
+
 		reg := EgressRegion{
-			Code:        fmt.Sprintf("cf-%s", locLower),
-			Name:        fmt.Sprintf("%s-Cloudflare洁净出口", cName),
+			Code:        code,
+			Name:        displayName,
 			Flag:        flag,
-			OutboundTag: fmt.Sprintf("cf-%s-pool", locLower),
+			OutboundTag: poolTag,
 		}
 		regions = append(regions, reg)
 	}
@@ -657,57 +743,103 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		}
 	}
 
+	countryCache := GetCountryCache()
+
 	for _, reg := range cfRegions {
 		poolTag := reg.OutboundTag
 
-		targetEpTag := warpTag
-		// Check if we can build a region-specific endpoint
-		if baseWarpMap != nil {
-			regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
-			locUpper := strings.ToUpper(strings.TrimPrefix(reg.Code, "cf-"))
-			var bestEp model.CloudflareEndpoint
-			err := db.Model(&model.CloudflareEndpoint{}).
-				Where("loc = ? AND status = ?", locUpper, "online").
-				Order("latency_ms ASC").
-				First(&bestEp).Error
+		// Parse country and city/colo from reg.Code (e.g. cf-be-bru -> loc: BE, colo: BRU)
+		trimmed := strings.TrimPrefix(reg.Code, "cf-")
+		parts := strings.Split(trimmed, "-")
+		locUpper := strings.ToUpper(parts[0])
+		coloUpper := ""
+		if len(parts) > 1 {
+			coloUpper = strings.ToUpper(parts[1])
+		}
 
-			if err == nil && bestEp.IP != "" {
-				if !existingEpTags[regionEpTag] {
-					clonedBytes, _ := json.Marshal(baseWarpMap)
-					var clonedMap map[string]interface{}
-					_ = json.Unmarshal(clonedBytes, &clonedMap)
-					clonedMap["tag"] = regionEpTag
-					clonedMap["type"] = "wireguard"
+		var matchedServers []*PhysicalServerEntry
+		if coloUpper != "" {
+			matchedServers = countryCache.GetCityServers(locUpper, coloUpper)
+		}
+		if len(matchedServers) == 0 {
+			matchedServers = countryCache.GetCountryServers(locUpper)
+		}
 
-					if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
-						if pMap, ok := peers[0].(map[string]interface{}); ok {
-							pMap["address"] = bestEp.IP
-							if bestEp.Port > 0 {
-								pMap["port"] = bestEp.Port
-							} else {
-								pMap["port"] = 2408
-							}
-						}
-					}
-					if epJson, err := json.Marshal(clonedMap); err == nil {
+		var memberTags []string
+		if len(matchedServers) > 0 {
+			// Create dedicated WireGuard endpoints for this country/city physical server
+			for sIdx, s := range matchedServers {
+				if sIdx >= 2 { // top 2 servers per city/country
+					break
+				}
+				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				if !existingEpTags[epTag] {
+					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, "")
+					if err == nil {
 						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-						existingEpTags[regionEpTag] = true
-						targetEpTag = regionEpTag
+						existingEpTags[epTag] = true
 					}
-				} else {
-					targetEpTag = regionEpTag
+				}
+				if existingEpTags[epTag] {
+					memberTags = append(memberTags, epTag)
 				}
 			}
 		}
 
-		// Direct WireGuard endpoint membership in urltest pool without dummy direct outbound wrapper
-		memberTags := []string{targetEpTag}
-		if targetEpTag != warpTag && warpTag != "" {
-			memberTags = append(memberTags, warpTag)
+		// Fallback only if no physical servers matched in country cache
+		if len(memberTags) == 0 {
+			targetEpTag := warpTag
+			if baseWarpMap != nil {
+				regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
+				var bestEp model.CloudflareEndpoint
+				err := db.Model(&model.CloudflareEndpoint{}).
+					Where("loc = ? AND status = ?", locUpper, "online").
+					Order("latency_ms ASC").
+					First(&bestEp).Error
+
+				if err == nil && bestEp.IP != "" {
+					if !existingEpTags[regionEpTag] {
+						clonedBytes, _ := json.Marshal(baseWarpMap)
+						var clonedMap map[string]interface{}
+						_ = json.Unmarshal(clonedBytes, &clonedMap)
+						clonedMap["tag"] = regionEpTag
+						clonedMap["type"] = "wireguard"
+
+						if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
+							if pMap, ok := peers[0].(map[string]interface{}); ok {
+								pMap["address"] = bestEp.IP
+								if bestEp.Port > 0 {
+									pMap["port"] = bestEp.Port
+								} else {
+									pMap["port"] = 2408
+								}
+							}
+						}
+						if epJson, err := json.Marshal(clonedMap); err == nil {
+							singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+							existingEpTags[regionEpTag] = true
+							targetEpTag = regionEpTag
+						}
+					} else {
+						targetEpTag = regionEpTag
+					}
+				}
+			}
+			memberTags = []string{targetEpTag}
 		}
+
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
 		if err == nil {
 			singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+		}
+
+		// Also provide legacy country-level pool tag (e.g. cf-be-pool) aliased to the same memberTags
+		legacyCountryPoolTag := fmt.Sprintf("cf-%s-pool", strings.ToLower(locUpper))
+		if legacyCountryPoolTag != poolTag {
+			legacyOb, err := BuildUrlTestPoolJson(legacyCountryPoolTag, memberTags, "3m")
+			if err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, legacyOb)
+			}
 		}
 	}
 }
