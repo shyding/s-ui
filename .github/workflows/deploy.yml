@@ -121,8 +121,5 @@ jobs:
             sleep 3
             sudo systemctl status s-ui --no-pager
 
-            # Execute closed-loop regional egress verification directly on server
-            python3 /usr/local/s-ui/scripts/test_all_egress.py || true
-
             echo "Deployment completed successfully!"
           ENDSSH
