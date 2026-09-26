@@ -262,6 +262,16 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 							modified = true
 							continue
 						}
+						// Strip legacy broken outbound targets
+						if ob, _ := rMap["outbound"].(string); ob == "warp-6eV" {
+							modified = true
+							continue
+						}
+						// Strip old auth_user rules for clean regeneration
+						if _, hasAuth := rMap["auth_user"]; hasAuth {
+							modified = true
+							continue
+						}
 						if action == "sniff" {
 							hasSniff = true
 						}
