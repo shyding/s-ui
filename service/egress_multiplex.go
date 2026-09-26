@@ -298,10 +298,11 @@ func InjectEgressRouteRulesForClients(rules []interface{}, rootUsernames []strin
 			continue
 		}
 		for _, reg := range activeRegions {
-			userName := fmt.Sprintf("%s-%s", username, reg.Code)
 			if reg.Code == "" || reg.Code == "sg" {
-				userName = username
+				// Root user represents native direct egress; do not bind to regional pools
+				continue
 			}
+			userName := fmt.Sprintf("%s-%s", username, reg.Code)
 			if !existingUserRules[userName] {
 				rule := map[string]interface{}{
 					"auth_user": []string{userName},
@@ -319,6 +320,59 @@ func InjectEgressRouteRulesForClients(rules []interface{}, rootUsernames []strin
 	}
 
 	return newRules
+}
+
+// EnsureProtonPoolsInOutbounds dynamically injects urltest outbounds for ProtonVPN regions (us-pool, jp-pool, nl-pool)
+func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
+	if db == nil || singboxConfig == nil {
+		return
+	}
+
+	existingTags := make(map[string]bool)
+	for _, obRaw := range singboxConfig.Outbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err == nil {
+			if tag, ok := obMap["tag"].(string); ok {
+				existingTags[tag] = true
+			}
+		}
+	}
+
+	// Map each region code ("us", "jp", "nl") to its matching endpoint tags
+	regionEndpoints := make(map[string][]string)
+	for _, epRaw := range singboxConfig.Endpoints {
+		var epMap map[string]interface{}
+		if err := json.Unmarshal(epRaw, &epMap); err == nil {
+			tag, _ := epMap["tag"].(string)
+			if tag == "" {
+				continue
+			}
+			lowerTag := strings.ToLower(tag)
+			for _, code := range []string{"us", "jp", "nl"} {
+				if strings.Contains(lowerTag, "proton-"+code) || strings.HasPrefix(lowerTag, "ep-"+code) || strings.Contains(lowerTag, "-"+code+"-") {
+					regionEndpoints[code] = append(regionEndpoints[code], tag)
+				}
+			}
+		}
+	}
+
+	for _, reg := range StandardEgressRegions {
+		if reg.Code == "sg" {
+			continue
+		}
+		poolTag := reg.OutboundTag // e.g. "us-pool", "jp-pool", "nl-pool"
+		if existingTags[poolTag] {
+			continue
+		}
+		eps := regionEndpoints[reg.Code]
+		if len(eps) > 0 {
+			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
+			if err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+				existingTags[poolTag] = true
+			}
+		}
+	}
 }
 
 // InjectEgressRouteRules ensures that auth_user rules for active egress regions are present in route rules

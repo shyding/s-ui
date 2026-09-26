@@ -88,6 +88,7 @@ func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
 		return nil, err
 	}
 	EnsureCloudflarePoolsInOutbounds(&singboxConfig, database.GetDB())
+	EnsureProtonPoolsInOutbounds(&singboxConfig, database.GetDB())
 	return &singboxConfig, nil
 }
 
