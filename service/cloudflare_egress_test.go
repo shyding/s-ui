@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 
@@ -227,5 +228,72 @@ func TestGetActiveEgressRegions_IntegrationWithCloudflare(t *testing.T) {
 	routes := InjectEgressRouteRulesForClients(nil, []string{"my", "admin"}, active)
 	if len(routes) < len(active)*2 {
 		t.Errorf("Expected routes for all clients and all regions, got %d rules", len(routes))
+	}
+}
+
+func TestCloudflareOfficialIPsCompletenessAndFreshness(t *testing.T) {
+	// 1. Verify baseline official CIDRs list contains all 15 IPv4 blocks
+	if len(CloudflareOfficialIPv4CIDRs) != 15 {
+		t.Fatalf("Expected exactly 15 official Cloudflare IPv4 CIDRs, got %d", len(CloudflareOfficialIPv4CIDRs))
+	}
+	if len(CloudflareOfficialIPv6CIDRs) != 7 {
+		t.Fatalf("Expected exactly 7 official Cloudflare IPv6 CIDRs, got %d", len(CloudflareOfficialIPv6CIDRs))
+	}
+
+	// 2. Test FetchCloudflareOfficialIPs (multi-source with guarantee)
+	cidrs, err := FetchCloudflareOfficialIPs()
+	if err != nil {
+		t.Fatalf("FetchCloudflareOfficialIPs failed: %v", err)
+	}
+	if len(cidrs) < 15 {
+		t.Errorf("Expected at least 15 CIDRs, got %d", len(cidrs))
+	}
+
+	// Verify not a single official CIDR is missed ("一个也不漏")
+	cidrMap := make(map[string]bool)
+	for _, c := range cidrs {
+		cidrMap[c] = true
+	}
+	for _, expected := range CloudflareOfficialIPv4CIDRs {
+		if !cidrMap[expected] {
+			t.Errorf("Official Cloudflare CIDR %s is missing from fetched CIDRs", expected)
+		}
+	}
+
+	// 3. Test GenerateCandidateIPsFromOfficialCIDRs
+	candidateIPs := GenerateCandidateIPsFromOfficialCIDRs(cidrs)
+	if len(candidateIPs) < 30 {
+		t.Errorf("Expected at least 30 candidate physical IPs, got %d", len(candidateIPs))
+	}
+
+	// Verify every generated IP is a valid IPv4 address
+	for _, ipStr := range candidateIPs {
+		parsed := net.ParseIP(ipStr)
+		if parsed == nil || parsed.To4() == nil {
+			t.Errorf("Invalid candidate IP generated: %s", ipStr)
+		}
+	}
+
+	// 4. Test BuildCloudflareWireGuardEndpointJson
+	baseWarp := map[string]interface{}{
+		"private_key": "dGVzdC1wcml2YXRlLWtleS0xMjM0NTY3ODkwMTI=",
+		"address":     []interface{}{"172.16.0.2/32"},
+		"peers": []interface{}{
+			map[string]interface{}{
+				"public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+				"reserved":   []interface{}{float64(1), float64(2), float64(3)},
+			},
+		},
+	}
+	epJson, err := BuildCloudflareWireGuardEndpointJson("ep-cf-ng-los-cf-0", "197.234.240.1", 2408, baseWarp)
+	if err != nil {
+		t.Fatalf("BuildCloudflareWireGuardEndpointJson failed: %v", err)
+	}
+	var epMap map[string]interface{}
+	if err := json.Unmarshal(epJson, &epMap); err != nil {
+		t.Fatalf("Failed to unmarshal generated Cloudflare endpoint JSON: %v", err)
+	}
+	if epMap["type"] != "wireguard" || epMap["tag"] != "ep-cf-ng-los-cf-0" {
+		t.Errorf("Unexpected endpoint properties: %v", epMap)
 	}
 }

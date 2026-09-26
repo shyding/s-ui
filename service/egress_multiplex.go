@@ -427,11 +427,6 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 		}
 
-		// Ensure resilient fallback to WARP so node is never dead (timeout -1)
-		if warpTag != "" && existingEpTags[warpTag] {
-			eps = append(eps, warpTag)
-		}
-
 		if len(eps) > 0 {
 			poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, eps, "3m", 800)
 			if err == nil {

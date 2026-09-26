@@ -222,7 +222,7 @@ func TestResilientEgressFailoverAndNigeriaLocalization(t *testing.T) {
 	EnsureCloudflarePoolsInOutbounds(singboxCfg, db)
 	EnsureProtonPoolsInOutbounds(singboxCfg, db)
 
-	// Verify all created urltest outbounds have warp-master as fallback and tolerance >= 800
+	// Verify that city pools do NOT include warp-master so traffic never leaks to Singapore
 	checkedPools := 0
 	for _, obRaw := range singboxCfg.Outbounds {
 		var obMap map[string]interface{}
@@ -234,15 +234,10 @@ func TestResilientEgressFailoverAndNigeriaLocalization(t *testing.T) {
 					t.Errorf("Pool %s expected tolerance >= 800, got %v", tag, tol)
 				}
 				outbounds, _ := obMap["outbounds"].([]interface{})
-				hasWarp := false
 				for _, o := range outbounds {
 					if oStr, ok := o.(string); ok && oStr == "warp-master" {
-						hasWarp = true
-						break
+						t.Errorf("Pool %s must NOT contain warp-master to prevent Singapore leakage", tag)
 					}
-				}
-				if !hasWarp {
-					t.Errorf("Pool %s missing warp-master fallback outbound", tag)
 				}
 				checkedPools++
 			}
