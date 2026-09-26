@@ -30,3 +30,6 @@ windows/sui-*.exe
 # Editor directories and files
 .idea
 .vscode
+scripts/monitor_deploy.py
+scripts/test_all_egress.py
+

@@ -72,24 +72,28 @@ jobs:
 
       - name: Add server to known hosts
         run: |
-          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts || true
 
       - name: Deploy to Ubuntu Server
         run: |
-          scp -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
-          scp -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
+          tar czf payload.tar.gz sui scripts
+          scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 -P ${{ secrets.SERVER_PORT }} payload.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/payload.tar.gz
 
       - name: Restart s-ui service
         run: |
-          ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=30 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
             # Stop s-ui service and ensure no lingering processes hold ports
             sudo systemctl stop s-ui || true
             sudo pkill -9 -f /usr/local/s-ui/sui || true
             sudo fuser -k 40734/udp 54142/tcp 2096/tcp 2053/tcp || true
             sleep 1
 
+            # Extract payload archive
+            tar xzf /tmp/payload.tar.gz -C /tmp/
+            rm -f /tmp/payload.tar.gz
+
             # Backup old binary
-            sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S)
+            sudo cp /usr/local/s-ui/sui /usr/local/s-ui/sui.backup.$(date +%Y%m%d_%H%M%S) || true
 
             # Replace with new binary
             sudo mv /tmp/sui /usr/local/s-ui/sui
