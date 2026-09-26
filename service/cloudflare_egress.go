@@ -831,7 +831,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 		if len(matchedServers) > 0 {
 			for sIdx, s := range matchedServers {
-				if sIdx >= 2 {
+				if sIdx >= 3 {
 					break
 				}
 				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)

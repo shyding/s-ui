@@ -393,9 +393,6 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		if len(cServers) > 0 {
 			var dynTags []string
 			for sIdx, s := range cServers {
-				if s.Tier != 0 {
-					continue
-				}
 				if len(dynTags) >= 3 {
 					break
 				}
@@ -412,7 +409,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				}
 			}
 			if len(dynTags) > 0 {
-				eps = append(dynTags, eps...)
+				eps = append(eps, dynTags...)
 			}
 		}
 

@@ -18,17 +18,19 @@ import (
 
 // PhysicalServerEntry represents a validated physical server in a specific country
 type PhysicalServerEntry struct {
-	Name      string  `json:"name"`
-	Country   string  `json:"country"` // ISO 3166-1 alpha-2, uppercase (e.g. "BE", "AR", "BR", "US", "NL")
-	City      string  `json:"city"`
-	Domain    string  `json:"domain"`
-	EntryIP   string  `json:"entry_ip"`
-	ExitIP    string  `json:"exit_ip"`
-	PublicKey string  `json:"public_key"`
-	Port      int     `json:"port"`
-	Tier      int     `json:"tier"` // 0 = Free, 1/2 = Standard/Plus
-	Load      int     `json:"load"`
-	Score     float64 `json:"score"`
+	Name         string  `json:"name"`
+	Country      string  `json:"country"` // ISO 3166-1 alpha-2, uppercase (e.g. "BE", "AR", "BR", "US", "NL")
+	EntryCountry string  `json:"entry_country"`
+	City         string  `json:"city"`
+	Domain       string  `json:"domain"`
+	EntryIP      string  `json:"entry_ip"`
+	ExitIP       string  `json:"exit_ip"`
+	PublicKey    string  `json:"public_key"`
+	Port         int     `json:"port"`
+	Tier         int     `json:"tier"` // 0 = Free, 1/2 = Standard/Plus
+	Load         int     `json:"load"`
+	Score        float64 `json:"score"`
+	IsDirect     bool    `json:"is_direct"`
 }
 
 // MultiCountryCache manages dynamic caching and updates for physical server endpoints
@@ -113,34 +115,42 @@ func (c *MultiCountryCache) ReloadFromDisk() error {
 			continue
 		}
 
+		entryCountry := strings.ToUpper(strings.TrimSpace(ls.EntryCountry))
+		exitCountry := strings.ToUpper(strings.TrimSpace(ls.ExitCountry))
+		isDirect := entryCountry == "" || exitCountry == "" || entryCountry == exitCountry
+
 		for _, ps := range ls.Servers {
 			if ps.Status != 1 || ps.EntryIP == "" || ps.X25519PublicKey == "" {
 				continue
 			}
 
 			entry := &PhysicalServerEntry{
-				Name:      ls.Name,
-				Country:   cCode,
-				City:      ls.City,
-				Domain:    ps.Domain,
-				EntryIP:   ps.EntryIP,
-				ExitIP:    ps.ExitIP,
-				PublicKey: ps.X25519PublicKey,
-				Port:      51820,
-				Tier:      ls.Tier,
-				Load:      ls.Load,
-				Score:     ls.Score,
+				Name:         ls.Name,
+				Country:      cCode,
+				EntryCountry: entryCountry,
+				City:         ls.City,
+				Domain:       ps.Domain,
+				EntryIP:      ps.EntryIP,
+				ExitIP:       ps.ExitIP,
+				PublicKey:    ps.X25519PublicKey,
+				Port:         51820,
+				Tier:         ls.Tier,
+				Load:         ls.Load,
+				Score:        ls.Score,
+				IsDirect:     isDirect,
 			}
 			newMap[cCode] = append(newMap[cCode], entry)
 			totalLoaded++
 		}
 	}
 
-	// Sort each country's servers: Tier 0 first (Free), then lowest Load first
+	// Sort each country's servers:
+	// 1. Direct servers (EntryCountry == ExitCountry) first over Secure Core multihop
+	// 2. Lowest Load first
 	for _, sList := range newMap {
 		sort.Slice(sList, func(i, j int) bool {
-			if sList[i].Tier != sList[j].Tier {
-				return sList[i].Tier < sList[j].Tier
+			if sList[i].IsDirect != sList[j].IsDirect {
+				return sList[i].IsDirect
 			}
 			return sList[i].Load < sList[j].Load
 		})
