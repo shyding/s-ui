@@ -743,8 +743,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		}
 	}
 
-	countryCache := GetCountryCache()
-
 	for _, reg := range cfRegions {
 		poolTag := reg.OutboundTag
 
@@ -757,75 +755,54 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			coloUpper = strings.ToUpper(parts[1])
 		}
 
-		var matchedServers []*PhysicalServerEntry
-		if coloUpper != "" {
-			matchedServers = countryCache.GetCityServers(locUpper, coloUpper)
-		}
-		if len(matchedServers) == 0 {
-			matchedServers = countryCache.GetCountryServers(locUpper)
-		}
+		targetEpTag := warpTag
+		if baseWarpMap != nil {
+			regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
+			var bestEp model.CloudflareEndpoint
+			err := db.Model(&model.CloudflareEndpoint{}).
+				Where("loc = ? AND (colo = ? OR ? = '') AND status = ?", locUpper, coloUpper, coloUpper, "online").
+				Order("latency_ms ASC").
+				First(&bestEp).Error
 
-		var memberTags []string
-		if len(matchedServers) > 0 {
-			// Create dedicated WireGuard endpoints for this country/city physical server
-			for sIdx, s := range matchedServers {
-				if sIdx >= 2 { // top 2 servers per city/country
-					break
-				}
-				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
-				if !existingEpTags[epTag] {
-					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, "")
-					if err == nil {
-						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-						existingEpTags[epTag] = true
-					}
-				}
-				if existingEpTags[epTag] {
-					memberTags = append(memberTags, epTag)
-				}
-			}
-		}
-
-		// Fallback only if no physical servers matched in country cache
-		if len(memberTags) == 0 {
-			targetEpTag := warpTag
-			if baseWarpMap != nil {
-				regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
-				var bestEp model.CloudflareEndpoint
-				err := db.Model(&model.CloudflareEndpoint{}).
+			if err != nil || bestEp.IP == "" {
+				_ = db.Model(&model.CloudflareEndpoint{}).
 					Where("loc = ? AND status = ?", locUpper, "online").
 					Order("latency_ms ASC").
 					First(&bestEp).Error
+			}
 
-				if err == nil && bestEp.IP != "" {
-					if !existingEpTags[regionEpTag] {
-						clonedBytes, _ := json.Marshal(baseWarpMap)
-						var clonedMap map[string]interface{}
-						_ = json.Unmarshal(clonedBytes, &clonedMap)
-						clonedMap["tag"] = regionEpTag
-						clonedMap["type"] = "wireguard"
+			if bestEp.IP != "" {
+				if !existingEpTags[regionEpTag] {
+					clonedBytes, _ := json.Marshal(baseWarpMap)
+					var clonedMap map[string]interface{}
+					_ = json.Unmarshal(clonedBytes, &clonedMap)
+					clonedMap["tag"] = regionEpTag
+					clonedMap["type"] = "wireguard"
 
-						if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
-							if pMap, ok := peers[0].(map[string]interface{}); ok {
-								pMap["address"] = bestEp.IP
-								if bestEp.Port > 0 {
-									pMap["port"] = bestEp.Port
-								} else {
-									pMap["port"] = 2408
-								}
+					if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
+						if pMap, ok := peers[0].(map[string]interface{}); ok {
+							pMap["address"] = bestEp.IP
+							if bestEp.Port > 0 {
+								pMap["port"] = bestEp.Port
+							} else {
+								pMap["port"] = 2408
 							}
 						}
-						if epJson, err := json.Marshal(clonedMap); err == nil {
-							singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-							existingEpTags[regionEpTag] = true
-							targetEpTag = regionEpTag
-						}
-					} else {
+					}
+					if epJson, err := json.Marshal(clonedMap); err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+						existingEpTags[regionEpTag] = true
 						targetEpTag = regionEpTag
 					}
+				} else {
+					targetEpTag = regionEpTag
 				}
 			}
-			memberTags = []string{targetEpTag}
+		}
+
+		memberTags := []string{targetEpTag}
+		if targetEpTag != warpTag && warpTag != "" {
+			memberTags = append(memberTags, warpTag)
 		}
 
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")

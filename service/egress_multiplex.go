@@ -360,6 +360,22 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		}
 	}
 
+	// Find active working Proton client private key from existing endpoints
+	var protonClientPrivKey string
+	for _, epRaw := range singboxConfig.Endpoints {
+		var epMap map[string]interface{}
+		if err := json.Unmarshal(epRaw, &epMap); err == nil {
+			tag, _ := epMap["tag"].(string)
+			lowerTag := strings.ToLower(tag)
+			if strings.Contains(lowerTag, "proton") || strings.HasPrefix(lowerTag, "ep-us") || strings.HasPrefix(lowerTag, "ep-nl") {
+				if pk, ok := epMap["private_key"].(string); ok && pk != "" {
+					protonClientPrivKey = pk
+					break
+				}
+			}
+		}
+	}
+
 	countryCache := GetCountryCache()
 	for _, reg := range StandardEgressRegions {
 		if reg.Code == "sg" {
@@ -372,16 +388,23 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		countryCode := strings.ToUpper(reg.Code)
 		cServers := countryCache.GetCountryServers(countryCode)
 		if len(cServers) > 0 {
+			var dynTags []string
 			for sIdx, s := range cServers {
-				if sIdx >= 3 {
+				if s.Tier != 0 {
+					continue
+				}
+				if len(dynTags) >= 3 {
 					break
 				}
 				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
-				epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, "")
+				epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey)
 				if err == nil {
 					singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-					eps = append(eps, epTag)
+					dynTags = append(dynTags, epTag)
 				}
+			}
+			if len(dynTags) > 0 {
+				eps = append(dynTags, eps...)
 			}
 		}
 

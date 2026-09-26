@@ -60,11 +60,16 @@ func candidateCachePaths() []string {
 	paths := []string{
 		filepath.Join("/usr/local/s-ui", "scripts", "cached_logicals.json"),
 		filepath.Join("scripts", "cached_logicals.json"),
+		filepath.Join("..", "scripts", "cached_logicals.json"),
+		filepath.Join("service", "cached_logicals.json"),
+		"cached_logicals.json",
+		`I:\learn_code\s-ui\scripts\cached_logicals.json`,
+		`I:\learn_code\s-ui\service\cached_logicals.json`,
 	}
 	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "scripts", "cached_logicals.json"))
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "..", "scripts", "cached_logicals.json"))
 	}
-	paths = append(paths, filepath.Join("i:", "learn_code", "s-ui", "scripts", "cached_logicals.json"))
 	return paths
 }
 
