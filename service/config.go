@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alireza0/s-ui/core"
@@ -100,16 +101,44 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 	if err != nil {
 		return err
 	}
-	rawConfig, err := json.MarshalIndent(singboxConfig, "", "  ")
-	if err != nil {
+
+	for attempt := 0; attempt < 5; attempt++ {
+		rawConfig, err := json.MarshalIndent(singboxConfig, "", "  ")
+		if err != nil {
+			return err
+		}
+		err = corePtr.Start(rawConfig)
+		if err == nil {
+			logger.Info("sing-box started")
+			return nil
+		}
+
+		errMsg := err.Error()
+		logger.Error("start sing-box err:", errMsg)
+
+		// Self-healing: if an inbound failed initialization, isolate it and retry
+		if strings.Contains(errMsg, "initialize inbound") {
+			removed := false
+			for i, inRaw := range singboxConfig.Inbounds {
+				var inMap map[string]interface{}
+				if json.Unmarshal(inRaw, &inMap) == nil {
+					if tag, ok := inMap["tag"].(string); ok && tag != "" {
+						if strings.Contains(errMsg, tag) {
+							logger.Warningf("Self-healing: isolating problematic inbound '%s' and retrying startup", tag)
+							singboxConfig.Inbounds = append(singboxConfig.Inbounds[:i], singboxConfig.Inbounds[i+1:]...)
+							removed = true
+							break
+						}
+					}
+				}
+			}
+			if removed {
+				continue
+			}
+		}
+
 		return err
 	}
-	err = corePtr.Start(rawConfig)
-	if err != nil {
-		logger.Error("start sing-box err:", err.Error())
-		return err
-	}
-	logger.Info("sing-box started")
 	return nil
 }
 

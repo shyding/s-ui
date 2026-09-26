@@ -238,8 +238,13 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 				var tlsMap map[string]interface{}
 				if err := json.Unmarshal(inbound.Tls.Server, &tlsMap); err == nil {
 					enabled, ok := tlsMap["enabled"].(bool)
-					if (!ok || enabled) && (tlsMap["server_name"] != nil || tlsMap["certificate"] != nil || tlsMap["certificate_path"] != nil || tlsMap["acme"] != nil) {
-						hasValidTLS = true
+					if !ok || enabled {
+						certPath, _ := tlsMap["certificate_path"].(string)
+						certs, _ := tlsMap["certificate"].([]interface{})
+						acme, _ := tlsMap["acme"].(map[string]interface{})
+						if certPath != "" || len(certs) > 0 || len(acme) > 0 {
+							hasValidTLS = true
+						}
 					}
 				}
 			}
