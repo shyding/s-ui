@@ -498,11 +498,11 @@ func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*Cl
 	}
 
 	if port <= 0 {
-		port = 80
+		port = 443
 	}
-	scheme := "http"
-	if port == 443 || port == 8443 {
-		scheme = "https"
+	scheme := "https"
+	if port == 80 || port == 8080 {
+		scheme = "http"
 	}
 
 	// Use custom transport connecting directly to candidate IP
@@ -560,85 +560,51 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		return nil
 	}
 
+	// Purge historical fake seeds with unreachable ports (e.g. 500, 853)
+	_ = db.Where("port NOT IN (2408, 51820) OR port IS NULL").Delete(&model.CloudflareEndpoint{}).Error
+
 	var count int64
 	_ = db.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Count(&count).Error
-	if count >= 60 {
+	if count >= 16 {
 		return nil
 	}
 
-	// Initial seed endpoints representing diverse Cloudflare Anycast locations across 50+ countries
+	// Standard seed endpoints across official Cloudflare IP ranges and global cities
 	initialSeeds := []struct {
 		IP   string
 		Port int
 		Loc  string
 		Colo string
 	}{
-		// Latin America (Brazil, Argentina, Chile, Colombia, Mexico, Peru)
+		// United States (Los Angeles, Denver, San Jose)
+		{"173.245.49.17", 2408, "US", "LAX"},
+		{"103.31.4.1", 2408, "US", "DEN"},
+		{"162.159.198.1", 2408, "US", "SJC"},
+		// Germany (Frankfurt)
+		{"104.24.0.1", 2408, "DE", "FRA"},
+		// Netherlands (Amsterdam)
+		{"188.114.96.1", 2408, "NL", "AMS"},
+		// United Kingdom (London)
+		{"188.114.97.1", 2408, "GB", "LHR"},
+		// Japan (Tokyo)
+		{"108.162.198.103", 2408, "JP", "NRT"},
+		// Singapore
+		{"162.159.192.1", 2408, "SG", "SIN"},
+		// France (Paris)
+		{"188.114.99.1", 2408, "FR", "CDG"},
+		// Hong Kong
+		{"162.159.199.1", 2408, "HK", "HKG"},
+		// Belgium (Brussels)
+		{"188.114.97.20", 2408, "BE", "BRU"},
+		// Latin America (Brazil, Argentina, Chile)
 		{"190.93.240.1", 2408, "BR", "GRU"},
 		{"190.93.241.1", 2408, "AR", "EZE"},
 		{"190.93.242.1", 2408, "CL", "SCL"},
-		{"190.93.243.1", 2408, "CO", "BOG"},
-		{"162.159.192.5", 500, "MX", "QRO"},
-		{"190.93.240.5", 500, "PE", "LIM"},
-		// Africa (Nigeria, South Africa, Egypt, Kenya)
+		// Africa (Nigeria, South Africa)
 		{"197.234.240.1", 2408, "NG", "LOS"},
 		{"197.234.241.1", 2408, "ZA", "JNB"},
-		{"197.234.242.1", 2408, "EG", "CAI"},
-		{"197.234.243.1", 2408, "KE", "NBO"},
-		// Middle East (Turkey, UAE, Israel, Saudi Arabia)
+		// Middle East (Turkey)
 		{"141.101.64.15", 2408, "TR", "IST"},
-		{"141.101.65.20", 500, "AE", "DXB"},
-		{"141.101.120.20", 2408, "IL", "TLV"},
-		{"141.101.121.20", 2408, "SA", "RUH"},
-		// North America
-		{"162.159.193.1", 500, "US", "LAX"},
-		{"162.159.198.1", 2408, "US", "SJC"},
-		{"172.64.0.1", 2408, "CA", "YYZ"},
-		// Asia & Pacific
-		{"162.159.192.1", 2408, "SG", "SIN"},
-		{"162.159.195.1", 853, "JP", "NRT"},
-		{"162.159.198.2", 2408, "SG", "SIN"},
-		{"162.159.199.1", 443, "HK", "HKG"},
-		{"162.159.199.2", 500, "TW", "TPE"},
-		{"141.101.64.1", 2408, "KR", "ICN"},
-		{"104.16.1.1", 2408, "AU", "SYD"},
-		{"104.16.2.1", 500, "NZ", "AKL"},
-		{"162.159.192.10", 2408, "IN", "BOM"},
-		{"162.159.193.10", 2408, "TH", "BKK"},
-		{"162.159.195.10", 500, "VN", "HAN"},
-		{"162.159.198.10", 2408, "MY", "KUL"},
-		{"162.159.199.10", 500, "PH", "MNL"},
-		{"162.159.192.15", 2408, "ID", "CGK"},
-		// Europe
-		{"188.114.96.1", 2408, "GB", "LHR"},
-		{"188.114.97.1", 2408, "DE", "FRA"},
-		{"188.114.98.1", 2408, "NL", "AMS"},
-		{"188.114.99.1", 2408, "FR", "CDG"},
-		{"188.114.96.5", 500, "IT", "MXP"},
-		{"188.114.97.5", 500, "ES", "MAD"},
-		{"188.114.98.5", 853, "CH", "ZRH"},
-		{"188.114.99.5", 2408, "SE", "ARN"},
-		{"188.114.96.10", 500, "NO", "OSL"},
-		{"188.114.97.10", 2408, "FI", "HEL"},
-		{"188.114.98.10", 500, "DK", "CPH"},
-		{"188.114.99.10", 2408, "PL", "WAW"},
-		{"188.114.96.15", 500, "RU", "DME"},
-		{"188.114.98.15", 500, "UA", "KBP"},
-		{"188.114.99.15", 2408, "PT", "LIS"},
-		{"188.114.96.20", 500, "AT", "VIE"},
-		{"188.114.97.20", 2408, "BE", "BRU"},
-		{"188.114.98.20", 500, "CZ", "PRG"},
-		{"188.114.99.20", 2408, "IE", "DUB"},
-		{"188.114.96.25", 500, "RO", "OTP"},
-		{"188.114.97.25", 2408, "GR", "ATH"},
-		// Additional seeds guaranteeing 100% coverage of all 15 official Cloudflare CIDRs
-		{"173.245.48.1", 2408, "US", "DFW"},
-		{"103.22.200.1", 2408, "AU", "MEL"},
-		{"103.31.4.1", 2408, "JP", "KIX"},
-		{"108.162.192.1", 2408, "US", "ORD"},
-		{"198.41.128.1", 2408, "US", "IAD"},
-		{"104.24.0.1", 2408, "GB", "LHR"},
-		{"131.0.72.1", 2408, "US", "MIA"},
 	}
 
 	now := time.Now().Unix()
@@ -662,7 +628,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		}).Create(&ep).Error
 	}
 
-	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across all continents", len(initialSeeds)))
+	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across official ranges", len(initialSeeds)))
 	return nil
 }
 
@@ -699,7 +665,7 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 				return
 			}
 
-			trace, err := ProbeCloudflareTraceDirect(targetIP, 80, 2*time.Second)
+			trace, err := ProbeCloudflareTraceDirect(targetIP, 443, 2*time.Second)
 			now := time.Now().Unix()
 			if err == nil && trace != nil && trace.Colo != "" {
 				// Record WireGuard endpoint on port 2408
@@ -780,7 +746,7 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 	var rows []RegionRow
 	_ = db.Model(&model.CloudflareEndpoint{}).
 		Select("DISTINCT loc, colo, city, country_name, flag").
-		Where("status = ? AND loc != ''", "online").
+		Where("status = ? AND loc != '' AND port IN (2408, 51820)", "online").
 		Order("loc ASC, colo ASC").
 		Scan(&rows).Error
 
@@ -1003,7 +969,60 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			matchedServers = countryCache.GetCountryServers(locUpper)
 		}
 
-		// 1. Prioritize Cloudflare physical endpoints discovered from official Cloudflare CIDRs
+		// 1. Prioritize real physical servers in the target city / country (Free tier first, then any available)
+		if len(matchedServers) > 0 {
+			sort.SliceStable(matchedServers, func(i, j int) bool {
+				return matchedServers[i].Tier < matchedServers[j].Tier
+			})
+			seenEntryIPs := make(map[string]bool)
+			for _, s := range matchedServers {
+				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+					continue
+				}
+				seenEntryIPs[s.EntryIP] = true
+				sIdx := len(memberTags)
+				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				if !existingEpTags[epTag] {
+					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
+					if err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+						existingEpTags[epTag] = true
+					}
+				}
+				if existingEpTags[epTag] {
+					memberTags = append(memberTags, epTag)
+				}
+				if len(memberTags) >= 5 {
+					break
+				}
+			}
+		}
+
+		// 2. Include known verified DB endpoints for US, JP and NL
+		if locUpper == "US" {
+			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
+				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		} else if locUpper == "NL" {
+			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
+				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		} else if locUpper == "JP" {
+			for _, vTag := range []string{"ep-proton-jp", "ep-jp", "ep-proton-jp-free-1", "ep-proton-jp-free-2"} {
+				if existingEpTags[vTag] && !sliceContains(memberTags, vTag) {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		}
+
+		// 3. Supplement with Cloudflare physical endpoints discovered from official Cloudflare CIDRs
 		var cfDbEndpoints []model.CloudflareEndpoint
 		if coloUpper != "" {
 			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
@@ -1026,49 +1045,6 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 			if existingEpTags[cfTag] {
 				memberTags = append(memberTags, cfTag)
-			}
-		}
-
-		// 2. Supplement with free-tier physical servers in the target city / country
-		if len(matchedServers) > 0 {
-			seenEntryIPs := make(map[string]bool)
-			for _, s := range matchedServers {
-				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
-					continue
-				}
-				seenEntryIPs[s.EntryIP] = true
-				sIdx := len(memberTags)
-				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
-				if !existingEpTags[epTag] {
-					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
-					if err == nil {
-						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-						existingEpTags[epTag] = true
-					}
-				}
-				if existingEpTags[epTag] {
-					memberTags = append(memberTags, epTag)
-				}
-				if len(memberTags) >= 5 {
-					break
-				}
-			}
-		}
-
-		// Include known verified DB endpoints for US and NL
-		if locUpper == "US" {
-			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
-				if existingEpTags[vTag] {
-					memberTags = append(memberTags, vTag)
-					break
-				}
-			}
-		} else if locUpper == "NL" {
-			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
-				if existingEpTags[vTag] {
-					memberTags = append(memberTags, vTag)
-					break
-				}
 			}
 		}
 

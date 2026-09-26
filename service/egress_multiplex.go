@@ -360,8 +360,12 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				continue
 			}
 			lowerTag := strings.ToLower(tag)
+			// Strictly segregate Proton endpoints from Cloudflare endpoints
+			if strings.HasPrefix(lowerTag, "ep-cf-") || strings.Contains(lowerTag, "-cf-") {
+				continue
+			}
 			for _, code := range []string{"us", "jp", "nl"} {
-				if strings.Contains(lowerTag, "proton-"+code) || strings.HasPrefix(lowerTag, "ep-"+code) || strings.Contains(lowerTag, "-"+code+"-") {
+				if strings.Contains(lowerTag, "proton-"+code) || strings.HasPrefix(lowerTag, "ep-"+code) || strings.HasPrefix(lowerTag, "ep-dyn-"+code) {
 					regionEndpoints[code] = append(regionEndpoints[code], tag)
 				}
 			}
@@ -424,6 +428,30 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 			if len(dynTags) > 0 {
 				eps = append(eps, dynTags...)
+			}
+		}
+
+		// Prioritize verified static DB endpoints for US, JP and NL if available
+		if reg.Code == "us" {
+			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
+				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
+					eps = append([]string{vTag}, eps...)
+					break
+				}
+			}
+		} else if reg.Code == "nl" {
+			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
+				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
+					eps = append([]string{vTag}, eps...)
+					break
+				}
+			}
+		} else if reg.Code == "jp" {
+			for _, vTag := range []string{"ep-proton-jp", "ep-jp", "ep-proton-jp-free-1", "ep-proton-jp-free-2"} {
+				if existingEpTags[vTag] && !sliceContains(eps, vTag) {
+					eps = append([]string{vTag}, eps...)
+					break
+				}
 			}
 		}
 
@@ -580,5 +608,14 @@ func FindWorkingWireGuardPrivateKey(singboxConfig *SingBoxConfig, db *gorm.DB) (
 		}
 	}
 	return "", nil
+}
+
+func sliceContains(s []string, item string) bool {
+	for _, v := range s {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }
 
