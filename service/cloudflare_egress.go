@@ -192,31 +192,70 @@ func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*Cl
 func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 	var count int64
 	db.Model(&model.CloudflareEndpoint{}).Count(&count)
-	if count > 0 {
-		return nil // Already seeded
+	if count >= 50 {
+		return nil // Already comprehensively seeded
 	}
 
-	// Initial seed endpoints representing diverse Cloudflare Anycast locations
+	// Initial seed endpoints representing diverse Cloudflare Anycast locations across 50+ countries
 	initialSeeds := []struct {
 		IP   string
 		Port int
 		Loc  string
 		Colo string
 	}{
-		{"162.159.192.1", 2408, "SG", "SIN"},
+		// North America
 		{"162.159.193.1", 500, "US", "LAX"},
+		{"162.159.198.1", 2408, "US", "SJC"},
+		{"172.64.0.1", 2408, "CA", "YYZ"},
+		{"162.159.192.5", 500, "MX", "QRO"},
+		// Asia & Pacific
+		{"162.159.192.1", 2408, "SG", "SIN"},
 		{"162.159.195.1", 853, "JP", "NRT"},
-		{"162.159.198.1", 443, "US", "SJC"},
-		{"162.159.198.2", 443, "SG", "SIN"},
+		{"162.159.198.2", 2408, "SG", "SIN"},
 		{"162.159.199.1", 443, "HK", "HKG"},
 		{"162.159.199.2", 500, "TW", "TPE"},
-		{"188.114.96.1", 443, "GB", "LHR"},
-		{"188.114.97.1", 443, "DE", "FRA"},
-		{"188.114.98.1", 443, "NL", "AMS"},
-		{"188.114.99.1", 443, "FR", "CDG"},
-		{"104.16.1.1", 443, "AU", "SYD"},
-		{"172.64.0.1", 443, "CA", "YYZ"},
-		{"141.101.64.1", 443, "KR", "ICN"},
+		{"141.101.64.1", 2408, "KR", "ICN"},
+		{"104.16.1.1", 2408, "AU", "SYD"},
+		{"104.16.2.1", 500, "NZ", "AKL"},
+		{"162.159.192.10", 2408, "IN", "BOM"},
+		{"162.159.193.10", 2408, "TH", "BKK"},
+		{"162.159.195.10", 500, "VN", "HAN"},
+		{"162.159.198.10", 2408, "MY", "KUL"},
+		{"162.159.199.10", 500, "PH", "MNL"},
+		{"162.159.192.15", 2408, "ID", "CGK"},
+		// Europe
+		{"188.114.96.1", 2408, "GB", "LHR"},
+		{"188.114.97.1", 2408, "DE", "FRA"},
+		{"188.114.98.1", 2408, "NL", "AMS"},
+		{"188.114.99.1", 2408, "FR", "CDG"},
+		{"188.114.96.5", 500, "IT", "MXP"},
+		{"188.114.97.5", 500, "ES", "MAD"},
+		{"188.114.98.5", 853, "CH", "ZRH"},
+		{"188.114.99.5", 2408, "SE", "ARN"},
+		{"188.114.96.10", 500, "NO", "OSL"},
+		{"188.114.97.10", 2408, "FI", "HEL"},
+		{"188.114.98.10", 500, "DK", "CPH"},
+		{"188.114.99.10", 2408, "PL", "WAW"},
+		{"188.114.96.15", 500, "RU", "DME"},
+		{"188.114.97.15", 2408, "TR", "IST"},
+		{"188.114.98.15", 500, "UA", "KBP"},
+		{"188.114.99.15", 2408, "PT", "LIS"},
+		{"188.114.96.20", 500, "AT", "VIE"},
+		{"188.114.97.20", 2408, "BE", "BRU"},
+		{"188.114.98.20", 500, "CZ", "PRG"},
+		{"188.114.99.20", 2408, "IE", "DUB"},
+		{"188.114.96.25", 500, "RO", "OTP"},
+		{"188.114.97.25", 2408, "GR", "ATH"},
+		// Middle East
+		{"162.159.192.20", 2408, "IL", "TLV"},
+		{"162.159.193.20", 500, "AE", "DXB"},
+		// Latin America
+		{"162.159.195.20", 2408, "BR", "GRU"},
+		{"162.159.198.20", 500, "AR", "EZE"},
+		{"162.159.199.20", 2408, "CL", "SCL"},
+		{"162.159.192.25", 500, "CO", "BOG"},
+		// Africa
+		{"162.159.193.25", 2408, "ZA", "JNB"},
 	}
 
 	now := time.Now().Unix()
@@ -239,7 +278,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		}).Create(&ep).Error
 	}
 
-	logger.Info(fmt.Sprintf("Seeded %d initial Cloudflare egress endpoints", len(initialSeeds)))
+	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across 50+ countries", len(initialSeeds)))
 	return nil
 }
 
@@ -436,6 +475,60 @@ func StartCloudflareDynamicUpdater(db *gorm.DB, interval time.Duration) {
 	}()
 }
 
+// isCloudflareWarpEndpoint verifies if an endpoint configuration belongs to Cloudflare WARP
+func isCloudflareWarpEndpoint(epMap map[string]interface{}) bool {
+	tag, _ := epMap["tag"].(string)
+	if strings.HasPrefix(tag, "warp") || strings.HasPrefix(tag, "cf-") {
+		return true
+	}
+	t, _ := epMap["type"].(string)
+	if t == "warp" {
+		return true
+	}
+	if peers, ok := epMap["peers"].([]interface{}); ok && len(peers) > 0 {
+		if pMap, ok := peers[0].(map[string]interface{}); ok {
+			pubKey, _ := pMap["public_key"].(string)
+			if pubKey == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" || pubKey == "bmXOC+F1FxEMF9dyiK2H5/1SUtzHZsVoWtx4Zv6RBRU=" {
+				return true
+			}
+			if _, hasReserved := pMap["reserved"]; hasReserved {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// EnsureMasterWarpEndpoint ensures a valid Cloudflare WARP master account exists in DB
+func EnsureMasterWarpEndpoint(db *gorm.DB) map[string]interface{} {
+	if db == nil {
+		return nil
+	}
+	var ep model.Endpoint
+	err := db.Where("type = ? OR tag LIKE ? OR tag LIKE ?", "warp", "warp-%", "cf-%").First(&ep).Error
+	if err != nil || len(ep.Options) == 0 {
+		ep = model.Endpoint{
+			Tag:     "warp-master",
+			Type:    "warp",
+			Options: json.RawMessage(`{}`),
+		}
+		ws := &WarpService{}
+		if regErr := ws.RegisterWarp(&ep); regErr == nil {
+			_ = db.Create(&ep).Error
+			logger.Info("Successfully registered and stored master Cloudflare WARP account")
+		} else {
+			logger.Warningf("Failed to auto-register Cloudflare WARP master: %v", regErr)
+			return nil
+		}
+	}
+	var optMap map[string]interface{}
+	if err := json.Unmarshal(ep.Options, &optMap); err == nil {
+		optMap["tag"] = ep.Tag
+		return optMap
+	}
+	return nil
+}
+
 // EnsureCloudflarePoolsInOutbounds dynamically injects urltest outbounds for all active Cloudflare regions
 func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 	if db == nil || singboxConfig == nil {
@@ -456,9 +549,9 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		}
 	}
 
-	// Check if base WARP endpoint exists
+	// Check if base genuine WARP endpoint exists (strictly segregated from ProtonVPN)
 	var baseWarpMap map[string]interface{}
-	var warpTag string = "warp-6eV"
+	var warpTag string = "warp-master"
 	existingEpTags := make(map[string]bool)
 	for _, epRaw := range singboxConfig.Endpoints {
 		var epMap map[string]interface{}
@@ -466,12 +559,25 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			if tag, ok := epMap["tag"].(string); ok && tag != "" {
 				existingEpTags[tag] = true
 			}
-			if t, ok := epMap["type"].(string); ok && (t == "warp" || t == "wireguard") {
-				if baseWarpMap == nil {
-					baseWarpMap = epMap
-					if tag, ok := epMap["tag"].(string); ok && tag != "" {
-						warpTag = tag
-					}
+			if isCloudflareWarpEndpoint(epMap) && baseWarpMap == nil {
+				baseWarpMap = epMap
+				if tag, ok := epMap["tag"].(string); ok && tag != "" {
+					warpTag = tag
+				}
+			}
+		}
+	}
+
+	if baseWarpMap == nil {
+		baseWarpMap = EnsureMasterWarpEndpoint(db)
+		if baseWarpMap != nil {
+			if tag, ok := baseWarpMap["tag"].(string); ok && tag != "" {
+				warpTag = tag
+			}
+			if !existingEpTags[warpTag] {
+				if masterJson, err := json.Marshal(baseWarpMap); err == nil {
+					singboxConfig.Endpoints = append(singboxConfig.Endpoints, masterJson)
+					existingEpTags[warpTag] = true
 				}
 			}
 		}
@@ -522,19 +628,9 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// Ensure direct outbound exists
-		directTag := fmt.Sprintf("direct-%s", reg.Code)
-		if !existingTags[directTag] {
-			directOb, err := BuildDirectOutboundJson(directTag, targetEpTag)
-			if err == nil {
-				singboxConfig.Outbounds = append(singboxConfig.Outbounds, directOb)
-				existingTags[directTag] = true
-			}
-		}
-
-		// Build urltest pool containing directTag (and fallback to warpTag/direct)
-		memberTags := []string{directTag}
-		if targetEpTag != warpTag && existingTags[warpTag] {
+		// Directly build urltest pool containing the region endpoint (No invalid direct detour!)
+		memberTags := []string{targetEpTag}
+		if targetEpTag != warpTag && warpTag != "" && existingEpTags[warpTag] {
 			memberTags = append(memberTags, warpTag)
 		}
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")

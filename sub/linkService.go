@@ -102,6 +102,18 @@ func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.Egre
 		origUUID, _ := vmessJson["id"].(string)
 
 		var expanded []string
+		// 1. Always preserve the original native direct entry node
+		origMap := make(map[string]interface{})
+		for k, v := range vmessJson {
+			origMap[k] = v
+		}
+		origMap["ps"] = fmt.Sprintf("🌐 [原生直连] 默认出口 - %s", origPS)
+		if raw, err := json.MarshalIndent(origMap, "", "  "); err == nil {
+			expanded = append(expanded, "vmess://"+util.ByteToB64Str(raw))
+		} else {
+			expanded = append(expanded, uri)
+		}
+
 		for _, reg := range activeRegions {
 			copyMap := make(map[string]interface{})
 			for k, v := range vmessJson {
@@ -128,6 +140,11 @@ func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.Egre
 		origPass, hasPass := u.User.Password()
 
 		var expanded []string
+		// 1. Always preserve the original native direct entry node
+		origU := *u
+		origU.Fragment = fmt.Sprintf("🌐 [原生直连] 默认出口 - %s", origRemark)
+		expanded = append(expanded, origU.String())
+
 		for _, reg := range activeRegions {
 			newU := *u
 			newU.Fragment = fmt.Sprintf("%s [%s] %s - %s", reg.Flag, strings.ToUpper(reg.Code), reg.Name, origRemark)

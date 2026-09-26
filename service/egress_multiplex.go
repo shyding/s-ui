@@ -368,8 +368,8 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 		}
 	}
 
-	// 2. Fallback to existing outbounds / endpoints ONLY if no Cloudflare regions exist (strict segregation)
-	if len(active) == 0 && db != nil {
+	// 2. Dedicated ProtonVPN Regions from existing database endpoints/outbounds (strict segregation from Cloudflare)
+	if db != nil {
 		var tags []string
 		_ = db.Model(&model.Outbound{}).Pluck("tag", &tags)
 		tagMap := make(map[string]bool)
@@ -383,11 +383,21 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 			tagMap[ep] = true
 		}
 
-		// Check StandardEgressRegions (e.g. sg, us, jp, nl)
+		// Check StandardEgressRegions (e.g. us, jp, nl)
 		for _, reg := range StandardEgressRegions {
+			if reg.Code == "sg" {
+				continue // Cloudflare cf-sg handles Singapore egress
+			}
 			if !seenCodes[reg.Code] {
-				// Only include if its specific outbound/endpoint exists in DB or is SG default
-				if tagMap[reg.OutboundTag] || reg.Code == "sg" {
+				hasEp := false
+				for _, epTag := range epTags {
+					if strings.HasPrefix(epTag, "ep-proton-"+reg.Code) || strings.HasPrefix(epTag, "ep-"+reg.Code) {
+						hasEp = true
+						break
+					}
+				}
+				// Include if its specific outbound/endpoint exists in DB
+				if tagMap[reg.OutboundTag] || hasEp {
 					active = append(active, reg)
 					seenCodes[reg.Code] = true
 				}

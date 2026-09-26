@@ -31,8 +31,12 @@ func TestExpandEgressLinks_VMess(t *testing.T) {
 
 	expanded := s.ExpandEgressLinks(baseUri, service.StandardEgressRegions)
 
-	if len(expanded) != 4 {
-		t.Fatalf("Expected 4 expanded links, got %d", len(expanded))
+	if len(expanded) != 5 {
+		t.Fatalf("Expected 5 expanded links (1 native direct + 4 regional), got %d", len(expanded))
+	}
+	raw0, _ := util.B64StrToByte(strings.TrimPrefix(expanded[0], "vmess://"))
+	if !strings.Contains(string(raw0), "原生直连") {
+		t.Errorf("First node must be native direct node, got %s", string(raw0))
 	}
 
 	// Verify each expanded link
@@ -81,8 +85,12 @@ func TestExpandEgressLinks_VLESS(t *testing.T) {
 
 	expanded := s.ExpandEgressLinks(baseUri, service.StandardEgressRegions)
 
-	if len(expanded) != 4 {
-		t.Fatalf("Expected 4 expanded links, got %d", len(expanded))
+	if len(expanded) != 5 {
+		t.Fatalf("Expected 5 expanded links (1 native direct + 4 regional), got %d", len(expanded))
+	}
+	u0, _ := url.Parse(expanded[0])
+	if !strings.Contains(u0.Fragment, "原生直连") {
+		t.Errorf("First node must be native direct node, got %s", u0.Fragment)
 	}
 
 	for _, link := range expanded {
@@ -124,12 +132,16 @@ func TestExpandEgressLinks_DynamicCloudflareRegions(t *testing.T) {
 
 	expanded := s.ExpandEgressLinks(baseUri, dynamicCFRegions)
 
-	if len(expanded) != len(dynamicCFRegions) {
-		t.Fatalf("Expected %d expanded links for all %d dynamic Cloudflare regions, got %d",
-			len(dynamicCFRegions), len(dynamicCFRegions), len(expanded))
+	if len(expanded) != 1+len(dynamicCFRegions) {
+		t.Fatalf("Expected %d expanded links (1 native direct + %d dynamic Cloudflare regions), got %d",
+			1+len(dynamicCFRegions), len(dynamicCFRegions), len(expanded))
+	}
+	u0, _ := url.Parse(expanded[0])
+	if !strings.Contains(u0.Fragment, "原生直连") {
+		t.Errorf("First node must be native direct node, got %s", u0.Fragment)
 	}
 
-	for _, link := range expanded {
+	for _, link := range expanded[1:] {
 		u, err := url.Parse(link)
 		if err != nil {
 			t.Fatalf("Failed to parse link: %v", err)
