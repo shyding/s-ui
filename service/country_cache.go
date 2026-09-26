@@ -28,6 +28,7 @@ type PhysicalServerEntry struct {
 	PublicKey    string  `json:"public_key"`
 	Port         int     `json:"port"`
 	Tier         int     `json:"tier"` // 0 = Free, 1/2 = Standard/Plus
+	Features     int     `json:"features"`
 	Load         int     `json:"load"`
 	Score        float64 `json:"score"`
 	IsDirect     bool    `json:"is_direct"`
@@ -135,6 +136,7 @@ func (c *MultiCountryCache) ReloadFromDisk() error {
 				PublicKey:    ps.X25519PublicKey,
 				Port:         51820,
 				Tier:         ls.Tier,
+				Features:     ls.Features,
 				Load:         ls.Load,
 				Score:        ls.Score,
 				IsDirect:     isDirect,
@@ -146,11 +148,17 @@ func (c *MultiCountryCache) ReloadFromDisk() error {
 
 	// Sort each country's servers:
 	// 1. Direct servers (EntryCountry == ExitCountry) first over Secure Core multihop
-	// 2. Lowest Load first
+	// 2. Servers with Tier 2 and Streaming/Plus features (Features == 28 or Features & 16 != 0) first
+	// 3. Lowest Load first
 	for _, sList := range newMap {
 		sort.Slice(sList, func(i, j int) bool {
 			if sList[i].IsDirect != sList[j].IsDirect {
 				return sList[i].IsDirect
+			}
+			hasPlusI := sList[i].Tier == 2 && (sList[i].Features == 28 || (sList[i].Features&16 != 0))
+			hasPlusJ := sList[j].Tier == 2 && (sList[j].Features == 28 || (sList[j].Features&16 != 0))
+			if hasPlusI != hasPlusJ {
+				return hasPlusI
 			}
 			return sList[i].Load < sList[j].Load
 		})

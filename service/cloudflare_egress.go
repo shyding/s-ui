@@ -121,6 +121,7 @@ var CountryNameMap = map[string]string{
 	"PH": "菲律宾", "ID": "印度尼西亚", "IL": "以色列", "UA": "乌克兰", "PT": "葡萄牙",
 	"PE": "秘鲁", "EC": "厄瓜多尔", "EG": "埃及", "KE": "肯尼亚", "GH": "加纳",
 	"MA": "摩洛哥", "SA": "沙特阿拉伯", "QA": "卡塔尔", "HU": "匈牙利", "BG": "保加利亚",
+	"NG": "尼日利亚",
 }
 
 // GetCountryFlag generates national emoji flag dynamically from ISO 3166-1 alpha-2 code
@@ -830,10 +831,13 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		}
 
 		if len(matchedServers) > 0 {
-			for sIdx, s := range matchedServers {
-				if sIdx >= 3 {
-					break
+			seenEntryIPs := make(map[string]bool)
+			for _, s := range matchedServers {
+				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+					continue
 				}
+				seenEntryIPs[s.EntryIP] = true
+				sIdx := len(memberTags)
 				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
@@ -845,11 +849,31 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				if existingEpTags[epTag] {
 					memberTags = append(memberTags, epTag)
 				}
+				if len(memberTags) >= 3 {
+					break
+				}
 			}
 		}
 
-		// 2. If no physical servers exist for this location, fallback to WARP master
-		if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
+		// Include known verified DB endpoints for US and NL
+		if locUpper == "US" {
+			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
+				if existingEpTags[vTag] {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		} else if locUpper == "NL" {
+			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
+				if existingEpTags[vTag] {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		}
+
+		// 2. Always append warp-master as fallback so no subscription node ever returns timeout -1
+		if warpTag != "" && existingEpTags[warpTag] {
 			memberTags = append(memberTags, warpTag)
 		}
 
@@ -857,7 +881,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			continue
 		}
 
-		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
+		poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, memberTags, "3m", 800)
 		if err == nil {
 			singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
 		}
@@ -865,7 +889,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		// Also provide legacy country-level pool tag (e.g. cf-be-pool) aliased to the same memberTags
 		legacyCountryPoolTag := fmt.Sprintf("cf-%s-pool", strings.ToLower(locUpper))
 		if legacyCountryPoolTag != poolTag {
-			legacyOb, err := BuildUrlTestPoolJson(legacyCountryPoolTag, memberTags, "3m")
+			legacyOb, err := BuildUrlTestPoolJsonWithTolerance(legacyCountryPoolTag, memberTags, "3m", 800)
 			if err == nil {
 				singboxConfig.Outbounds = append(singboxConfig.Outbounds, legacyOb)
 			}

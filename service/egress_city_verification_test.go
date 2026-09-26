@@ -199,3 +199,71 @@ func TestCityLevelMatchingAndEgressBinding(t *testing.T) {
 		t.Fatalf("Sing-Box options validation failed: %v", err)
 	}
 }
+
+func TestResilientEgressFailoverAndNigeriaLocalization(t *testing.T) {
+	// 1. Verify Nigeria localization
+	if name := GetCountryName("NG"); name != "尼日利亚" {
+		t.Errorf("Expected country name for NG to be '尼日利亚', got '%s'", name)
+	}
+
+	db := setupCFTestDB(t)
+	_ = SeedInitialCloudflareEndpoints(db)
+
+	singboxCfg := &SingBoxConfig{
+		Outbounds: []json.RawMessage{
+			json.RawMessage(`{"type":"direct","tag":"direct"}`),
+		},
+		Endpoints: []json.RawMessage{
+			json.RawMessage(`{"type":"wireguard","tag":"warp-master","peers":[{"address":"162.159.192.1","port":2408,"public_key":"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="}]}`),
+			json.RawMessage(`{"type":"wireguard","tag":"ep-proton-us","private_key":"aGVsbG8td29ybGQtcHJvdG9uLXByaXZhdGUta2V5LTEyMzQ=","peers":[{"address":"156.146.51.132","port":51820,"public_key":"pubkey123"}]}`),
+		},
+	}
+
+	EnsureCloudflarePoolsInOutbounds(singboxCfg, db)
+	EnsureProtonPoolsInOutbounds(singboxCfg, db)
+
+	// Verify all created urltest outbounds have warp-master as fallback and tolerance >= 800
+	checkedPools := 0
+	for _, obRaw := range singboxCfg.Outbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err == nil {
+			if obMap["type"] == "urltest" {
+				tag, _ := obMap["tag"].(string)
+				tol, _ := obMap["tolerance"].(float64)
+				if tol < 800 {
+					t.Errorf("Pool %s expected tolerance >= 800, got %v", tag, tol)
+				}
+				outbounds, _ := obMap["outbounds"].([]interface{})
+				hasWarp := false
+				for _, o := range outbounds {
+					if oStr, ok := o.(string); ok && oStr == "warp-master" {
+						hasWarp = true
+						break
+					}
+				}
+				if !hasWarp {
+					t.Errorf("Pool %s missing warp-master fallback outbound", tag)
+				}
+				checkedPools++
+			}
+		}
+	}
+	if checkedPools == 0 {
+		t.Fatalf("Expected at least one urltest pool to be checked")
+	}
+
+	// Verify Sing-Box schema validation passes
+	fullCfgMap := map[string]interface{}{
+		"log":       map[string]interface{}{"level": "info"},
+		"endpoints": singboxCfg.Endpoints,
+		"outbounds": singboxCfg.Outbounds,
+	}
+	cfgBytes, err := json.Marshal(fullCfgMap)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+	var opts option.Options
+	if err := json.Unmarshal(cfgBytes, &opts); err != nil {
+		t.Fatalf("Sing-Box options validation failed: %v", err)
+	}
+}

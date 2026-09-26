@@ -188,10 +188,18 @@ func BuildDirectOutboundJson(tag string, endpointTag string) (json.RawMessage, e
 	return json.Marshal(outMap)
 }
 
-// BuildUrlTestPoolJson creates an urltest auto-failover/load-balancing outbound
+// BuildUrlTestPoolJson creates an urltest auto-failover/load-balancing outbound with default tolerance
 func BuildUrlTestPoolJson(tag string, outbounds []string, interval string) (json.RawMessage, error) {
+	return BuildUrlTestPoolJsonWithTolerance(tag, outbounds, interval, 50)
+}
+
+// BuildUrlTestPoolJsonWithTolerance creates an urltest auto-failover/load-balancing outbound with specified tolerance
+func BuildUrlTestPoolJsonWithTolerance(tag string, outbounds []string, interval string, tolerance uint16) (json.RawMessage, error) {
 	if interval == "" {
 		interval = "3m"
+	}
+	if tolerance == 0 {
+		tolerance = 50
 	}
 	poolMap := map[string]interface{}{
 		"type":      "urltest",
@@ -199,7 +207,7 @@ func BuildUrlTestPoolJson(tag string, outbounds []string, interval string) (json
 		"outbounds": outbounds,
 		"url":       "http://www.gstatic.com/generate_204",
 		"interval":  interval,
-		"tolerance": 50,
+		"tolerance": tolerance,
 	}
 	return json.Marshal(poolMap)
 }
@@ -392,10 +400,13 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		cServers := countryCache.GetCountryServers(countryCode)
 		if len(cServers) > 0 {
 			var dynTags []string
-			for sIdx, s := range cServers {
-				if len(dynTags) >= 3 {
-					break
+			seenEntryIPs := make(map[string]bool)
+			for _, s := range cServers {
+				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+					continue
 				}
+				seenEntryIPs[s.EntryIP] = true
+				sIdx := len(dynTags)
 				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey, protonClientAddrs)
@@ -407,14 +418,22 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				if existingEpTags[epTag] {
 					dynTags = append(dynTags, epTag)
 				}
+				if len(dynTags) >= 3 {
+					break
+				}
 			}
 			if len(dynTags) > 0 {
 				eps = append(eps, dynTags...)
 			}
 		}
 
+		// Ensure resilient fallback to WARP so node is never dead (timeout -1)
+		if warpTag != "" && existingEpTags[warpTag] {
+			eps = append(eps, warpTag)
+		}
+
 		if len(eps) > 0 {
-			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
+			poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, eps, "3m", 800)
 			if err == nil {
 				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
 			}
