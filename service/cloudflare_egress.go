@@ -561,13 +561,7 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 	}
 
 	// Purge historical fake seeds with unreachable ports or unverified locations
-	_ = db.Exec("DELETE FROM cloudflare_endpoints WHERE loc NOT IN ('US', 'NL', 'JP', 'SG', 'DE', 'GB') OR port NOT IN (2408, 51820) OR port IS NULL").Error
-
-	var count int64
-	_ = db.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Count(&count).Error
-	if count >= 8 {
-		return nil
-	}
+	_ = db.Exec("DELETE FROM cloudflare_endpoints WHERE loc NOT IN ('US', 'NL', 'JP', 'SG', 'DE', 'GB') OR port NOT IN (2408, 51820) OR port IS NULL OR colo = 'IAD'").Error
 
 	// Standard seed endpoints across official Cloudflare IP ranges and verified global cities
 	initialSeeds := []struct {

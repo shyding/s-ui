@@ -422,14 +422,25 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				if existingEpTags[epTag] {
 					dynTags = append(dynTags, epTag)
 				}
-				if len(dynTags) >= 5 {
+				if len(dynTags) >= 10 {
 					break
 				}
 			}
 			if len(dynTags) > 0 {
-				eps = dynTags
+				eps = append(eps, dynTags...)
 			}
 		}
+
+		// Deduplicate eps while preserving order
+		var uniqueEps []string
+		seenEp := make(map[string]bool)
+		for _, e := range eps {
+			if !seenEp[e] {
+				seenEp[e] = true
+				uniqueEps = append(uniqueEps, e)
+			}
+		}
+		eps = uniqueEps
 
 		if len(eps) > 0 {
 			poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, eps, "3m", 800)
