@@ -59,7 +59,7 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		case "local":
 			if types == "all" {
 				// Prevent returning local links for inbounds the client is not currently authorized for
-				if allowedTags != nil && !allowedTags[link.Remark] {
+				if len(allowedTags) > 0 && !allowedTags[link.Remark] {
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)

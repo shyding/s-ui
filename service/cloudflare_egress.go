@@ -685,10 +685,29 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// Directly build urltest pool containing the region endpoint (No invalid direct detour!)
-		memberTags := []string{targetEpTag}
-		if targetEpTag != warpTag && warpTag != "" && existingEpTags[warpTag] {
-			memberTags = append(memberTags, warpTag)
+		// Build direct outbound wrapping targetEpTag so Sing-Box urltest can detour to it
+		directTag := fmt.Sprintf("out-%s", targetEpTag)
+		if !existingTags[directTag] {
+			directOb, err := BuildDirectOutboundJson(directTag, targetEpTag)
+			if err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, directOb)
+				existingTags[directTag] = true
+			}
+		}
+
+		memberTags := []string{directTag}
+		if targetEpTag != warpTag && warpTag != "" {
+			warpDirectTag := fmt.Sprintf("out-%s", warpTag)
+			if !existingTags[warpDirectTag] {
+				warpDirectOb, err := BuildDirectOutboundJson(warpDirectTag, warpTag)
+				if err == nil {
+					singboxConfig.Outbounds = append(singboxConfig.Outbounds, warpDirectOb)
+					existingTags[warpDirectTag] = true
+				}
+			}
+			if existingTags[warpDirectTag] {
+				memberTags = append(memberTags, warpDirectTag)
+			}
 		}
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")
 		if err == nil {

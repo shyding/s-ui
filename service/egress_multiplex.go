@@ -366,10 +366,26 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		}
 		eps := regionEndpoints[reg.Code]
 		if len(eps) > 0 {
-			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
-			if err == nil {
-				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
-				existingTags[poolTag] = true
+			var outTags []string
+			for _, epTag := range eps {
+				outTag := fmt.Sprintf("out-%s", epTag)
+				if !existingTags[outTag] {
+					outOb, err := BuildDirectOutboundJson(outTag, epTag)
+					if err == nil {
+						singboxConfig.Outbounds = append(singboxConfig.Outbounds, outOb)
+						existingTags[outTag] = true
+					}
+				}
+				if existingTags[outTag] {
+					outTags = append(outTags, outTag)
+				}
+			}
+			if len(outTags) > 0 {
+				poolOb, err := BuildUrlTestPoolJson(poolTag, outTags, "3m")
+				if err == nil {
+					singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+					existingTags[poolTag] = true
+				}
 			}
 		}
 	}

@@ -35,8 +35,9 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 	var clientInbounds []uint
 	_ = json.Unmarshal(client.Inbounds, &clientInbounds)
 
-	allowedTags := make(map[string]bool)
+	var allowedTags map[string]bool
 	if len(clientInbounds) > 0 {
+		allowedTags = make(map[string]bool)
 		var activeTags []string
 		db := database.GetDB()
 		db.Model(&model.Inbound{}).Where("id in ?", clientInbounds).Pluck("tag", &activeTags)

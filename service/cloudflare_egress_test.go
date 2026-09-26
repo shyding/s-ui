@@ -188,6 +188,26 @@ func TestEnsureCloudflarePoolsInOutbounds(t *testing.T) {
 	if !foundGBPool {
 		t.Errorf("Expected cf-gb-pool in Outbounds")
 	}
+
+	foundDirectWrap := false
+	for _, obRaw := range singboxConfig.Outbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err == nil {
+			tag, _ := obMap["tag"].(string)
+			if strings.HasPrefix(tag, "out-ep-cf-") || strings.HasPrefix(tag, "out-warp-") {
+				foundDirectWrap = true
+				if obMap["type"] != "direct" {
+					t.Errorf("Endpoint wrapper %s must be direct outbound, got %v", tag, obMap["type"])
+				}
+				if obMap["endpoint"] == nil && obMap["detour"] == nil {
+					t.Errorf("Endpoint wrapper %s must have endpoint/detour field", tag)
+				}
+			}
+		}
+	}
+	if !foundDirectWrap {
+		t.Errorf("Expected direct outbounds wrapping endpoints (out-ep-cf-* or out-warp-*) in Outbounds")
+	}
 }
 
 func TestGetActiveEgressRegions_IntegrationWithCloudflare(t *testing.T) {

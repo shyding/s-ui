@@ -86,6 +86,17 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		origUUID, _ := ob["uuid"].(string)
 		origPass, _ := ob["password"].(string)
 
+		// 1. Preserve original native direct entry node
+		origOb := make(map[string]interface{})
+		for k, v := range ob {
+			origOb[k] = v
+		}
+		origNativeTag := fmt.Sprintf("🌐 [原生直连] 默认出口 - %s", origTag)
+		origOb["tag"] = origNativeTag
+		expandedOutbounds = append(expandedOutbounds, origOb)
+		expandedOutTags = append(expandedOutTags, origNativeTag)
+
+		// 2. Expand across all active regions
 		for _, reg := range activeRegions {
 			newOb := make(map[string]interface{})
 			for k, v := range ob {

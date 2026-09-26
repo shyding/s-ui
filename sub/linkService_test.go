@@ -155,3 +155,29 @@ func TestExpandEgressLinks_DynamicCloudflareRegions(t *testing.T) {
 	}
 }
 
+func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
+	s := &LinkService{}
+	linksJson := json.RawMessage(`[
+		{"type": "local", "remark": "vless-54142", "uri": "vless://403db7be-930b-449e-b5f4-34537cb594c7@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vless-54142"}
+	]`)
+
+	// 1. allowedTags is nil
+	res1 := s.GetAuthorizedLinks(&linksJson, "all", "", nil)
+	if len(res1) == 0 {
+		t.Fatalf("Expected links when allowedTags is nil, got 0")
+	}
+
+	// 2. allowedTags is empty map (len == 0)
+	emptyMap := make(map[string]bool)
+	res2 := s.GetAuthorizedLinks(&linksJson, "all", "", emptyMap)
+	if len(res2) == 0 {
+		t.Fatalf("Expected links when allowedTags is empty map, got 0")
+	}
+
+	// 3. Verify native node is first
+	unescaped, _ := url.QueryUnescape(res1[0])
+	if !strings.Contains(unescaped, "原生直连") {
+		t.Errorf("Expected first link to contain 原生直连, got %s", unescaped)
+	}
+}
+
