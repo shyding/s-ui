@@ -416,19 +416,6 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 		}
 
-		if warpTag != "" && existingEpTags[warpTag] {
-			hasWarp := false
-			for _, ep := range eps {
-				if ep == warpTag {
-					hasWarp = true
-					break
-				}
-			}
-			if !hasWarp {
-				eps = append(eps, warpTag)
-			}
-		}
-
 		if len(eps) > 0 {
 			poolOb, err := BuildUrlTestPoolJson(poolTag, eps, "3m")
 			if err == nil {

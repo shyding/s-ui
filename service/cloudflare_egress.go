@@ -848,8 +848,8 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// 2. Append Cloudflare WARP fallback so urltest never leaves user disconnected
-		if warpTag != "" && existingEpTags[warpTag] {
+		// 2. If no physical servers exist for this location, fallback to WARP master
+		if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
 			memberTags = append(memberTags, warpTag)
 		}
 
