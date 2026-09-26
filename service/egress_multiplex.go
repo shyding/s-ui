@@ -402,7 +402,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			var dynTags []string
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range cServers {
-				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
 					continue
 				}
 				seenEntryIPs[s.EntryIP] = true

@@ -497,13 +497,21 @@ func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*Cl
 		Timeout: timeout,
 	}
 
+	if port <= 0 {
+		port = 80
+	}
+	scheme := "http"
+	if port == 443 || port == 8443 {
+		scheme = "https"
+	}
+
 	// Use custom transport connecting directly to candidate IP
 	tr := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", targetAddr)
 		},
 		TLSClientConfig: &tls.Config{
-			ServerName:         "www.cloudflare.com",
+			ServerName:         "speed.cloudflare.com",
 			InsecureSkipVerify: true,
 		},
 		DisableKeepAlives: true,
@@ -514,18 +522,23 @@ func ProbeCloudflareTraceDirect(ip string, port int, timeout time.Duration) (*Cl
 		Timeout:   timeout,
 	}
 
-	req, err := http.NewRequest("GET", "https://www.cloudflare.com/cdn-cgi/trace", nil)
+	urlStr := fmt.Sprintf("%s://speed.cloudflare.com/cdn-cgi/trace", scheme)
+	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 Cloudflare-Egress-Scanner/1.0")
+	req.Header.Set("Host", "speed.cloudflare.com")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		// Fallback to plain HTTP on port 80/8080 or direct trace
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
 	latency := time.Since(start).Milliseconds()
 	body, err := io.ReadAll(resp.Body)
@@ -686,9 +699,9 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 				return
 			}
 
-			trace, err := ProbeCloudflareTraceDirect(targetIP, 443, 3*time.Second)
+			trace, err := ProbeCloudflareTraceDirect(targetIP, 80, 2*time.Second)
 			now := time.Now().Unix()
-			if err == nil && trace != nil && trace.Loc != "" {
+			if err == nil && trace != nil && trace.Colo != "" {
 				// Record WireGuard endpoint on port 2408
 				ep2408 := &model.CloudflareEndpoint{
 					IP:          targetIP,
@@ -990,11 +1003,37 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			matchedServers = countryCache.GetCountryServers(locUpper)
 		}
 
-		// 1. Populate real physical servers in the target city / country (up to 5 distinct physical IPs)
+		// 1. Prioritize Cloudflare physical endpoints discovered from official Cloudflare CIDRs
+		var cfDbEndpoints []model.CloudflareEndpoint
+		if coloUpper != "" {
+			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
+		}
+		if len(cfDbEndpoints) == 0 && locUpper != "" {
+			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Find(&cfDbEndpoints).Error
+		}
+
+		for cIdx, cfEp := range cfDbEndpoints {
+			if len(memberTags) >= 5 {
+				break
+			}
+			cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
+			if !existingEpTags[cfTag] {
+				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
+				if err == nil {
+					singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
+					existingEpTags[cfTag] = true
+				}
+			}
+			if existingEpTags[cfTag] {
+				memberTags = append(memberTags, cfTag)
+			}
+		}
+
+		// 2. Supplement with free-tier physical servers in the target city / country
 		if len(matchedServers) > 0 {
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range matchedServers {
-				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
 					continue
 				}
 				seenEntryIPs[s.EntryIP] = true
