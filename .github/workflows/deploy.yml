@@ -72,16 +72,16 @@ jobs:
 
       - name: Add server to known hosts
         run: |
-          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p ${{ secrets.SERVER_PORT }} -T 30 ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts || true
 
       - name: Deploy to Ubuntu Server
         run: |
-          scp -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
-          scp -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
+          scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
+          scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
 
       - name: Restart s-ui service
         run: |
-          ssh -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
             # Stop s-ui service and ensure no lingering processes hold ports
             sudo systemctl stop s-ui || true
             sudo pkill -9 -f /usr/local/s-ui/sui || true
