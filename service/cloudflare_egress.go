@@ -193,6 +193,66 @@ var ColoToCityMap = map[string]string{
 	"YYZ": "多伦多", "YVR": "温哥华", "YUL": "蒙特利尔", "YYC": "卡尔加里",
 }
 
+// ColoToEnglishCityMap maps Cloudflare 3-letter IATA airport codes to English city names in cached_logicals.json
+var ColoToEnglishCityMap = map[string]string{
+	// Latin America
+	"GRU": "Sao Paulo", "GIG": "Rio de Janeiro", "BSB": "Brasilia", "FOR": "Fortaleza", "POA": "Porto Alegre",
+	"CWB": "Curitiba", "SSA": "Salvador", "REC": "Recife", "VCP": "Campinas", "CNF": "Belo Horizonte",
+	"EZE": "Buenos Aires", "COR": "Cordoba",
+	"SCL": "Santiago",
+	"BOG": "Bogota", "MDE": "Medellin",
+	"LIM": "Lima",
+	"UIO": "Quito", "GYE": "Guayaquil",
+	"ASU": "Asuncion", "MVD": "Montevideo", "PTY": "Panama City", "SJO": "San Jose", "GUA": "Guatemala City", "SAL": "San Salvador",
+	"QRO": "Queretaro", "MEX": "Mexico City", "GDL": "Guadalajara", "MTY": "Monterrey",
+
+	// Africa
+	"LOS": "Lagos", "ABV": "Abuja", "KAN": "Kano",
+	"JNB": "Johannesburg", "CPT": "Cape Town", "DUR": "Durban",
+	"CAI": "Cairo", "NBO": "Nairobi", "MBA": "Mombasa", "ACC": "Accra", "DKR": "Dakar",
+	"LUN": "Lusaka", "DAR": "Dar es Salaam", "KGL": "Kigali", "MPM": "Maputo", "LAD": "Luanda",
+	"TUN": "Tunis", "CMN": "Casablanca", "RBA": "Rabat", "ALG": "Algiers", "MRU": "Port Louis",
+
+	// Middle East
+	"IST": "Istanbul", "SAW": "Istanbul", "ADB": "Izmir", "ESB": "Ankara", "AYT": "Antalya",
+	"DXB": "Dubai", "AUH": "Abu Dhabi", "DOH": "Doha", "BAH": "Manama", "KWI": "Kuwait City", "MCT": "Muscat",
+	"RUH": "Riyadh", "JED": "Jeddah", "DMM": "Dammam", "TLV": "Tel Aviv", "AMM": "Amman", "BEY": "Beirut", "BGW": "Baghdad",
+
+	// Europe
+	"LHR": "London", "LGW": "London", "MAN": "Manchester", "EDI": "Edinburgh", "BHX": "Birmingham",
+	"FRA": "Frankfurt", "MUC": "Munich", "BER": "Berlin", "HAM": "Hamburg", "DUS": "Dusseldorf", "STR": "Stuttgart",
+	"AMS": "Amsterdam", "CDG": "Paris", "MRS": "Marseille", "LYS": "Lyon", "BOD": "Bordeaux",
+	"MXP": "Milan", "FCO": "Rome", "PMO": "Palermo", "MAD": "Madrid", "BCN": "Barcelona", "VLC": "Valencia",
+	"ZRH": "Zurich", "GVA": "Geneva", "VIE": "Vienna", "BRU": "Brussels", "DUB": "Dublin", "LIS": "Lisbon", "OPO": "Porto",
+	"WAW": "Warsaw", "PRG": "Prague", "BUD": "Budapest", "OTP": "Bucharest", "SOF": "Sofia", "ATH": "Athens", "SKG": "Thessaloniki",
+	"ARN": "Stockholm", "OSL": "Oslo", "HEL": "Helsinki", "CPH": "Copenhagen", "TLL": "Tallinn", "RIX": "Riga", "VNO": "Vilnius",
+	"ZAG": "Zagreb", "BEG": "Belgrade", "KBP": "Kyiv", "DME": "Moscow", "SVO": "Moscow", "LED": "Saint Petersburg",
+
+	// Asia-Pacific
+	"NRT": "Tokyo", "HND": "Tokyo", "KIX": "Osaka", "FUK": "Fukuoka", "OKA": "Okinawa", "CTS": "Sapporo",
+	"SIN": "Singapore", "HKG": "Hong Kong", "TPE": "Taipei", "KHH": "Kaohsiung", "ICN": "Seoul",
+	"SYD": "Sydney", "MEL": "Melbourne", "BNE": "Brisbane", "PER": "Perth", "ADL": "Adelaide", "AKL": "Auckland", "CHC": "Christchurch",
+	"BOM": "Mumbai", "DEL": "New Delhi", "BLR": "Bengaluru", "MAA": "Chennai", "HYD": "Hyderabad", "CCU": "Kolkata",
+	"BKK": "Bangkok", "HAN": "Hanoi", "SGN": "Ho Chi Minh City", "KUL": "Kuala Lumpur", "JHB": "Johor Bahru", "CGK": "Jakarta",
+	"MNL": "Manila", "CEB": "Cebu", "KHI": "Karachi", "LHE": "Lahore", "ISB": "Islamabad", "DAC": "Dhaka",
+	"CMB": "Colombo", "KTM": "Kathmandu", "ULN": "Ulaanbaatar", "PNH": "Phnom Penh", "VTE": "Vientiane", "RGN": "Yangon", "GUM": "Guam",
+
+	// North America
+	"LAX": "Los Angeles", "SJC": "San Jose", "SFO": "San Francisco", "ORD": "Chicago", "DFW": "Dallas", "IAD": "Washington", "EWR": "Newark",
+	"MIA": "Miami", "SEA": "Seattle", "ATL": "Atlanta", "DEN": "Denver", "PHX": "Phoenix", "BOS": "Boston", "DTW": "Detroit",
+	"MSP": "Minneapolis", "CLT": "Charlotte", "IAH": "Houston", "PDX": "Portland", "SLC": "Salt Lake City", "SAN": "San Diego", "TPA": "Tampa", "MCO": "Orlando",
+	"YYZ": "Toronto", "YVR": "Vancouver", "YUL": "Montreal", "YYC": "Calgary",
+}
+
+// GetEnglishCityName returns English city name from IATA airport code
+func GetEnglishCityName(colo string) string {
+	colo = strings.ToUpper(strings.TrimSpace(colo))
+	if name, ok := ColoToEnglishCityMap[colo]; ok && name != "" {
+		return name
+	}
+	return colo
+}
+
 // GetCityName returns localized city name from IATA airport code
 func GetCityName(colo string) string {
 	colo = strings.ToUpper(strings.TrimSpace(colo))
@@ -743,6 +803,9 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		}
 	}
 
+	countryCache := GetCountryCache()
+	workingPrivKey, workingAddrs := FindWorkingWireGuardPrivateKey(singboxConfig, db)
+
 	for _, reg := range cfRegions {
 		poolTag := reg.OutboundTag
 
@@ -755,54 +818,43 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			coloUpper = strings.ToUpper(parts[1])
 		}
 
-		targetEpTag := warpTag
-		if baseWarpMap != nil {
-			regionEpTag := fmt.Sprintf("ep-%s", reg.Code)
-			var bestEp model.CloudflareEndpoint
-			err := db.Model(&model.CloudflareEndpoint{}).
-				Where("loc = ? AND (colo = ? OR ? = '') AND status = ?", locUpper, coloUpper, coloUpper, "online").
-				Order("latency_ms ASC").
-				First(&bestEp).Error
+		var memberTags []string
 
-			if err != nil || bestEp.IP == "" {
-				_ = db.Model(&model.CloudflareEndpoint{}).
-					Where("loc = ? AND status = ?", locUpper, "online").
-					Order("latency_ms ASC").
-					First(&bestEp).Error
-			}
+		// 1. Prioritize real physical servers in the target city / country
+		var matchedServers []*PhysicalServerEntry
+		if coloUpper != "" {
+			matchedServers = countryCache.GetCityServers(locUpper, coloUpper)
+		}
+		if len(matchedServers) == 0 {
+			matchedServers = countryCache.GetCountryServers(locUpper)
+		}
 
-			if bestEp.IP != "" {
-				if !existingEpTags[regionEpTag] {
-					clonedBytes, _ := json.Marshal(baseWarpMap)
-					var clonedMap map[string]interface{}
-					_ = json.Unmarshal(clonedBytes, &clonedMap)
-					clonedMap["tag"] = regionEpTag
-					clonedMap["type"] = "wireguard"
-
-					if peers, ok := clonedMap["peers"].([]interface{}); ok && len(peers) > 0 {
-						if pMap, ok := peers[0].(map[string]interface{}); ok {
-							pMap["address"] = bestEp.IP
-							if bestEp.Port > 0 {
-								pMap["port"] = bestEp.Port
-							} else {
-								pMap["port"] = 2408
-							}
-						}
-					}
-					if epJson, err := json.Marshal(clonedMap); err == nil {
+		if len(matchedServers) > 0 {
+			for sIdx, s := range matchedServers {
+				if sIdx >= 2 {
+					break
+				}
+				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				if !existingEpTags[epTag] {
+					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
+					if err == nil {
 						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-						existingEpTags[regionEpTag] = true
-						targetEpTag = regionEpTag
+						existingEpTags[epTag] = true
 					}
-				} else {
-					targetEpTag = regionEpTag
+				}
+				if existingEpTags[epTag] {
+					memberTags = append(memberTags, epTag)
 				}
 			}
 		}
 
-		memberTags := []string{targetEpTag}
-		if targetEpTag != warpTag && warpTag != "" {
+		// 2. Append Cloudflare WARP fallback so urltest never leaves user disconnected
+		if warpTag != "" && existingEpTags[warpTag] {
 			memberTags = append(memberTags, warpTag)
+		}
+
+		if len(memberTags) == 0 {
+			continue
 		}
 
 		poolOb, err := BuildUrlTestPoolJson(poolTag, memberTags, "3m")

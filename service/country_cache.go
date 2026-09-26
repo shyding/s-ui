@@ -169,19 +169,41 @@ func (c *MultiCountryCache) GetCountryServers(countryCode string) []*PhysicalSer
 	return nil
 }
 
+// normalizeCityString folds diacritics and converts to lowercase for resilient city matching
+func normalizeCityString(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	replacer := strings.NewReplacer(
+		"ã", "a", "á", "a", "à", "a", "â", "a", "ä", "a",
+		"é", "e", "è", "e", "ê", "e", "ë", "e",
+		"í", "i", "ì", "i", "î", "i", "ï", "i",
+		"ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+		"ú", "u", "ù", "u", "û", "u", "ü", "u",
+		"ñ", "n", "ç", "c",
+	)
+	return replacer.Replace(s)
+}
+
 // GetCityServers returns physical servers matching a country code and city name/IATA code
 func (c *MultiCountryCache) GetCityServers(countryCode string, cityQuery string) []*PhysicalServerEntry {
 	allCountry := c.GetCountryServers(countryCode)
 	if len(allCountry) == 0 {
 		return nil
 	}
-	query := strings.ToLower(strings.TrimSpace(cityQuery))
-	if query == "" {
+	normQuery := normalizeCityString(cityQuery)
+	if normQuery == "" {
 		return allCountry
 	}
+	normEnglishCity := ""
+	if mapped := GetEnglishCityName(cityQuery); mapped != "" && !strings.EqualFold(mapped, cityQuery) {
+		normEnglishCity = normalizeCityString(mapped)
+	}
+
 	var matched []*PhysicalServerEntry
 	for _, s := range allCountry {
-		if strings.Contains(strings.ToLower(s.City), query) || strings.Contains(strings.ToLower(s.Domain), query) {
+		normCity := normalizeCityString(s.City)
+		normDomain := normalizeCityString(s.Domain)
+		if strings.Contains(normCity, normQuery) || strings.Contains(normDomain, normQuery) ||
+			(normEnglishCity != "" && (strings.Contains(normCity, normEnglishCity) || strings.Contains(normDomain, normEnglishCity))) {
 			matched = append(matched, s)
 		}
 	}
@@ -192,7 +214,7 @@ func (c *MultiCountryCache) GetCityServers(countryCode string, cityQuery string)
 }
 
 // BuildWireGuardEndpointJsonForServer builds a compliant Sing-Box WireGuard endpoint for a physical server
-func BuildWireGuardEndpointJsonForServer(tag string, server *PhysicalServerEntry, clientPrivateKey string) (json.RawMessage, error) {
+func BuildWireGuardEndpointJsonForServer(tag string, server *PhysicalServerEntry, clientPrivateKey string, clientAddrs ...[]string) (json.RawMessage, error) {
 	if clientPrivateKey == "" {
 		clientPrivateKey = "yBVl8qcgy/OTwV7fZ4bQzeQv5OAR3AJ2C583nN5u218="
 	}
@@ -209,11 +231,15 @@ func BuildWireGuardEndpointJsonForServer(tag string, server *PhysicalServerEntry
 			"persistent_keepalive_interval": 25,
 		},
 	}
+	addrs := []string{"10.2.0.2/32", "2a07:b944::2:2/128"}
+	if len(clientAddrs) > 0 && len(clientAddrs[0]) > 0 {
+		addrs = clientAddrs[0]
+	}
 	epMap := map[string]interface{}{
 		"type":        "wireguard",
 		"tag":         tag,
 		"system":      false,
-		"address":     []string{"10.2.0.2/32", "2a07:b944::2:2/128"},
+		"address":     addrs,
 		"private_key": clientPrivateKey,
 		"listen_port": 0,
 		"peers":       peers,

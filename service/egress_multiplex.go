@@ -360,17 +360,20 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		}
 	}
 
-	// Find active working Proton client private key from existing endpoints
-	var protonClientPrivKey string
+	// Robustly extract active registered WireGuard client private key and address
+	protonClientPrivKey, protonClientAddrs := FindWorkingWireGuardPrivateKey(singboxConfig, db)
+
+	existingEpTags := make(map[string]bool)
+	var warpTag string
 	for _, epRaw := range singboxConfig.Endpoints {
 		var epMap map[string]interface{}
 		if err := json.Unmarshal(epRaw, &epMap); err == nil {
-			tag, _ := epMap["tag"].(string)
-			lowerTag := strings.ToLower(tag)
-			if strings.Contains(lowerTag, "proton") || strings.HasPrefix(lowerTag, "ep-us") || strings.HasPrefix(lowerTag, "ep-nl") {
-				if pk, ok := epMap["private_key"].(string); ok && pk != "" {
-					protonClientPrivKey = pk
-					break
+			if tag, ok := epMap["tag"].(string); ok && tag != "" {
+				existingEpTags[tag] = true
+			}
+			if isCloudflareWarpEndpoint(epMap) && warpTag == "" {
+				if tag, ok := epMap["tag"].(string); ok && tag != "" {
+					warpTag = tag
 				}
 			}
 		}
@@ -397,14 +400,32 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 					break
 				}
 				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
-				epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey)
-				if err == nil {
-					singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+				if !existingEpTags[epTag] {
+					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey, protonClientAddrs)
+					if err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+						existingEpTags[epTag] = true
+					}
+				}
+				if existingEpTags[epTag] {
 					dynTags = append(dynTags, epTag)
 				}
 			}
 			if len(dynTags) > 0 {
 				eps = append(dynTags, eps...)
+			}
+		}
+
+		if warpTag != "" && existingEpTags[warpTag] {
+			hasWarp := false
+			for _, ep := range eps {
+				if ep == warpTag {
+					hasWarp = true
+					break
+				}
+			}
+			if !hasWarp {
+				eps = append(eps, warpTag)
 			}
 		}
 
@@ -509,5 +530,57 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 		return StandardEgressRegions
 	}
 	return active
+}
+
+// FindWorkingWireGuardPrivateKey finds an active, valid WireGuard client private key from existing non-WARP endpoints
+func FindWorkingWireGuardPrivateKey(singboxConfig *SingBoxConfig, db *gorm.DB) (string, []string) {
+	dummyKey := "yBVl8qcgy/OTwV7fZ4bQzeQv5OAR3AJ2C583nN5u218="
+	if singboxConfig != nil {
+		for _, epRaw := range singboxConfig.Endpoints {
+			var epMap map[string]interface{}
+			if err := json.Unmarshal(epRaw, &epMap); err == nil {
+				if isCloudflareWarpEndpoint(epMap) {
+					continue
+				}
+				pk, _ := epMap["private_key"].(string)
+				if pk != "" && pk != dummyKey {
+					var addrs []string
+					if aList, ok := epMap["address"].([]interface{}); ok {
+						for _, a := range aList {
+							if aStr, ok := a.(string); ok {
+								addrs = append(addrs, aStr)
+							}
+						}
+					}
+					return pk, addrs
+				}
+			}
+		}
+	}
+	if db != nil {
+		var endpoints []model.Endpoint
+		_ = db.Where("type = ? OR type = ?", "wireguard", "").Find(&endpoints).Error
+		for _, ep := range endpoints {
+			if strings.HasPrefix(ep.Tag, "warp") || strings.HasPrefix(ep.Tag, "cf-") {
+				continue
+			}
+			var optMap map[string]interface{}
+			if err := json.Unmarshal(ep.Options, &optMap); err == nil {
+				pk, _ := optMap["private_key"].(string)
+				if pk != "" && pk != dummyKey {
+					var addrs []string
+					if aList, ok := optMap["address"].([]interface{}); ok {
+						for _, a := range aList {
+							if aStr, ok := a.(string); ok {
+								addrs = append(addrs, aStr)
+							}
+						}
+					}
+					return pk, addrs
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
