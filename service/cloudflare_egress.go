@@ -1023,7 +1023,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		if len(matchedServers) > 0 {
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range matchedServers {
-				if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
 					continue
 				}
 				seenEntryIPs[s.EntryIP] = true
@@ -1044,10 +1044,43 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					break
 				}
 			}
+			if len(memberTags) == 0 {
+				for _, s := range matchedServers {
+					if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
+						continue
+					}
+					seenEntryIPs[s.EntryIP] = true
+					cleanIP := strings.ReplaceAll(s.EntryIP, ".", "-")
+					cleanIP = strings.ReplaceAll(cleanIP, ":", "-")
+					epTag := fmt.Sprintf("ep-cf-%s", cleanIP)
+					if !existingEpTags[epTag] {
+						epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
+						if err == nil {
+							singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
+							existingEpTags[epTag] = true
+						}
+					}
+					if existingEpTags[epTag] {
+						memberTags = append(memberTags, epTag)
+					}
+					if len(memberTags) >= 1 {
+						break
+					}
+				}
+			}
+		}
+
+		// Include known verified DB endpoints for this country (US, NL, JP, etc.)
+		targetPrefix := fmt.Sprintf("ep-proton-%s", strings.ToLower(locUpper))
+		for epTag := range existingEpTags {
+			if strings.HasPrefix(epTag, targetPrefix) {
+				memberTags = append([]string{epTag}, memberTags...)
+				break
+			}
 		}
 
 		// 2. For Singapore pools or if no physical servers exist, use verified Cloudflare endpoints
-		if locUpper == "SG" || len(memberTags) == 0 {
+		if locUpper == "SG" {
 			for _, cfEp := range cfDbEndpoints {
 				if len(memberTags) >= 1 {
 					break
@@ -1065,26 +1098,11 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					memberTags = append(memberTags, cfTag)
 				}
 			}
-		}
-
-		// Include known verified DB endpoints for US and NL
-		if locUpper == "US" {
-			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
-				if existingEpTags[vTag] {
-					memberTags = append(memberTags, vTag)
-					break
-				}
-			}
-		} else if locUpper == "NL" {
-			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
-				if existingEpTags[vTag] {
-					memberTags = append(memberTags, vTag)
-					break
-				}
+			if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
+				memberTags = append(memberTags, warpTag)
 			}
 		}
 
-		// If no endpoints found for this location, do not generate a broken pool or fall back to Singapore
 		if len(memberTags) == 0 {
 			continue
 		}
