@@ -76,6 +76,7 @@ jobs:
 
       - name: Transfer artifacts to server
         run: |
+          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf /tmp/scripts /tmp/sui /tmp/s-ui.service"
           scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
           scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
           scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
@@ -85,5 +86,6 @@ jobs:
           SERVER_DOMAIN: ${{ secrets.SERVER_DOMAIN }}
         run: |
           DOMAIN="${SERVER_DOMAIN:-dash.icta.top}"
-          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo bash /tmp/scripts/deploy_bootstrap.sh '$DOMAIN'"
+          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "BOOTSTRAP_SCRIPT=\$(find /tmp/scripts -name deploy_bootstrap.sh 2>/dev/null | head -n 1); if [ -z \"\$BOOTSTRAP_SCRIPT\" ]; then echo 'deploy_bootstrap.sh not found in /tmp/scripts'; ls -la /tmp/scripts; exit 1; fi; chmod +x \"\$BOOTSTRAP_SCRIPT\"; sudo bash \"\$BOOTSTRAP_SCRIPT\" '$DOMAIN'"
+
 

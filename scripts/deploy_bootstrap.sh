@@ -76,7 +76,10 @@ if [ -f /tmp/sui ]; then
 fi
 
 if [ -d /tmp/scripts ]; then
-  cp -rf /tmp/scripts/* /usr/local/s-ui/scripts/
+  if [ -d /tmp/scripts/scripts ]; then
+    cp -rf /tmp/scripts/scripts/* /usr/local/s-ui/scripts/ 2>/dev/null || true
+  fi
+  cp -rf /tmp/scripts/* /usr/local/s-ui/scripts/ 2>/dev/null || true
   chmod +x /usr/local/s-ui/scripts/*.py 2>/dev/null || true
   chmod +x /usr/local/s-ui/scripts/*.sh 2>/dev/null || true
 fi
