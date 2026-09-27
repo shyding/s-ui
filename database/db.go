@@ -2,8 +2,10 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
+	"time"
 
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/database/model"
@@ -49,12 +51,34 @@ func OpenDB(dbPath string) error {
 	c := &gorm.Config{
 		Logger: gormLogger,
 	}
-	db, err = gorm.Open(sqlite.Open(dbPath), c)
+
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-32000)&_pragma=foreign_keys(1)", dbPath)
+	db, err = gorm.Open(sqlite.Open(dsn), c)
+	if err != nil {
+		db, err = gorm.Open(sqlite.Open(dbPath), c)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Guarantee WAL and concurrency PRAGMAs
+	db.Exec("PRAGMA journal_mode = WAL;")
+	db.Exec("PRAGMA busy_timeout = 10000;")
+	db.Exec("PRAGMA synchronous = NORMAL;")
+	db.Exec("PRAGMA cache_size = -32000;")
+	db.Exec("PRAGMA foreign_keys = ON;")
+
+	// Serialize queries through safe pool to eliminate SQLite OS file lock contention
+	if sqlDB, dbErr := db.DB(); dbErr == nil {
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
+		sqlDB.SetConnMaxLifetime(time.Hour)
+	}
 
 	if config.IsDebug() {
 		db = db.Debug()
 	}
-	return err
+	return nil
 }
 
 func InitDB(dbPath string) error {

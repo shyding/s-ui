@@ -4,11 +4,20 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/alireza0/s-ui/app"
 	"github.com/alireza0/s-ui/cmd"
 )
+
+func init() {
+	// Restrict GC threshold and memory footprint to prevent VPS OOM
+	debug.SetGCPercent(50)
+	debug.SetMemoryLimit(400 * 1024 * 1024) // 400MB soft limit
+	runtime.GOMAXPROCS(1)
+}
 
 func runApp() {
 	app := app.NewApp()

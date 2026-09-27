@@ -32,6 +32,12 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 	if err != nil {
 		return nil
 	}
+
+	var activeRegions []service.EgressRegion
+	if types == "all" {
+		activeRegions = service.GetActiveEgressRegions(database.GetDB())
+	}
+
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
 		if strings.HasPrefix(link.Uri, "http2://") {
@@ -63,7 +69,6 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				activeRegions := service.GetActiveEgressRegions(database.GetDB())
 				expandedLinks := s.ExpandEgressLinks(finalLink, activeRegions)
 				for _, expLink := range expandedLinks {
 					if !seen[expLink] {

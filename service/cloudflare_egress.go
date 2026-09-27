@@ -627,29 +627,35 @@ func SeedInitialCloudflareEndpoints(db *gorm.DB) error {
 		{"162.159.192.15", 2408, "ID", "CGK"},
 	}
 
-	now := time.Now().Unix()
-	for _, s := range initialSeeds {
-		ep := model.CloudflareEndpoint{
-			IP:          s.IP,
-			Port:        s.Port,
-			Loc:         s.Loc,
-			Colo:        s.Colo,
-			City:        GetCityName(s.Colo),
-			CountryName: GetCountryName(s.Loc),
-			Flag:        GetCountryFlag(s.Loc),
-			LatencyMs:   50,
-			Status:      "online",
-			EndpointTag: fmt.Sprintf("cf-%s-%d", strings.ToLower(s.Loc), s.Port),
-			LastChecked: now,
-		}
-		_ = db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
-			DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "status", "last_checked"}),
-		}).Create(&ep).Error
+	var count int64
+	if err := db.Model(&model.CloudflareEndpoint{}).Count(&count).Error; err == nil && count >= int64(len(initialSeeds)) {
+		return nil
 	}
 
-	logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across official ranges", len(initialSeeds)))
-	return nil
+	now := time.Now().Unix()
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, s := range initialSeeds {
+			ep := model.CloudflareEndpoint{
+				IP:          s.IP,
+				Port:        s.Port,
+				Loc:         s.Loc,
+				Colo:        s.Colo,
+				City:        GetCityName(s.Colo),
+				CountryName: GetCountryName(s.Loc),
+				Flag:        GetCountryFlag(s.Loc),
+				LatencyMs:   50,
+				Status:      "online",
+				EndpointTag: fmt.Sprintf("cf-%s-%d", strings.ToLower(s.Loc), s.Port),
+				LastChecked: now,
+			}
+			_ = tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
+				DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "status", "last_checked"}),
+			}).Create(&ep).Error
+		}
+		logger.Info(fmt.Sprintf("Seeded %d global Cloudflare egress endpoints across official ranges", len(initialSeeds)))
+		return nil
+	})
 }
 
 // RefreshCloudflareEndpoints probes candidate Cloudflare endpoints and dynamically updates the database
@@ -728,19 +734,27 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 		close(results)
 	}()
 
-	// 3. Upsert probe results into database
-	updatedCount := 0
+	// 3. Upsert probe results into database in a single transaction
+	var validEps []*model.CloudflareEndpoint
 	for ep := range results {
 		if ep.Status == "online" {
-			_ = db.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
-				DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "latency_ms", "status", "last_checked"}),
-			}).Create(ep).Error
-			updatedCount++
+			validEps = append(validEps, ep)
 		}
 	}
 
-	logger.Info(fmt.Sprintf("Cloudflare dynamic multi-region refresh finished. %d active endpoints recorded.", updatedCount))
+	if len(validEps) > 0 {
+		_ = db.Transaction(func(tx *gorm.DB) error {
+			for _, ep := range validEps {
+				_ = tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
+					DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "latency_ms", "status", "last_checked"}),
+				}).Create(ep).Error
+			}
+			return nil
+		})
+	}
+
+	logger.Info(fmt.Sprintf("Cloudflare dynamic multi-region refresh finished. %d active endpoints recorded.", len(validEps)))
 	return nil
 }
 
@@ -752,9 +766,6 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 	if db == nil {
 		return nil
 	}
-
-	// Always ensure comprehensive global seeds exist in the database
-	_ = SeedInitialCloudflareEndpoints(db)
 
 	type RegionRow struct {
 		Loc         string
@@ -828,7 +839,8 @@ func StartCloudflareDynamicUpdater(db *gorm.DB, interval time.Duration) {
 			_ = SeedInitialCloudflareEndpoints(db)
 		}
 
-		// 2. Immediate asynchronous probe of official Cloudflare CIDRs on startup
+		// 2. Delay first dynamic probe by 60s so server starts up smoothly without CPU/DB contention
+		time.Sleep(60 * time.Second)
 		if db != nil {
 			_ = RefreshCloudflareEndpoints(db)
 		}
@@ -1005,8 +1017,9 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					continue
 				}
 				seenEntryIPs[s.EntryIP] = true
-				sIdx := len(memberTags)
-				epTag := fmt.Sprintf("ep-%s-%d", reg.Code, sIdx)
+				cleanIP := strings.ReplaceAll(s.EntryIP, ".", "-")
+				cleanIP = strings.ReplaceAll(cleanIP, ":", "-")
+				epTag := fmt.Sprintf("ep-cf-%s", cleanIP)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
 					if err == nil {
@@ -1017,7 +1030,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				if existingEpTags[epTag] {
 					memberTags = append(memberTags, epTag)
 				}
-				if len(memberTags) >= 5 {
+				if len(memberTags) >= 1 {
 					break
 				}
 			}
@@ -1025,11 +1038,12 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 		// 2. For Singapore pools or if no physical servers exist, use verified Cloudflare endpoints
 		if locUpper == "SG" || len(memberTags) == 0 {
-			for cIdx, cfEp := range cfDbEndpoints {
-				if len(memberTags) >= 5 {
+			for _, cfEp := range cfDbEndpoints {
+				if len(memberTags) >= 1 {
 					break
 				}
-				cfTag := fmt.Sprintf("ep-%s-cf-%d", reg.Code, cIdx)
+				cleanIP := strings.ReplaceAll(cfEp.IP, ".", "-")
+				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, cfEp.Port)
 				if !existingEpTags[cfTag] {
 					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
 					if err == nil {
@@ -1039,6 +1053,23 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 				}
 				if existingEpTags[cfTag] {
 					memberTags = append(memberTags, cfTag)
+				}
+			}
+		}
+
+		// Include known verified DB endpoints for US and NL
+		if locUpper == "US" {
+			for _, vTag := range []string{"ep-proton-us", "ep-us", "ep-proton-us-free-1", "ep-proton-us-free-2"} {
+				if existingEpTags[vTag] {
+					memberTags = append(memberTags, vTag)
+					break
+				}
+			}
+		} else if locUpper == "NL" {
+			for _, vTag := range []string{"ep-proton-nl", "ep-nl", "ep-proton-nl-free-1"} {
+				if existingEpTags[vTag] {
+					memberTags = append(memberTags, vTag)
+					break
 				}
 			}
 		}

@@ -551,9 +551,6 @@ func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
 	successCount := 0
 	failedLinks := []string{}
 
-	db := database.GetDB()
-	tx := db.Begin()
-
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -583,8 +580,6 @@ func (a *ApiService) BatchImport(c *gin.Context, loginUser string) {
 
 		successCount++
 	}
-
-	tx.Commit()
 
 	result := map[string]interface{}{
 		"success":     successCount,
