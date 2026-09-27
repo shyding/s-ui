@@ -442,10 +442,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 		}
 
-		// Ensure resilient fallback to WARP so node is never dead (timeout -1)
-		if warpTag != "" && existingEpTags[warpTag] {
-			eps = append(eps, warpTag)
-		}
+		// Strictly forbid Singapore fallback for Proton pools to prevent Singapore location leakage
 
 		// Deduplicate eps while preserving order
 		var uniqueEps []string

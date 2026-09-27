@@ -1100,9 +1100,12 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// 2. Always append warp-master as resilient failover so no node ever hangs or returns timeout -1
-		if warpTag != "" && existingEpTags[warpTag] {
-			memberTags = append(memberTags, warpTag)
+		// Strictly forbid Singapore fallback for non-Singapore pools to prevent location leakage.
+		// Only Singapore pools may use warpTag.
+		if locUpper == "SG" {
+			if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
+				memberTags = append(memberTags, warpTag)
+			}
 		}
 
 		if len(memberTags) == 0 {
