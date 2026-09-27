@@ -135,7 +135,7 @@ func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.Egre
 		if len(expanded) > 0 {
 			return expanded
 		}
-	case "vless", "trojan":
+	case "vless", "trojan", "tuic", "hysteria2":
 		u, err := url.Parse(uri)
 		if err != nil {
 			return []string{uri}
@@ -163,6 +163,16 @@ func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.Egre
 					} else {
 						newU.User = url.User(service.DerivePassword(origUser, reg.Code))
 					}
+				} else if proto == "tuic" {
+					derivedUUID := service.DeriveUUID(origUser, reg.Code)
+					if hasPass {
+						newU.User = url.UserPassword(derivedUUID, service.DerivePassword(origPass, reg.Code))
+					} else {
+						newU.User = url.User(derivedUUID)
+					}
+				} else if proto == "hysteria2" {
+					derivedPass := service.DerivePassword(origUser, reg.Code)
+					newU.User = url.User(derivedPass)
 				}
 			}
 			expanded = append(expanded, newU.String())

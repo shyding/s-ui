@@ -249,7 +249,10 @@ func ExpandUsersForMultiplexing(baseUsers []json.RawMessage, inboundType string,
 				if baseUUID, ok := userMap["uuid"].(string); ok && baseUUID != "" {
 					derivedUser["uuid"] = DeriveUUID(baseUUID, reg.Code)
 				}
-			case "trojan", "shadowsocks", "anytls":
+				if basePass, ok := userMap["password"].(string); ok && basePass != "" {
+					derivedUser["password"] = DerivePassword(basePass, reg.Code)
+				}
+			case "trojan", "shadowsocks", "anytls", "hysteria2":
 				if basePass, ok := userMap["password"].(string); ok && basePass != "" {
 					derivedUser["password"] = DerivePassword(basePass, reg.Code)
 				}

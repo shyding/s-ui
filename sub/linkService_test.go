@@ -181,3 +181,31 @@ func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
 	}
 }
 
+func TestExpandEgressLinks_TUIC_And_Hysteria2(t *testing.T) {
+	s := &LinkService{}
+	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
+
+	// 1. TUIC test
+	tuicUri := "tuic://" + baseUUID + ":s-ui-admin-pass@dash.icta.top:57295?congestion_control=bbr&alpn=h2%2Chttp%2F1.1&sni=dash.icta.top#tuic-57295"
+	expandedTuic := s.ExpandEgressLinks(tuicUri, service.StandardEgressRegions)
+	if len(expandedTuic) != 5 {
+		t.Fatalf("Expected 5 expanded TUIC links (1 native direct + 4 regional), got %d", len(expandedTuic))
+	}
+	unescapedTuic, _ := url.QueryUnescape(expandedTuic[0])
+	if !strings.Contains(unescapedTuic, "原生直连") {
+		t.Errorf("First TUIC link must be native direct, got %s", expandedTuic[0])
+	}
+
+	// 2. Hysteria2 test
+	hy2Uri := "hysteria2://s-ui-admin-pass@dash.icta.top:25536?insecure=0&sni=dash.icta.top&alpn=h2%2Chttp%2F1.1#hysteria2-25536"
+	expandedHy2 := s.ExpandEgressLinks(hy2Uri, service.StandardEgressRegions)
+	if len(expandedHy2) != 5 {
+		t.Fatalf("Expected 5 expanded Hysteria2 links (1 native direct + 4 regional), got %d", len(expandedHy2))
+	}
+	unescapedHy2, _ := url.QueryUnescape(expandedHy2[0])
+	if !strings.Contains(unescapedHy2, "原生直连") {
+		t.Errorf("First Hysteria2 link must be native direct, got %s", expandedHy2[0])
+	}
+}
+
+
