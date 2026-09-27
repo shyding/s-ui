@@ -1098,9 +1098,11 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					memberTags = append(memberTags, cfTag)
 				}
 			}
-			if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
-				memberTags = append(memberTags, warpTag)
-			}
+		}
+
+		// 2. Always append warp-master as resilient failover so no node ever hangs or returns timeout -1
+		if warpTag != "" && existingEpTags[warpTag] {
+			memberTags = append(memberTags, warpTag)
 		}
 
 		if len(memberTags) == 0 {

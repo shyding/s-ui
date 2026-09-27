@@ -442,6 +442,11 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 		}
 
+		// Ensure resilient fallback to WARP so node is never dead (timeout -1)
+		if warpTag != "" && existingEpTags[warpTag] {
+			eps = append(eps, warpTag)
+		}
+
 		// Deduplicate eps while preserving order
 		var uniqueEps []string
 		seenEp := make(map[string]bool)
