@@ -172,6 +172,29 @@ func TestExpandEgressLinks_DynamicCloudflareRegions(t *testing.T) {
 }
 
 func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
+	testDb := t.TempDir() + "/test_links.db"
+	_ = database.InitDB(testDb)
+	db := database.GetDB()
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	db.Create(&model.NodeHealthStatus{
+		Node:          "SUI-新加坡-中央区-新加坡城",
+		Provider:      "SUI",
+		Country:       "新加坡",
+		Region:        "中央区",
+		City:          "新加坡城",
+		TCPCheck:      true,
+		TLSCheck:      true,
+		ProxyCheck:    true,
+		Status:        "available",
+		Latency:       50,
+		Speed:         100,
+		LastCheckTime: time.Now().UTC().Format(time.RFC3339),
+	})
+
 	s := &LinkService{}
 	linksJson := json.RawMessage(`[
 		{"type": "local", "remark": "vless-54142", "uri": "vless://403db7be-930b-449e-b5f4-34537cb594c7@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vless-54142"}
@@ -179,7 +202,7 @@ func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
 
 	res1 := s.GetAuthorizedLinks(&linksJson, "all", "", nil)
 	if len(res1) == 0 {
-		t.Fatalf("Expected links when allowedTags is nil, got 0")
+		t.Fatalf("Expected links when allowedTags is nil and node is healthy, got 0")
 	}
 
 	pass, violations := ValidateSubscriptionSecurity(res1, "dash.icta.top")
@@ -474,3 +497,211 @@ func TestRegression_5_EndToEndUserSimulation(t *testing.T) {
 		t.Fatalf("Expected vmess link, got %s", firstLink)
 	}
 }
+
+func TestSubscriptionRejectsUnhealthyNode(t *testing.T) {
+	candidate := CandidateNode{
+		Uri:      "hysteria2://pass@dash.icta.top:8444#node",
+		Protocol: "hysteria2",
+		Provider: "Proton",
+		Country:  "日本",
+		Region:   "关东",
+		City:     "东京",
+		Priority: 100,
+	}
+
+	healthMap := map[string]*model.NodeHealthStatus{
+		candidate.GroupKey(): {
+			Node:          candidate.GroupKey(),
+			Provider:      candidate.Provider,
+			Country:       candidate.Country,
+			Region:        candidate.Region,
+			City:          candidate.City,
+			TCPCheck:      true,
+			TLSCheck:      true,
+			ProxyCheck:    false, // FAILED proxy check
+			Status:        "unavailable",
+			Latency:       -1,
+			Speed:         0,
+			LastCheckTime: time.Now().UTC().Format(time.RFC3339),
+			LastError:     "WIREGUARD_HANDSHAKE_TIMEOUT",
+		},
+	}
+
+	res := FilterHealthyAndGroupTop3Links([]CandidateNode{candidate}, healthMap, 15*time.Minute)
+	if len(res) != 0 {
+		t.Fatalf("Expected 0 nodes for unhealthy candidate, got %d: %v", len(res), res)
+	}
+}
+
+func TestSubscriptionRejectsStaleHealth(t *testing.T) {
+	candidate := CandidateNode{
+		Uri:      "hysteria2://pass@dash.icta.top:8444#node",
+		Protocol: "hysteria2",
+		Provider: "Proton",
+		Country:  "美国",
+		Region:   "加州",
+		City:     "洛杉矶",
+		Priority: 100,
+	}
+
+	healthMap := map[string]*model.NodeHealthStatus{
+		candidate.GroupKey(): {
+			Node:          candidate.GroupKey(),
+			Provider:      candidate.Provider,
+			Country:       candidate.Country,
+			Region:        candidate.Region,
+			City:          candidate.City,
+			TCPCheck:      true,
+			TLSCheck:      true,
+			ProxyCheck:    true,
+			Status:        "available",
+			Latency:       50,
+			Speed:         80,
+			LastCheckTime: time.Now().Add(-30 * time.Minute).UTC().Format(time.RFC3339), // Stale > 15m
+		},
+	}
+
+	res := FilterHealthyAndGroupTop3Links([]CandidateNode{candidate}, healthMap, 15*time.Minute)
+	if len(res) != 0 {
+		t.Fatalf("Expected 0 nodes for stale health status, got %d: %v", len(res), res)
+	}
+}
+
+func TestSubscriptionRejectsUnknownHealth(t *testing.T) {
+	candidate := CandidateNode{
+		Uri:      "hysteria2://pass@dash.icta.top:8444#node",
+		Protocol: "hysteria2",
+		Provider: "Cloudflare",
+		Country:  "美国",
+		Region:   "科罗拉多州",
+		City:     "丹佛",
+		Priority: 100,
+	}
+
+	// Empty healthMap = no verification records
+	emptyHealthMap := make(map[string]*model.NodeHealthStatus)
+
+	res := FilterHealthyAndGroupTop3Links([]CandidateNode{candidate}, emptyHealthMap, 15*time.Minute)
+	if len(res) != 0 {
+		t.Fatalf("FAIL-CLOSED violated: expected 0 nodes for unverified candidate, got %d: %v", len(res), res)
+	}
+}
+
+func TestSubscriptionAllowsHealthyNode(t *testing.T) {
+	candidate := CandidateNode{
+		Uri:      "hysteria2://pass@dash.icta.top:8444#node",
+		Protocol: "hysteria2",
+		Provider: "SUI",
+		Country:  "新加坡",
+		Region:   "中央区",
+		City:     "新加坡城",
+		Priority: 100,
+	}
+
+	healthMap := map[string]*model.NodeHealthStatus{
+		candidate.GroupKey(): {
+			Node:          candidate.GroupKey(),
+			Provider:      candidate.Provider,
+			Country:       candidate.Country,
+			Region:        candidate.Region,
+			City:          candidate.City,
+			TCPCheck:      true,
+			TLSCheck:      true,
+			ProxyCheck:    true,
+			Status:        "available",
+			Latency:       45,
+			Speed:         95,
+			LastCheckTime: time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+
+	res := FilterHealthyAndGroupTop3Links([]CandidateNode{candidate}, healthMap, 15*time.Minute)
+	if len(res) != 1 {
+		t.Fatalf("Expected 1 node for healthy candidate, got %d", len(res))
+	}
+	expectedRemark := "SUI-新加坡-中央区-新加坡城-01"
+	if !strings.Contains(res[0], expectedRemark) {
+		t.Fatalf("Expected remark %s, got %s", expectedRemark, res[0])
+	}
+}
+
+func TestSubscriptionTop3AfterHealthFilter(t *testing.T) {
+	candidates := []CandidateNode{
+		{Uri: "hysteria2://pass@dash.icta.top:8001#n1", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8002#n2", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8003#n3", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8004#n4", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8005#n5", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8006#n6", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+		{Uri: "hysteria2://pass@dash.icta.top:8007#n7", Protocol: "hysteria2", Provider: "Proton", Country: "荷兰", Region: "北荷兰", City: "阿姆斯特丹", Priority: 100},
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	healthMap := map[string]*model.NodeHealthStatus{
+		candidates[0].Uri: {Node: candidates[0].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Speed: 10, Latency: 200, LastCheckTime: now},
+		candidates[1].Uri: {Node: candidates[1].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Speed: 50, Latency: 50, LastCheckTime: now},
+		candidates[2].Uri: {Node: candidates[2].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Speed: 30, Latency: 100, LastCheckTime: now},
+		candidates[3].Uri: {Node: candidates[3].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Speed: 40, Latency: 80, LastCheckTime: now},
+		candidates[4].Uri: {Node: candidates[4].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Speed: 20, Latency: 150, LastCheckTime: now},
+		candidates[5].Uri: {Node: candidates[5].Uri, Status: "unavailable", TCPCheck: false, TLSCheck: false, ProxyCheck: false, Speed: 0, Latency: -1, LastCheckTime: now},
+		candidates[6].Uri: {Node: candidates[6].Uri, Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: false, Speed: 0, Latency: -1, LastCheckTime: now},
+	}
+
+	res := FilterHealthyAndGroupTop3Links(candidates, healthMap, 15*time.Minute)
+	if len(res) != 3 {
+		t.Fatalf("Expected exactly TOP 3 nodes, got %d", len(res))
+	}
+
+	// Should be sorted by speed DESC: 50 (n2), 40 (n4), 30 (n3)
+	if !strings.Contains(res[0], "8002") || !strings.Contains(res[0], "-01") {
+		t.Fatalf("Top 1 should be 8002 (-01), got %s", res[0])
+	}
+	if !strings.Contains(res[1], "8004") || !strings.Contains(res[1], "-02") {
+		t.Fatalf("Top 2 should be 8004 (-02), got %s", res[1])
+	}
+	if !strings.Contains(res[2], "8003") || !strings.Contains(res[2], "-03") {
+		t.Fatalf("Top 3 should be 8003 (-03), got %s", res[2])
+	}
+}
+
+func TestSubscriptionFinalRemark(t *testing.T) {
+	node := model.NodeHealthStatus{
+		Provider: "Proton",
+		Country:  "日本",
+		Region:   "关东",
+		City:     "东京",
+	}
+	remark := node.StandardRemark(1)
+	expected := "Proton-日本-关东-东京-01"
+	if remark != expected {
+		t.Fatalf("Expected %s, got %s", expected, remark)
+	}
+
+	parts := strings.Split(remark, "-")
+	if len(parts) != 5 {
+		t.Fatalf("Expected 5 segments in remark, got %d in %s", len(parts), remark)
+	}
+}
+
+func TestSubscriptionNoUpstreamLeak(t *testing.T) {
+	testLinks := []string{
+		"hysteria2://pass@dash.icta.top:8444?insecure=0&sni=dash.icta.top#SUI-新加坡-中央区-新加坡城-01",
+		"hysteria2://pass@dash.icta.top:25536?insecure=0&sni=dash.icta.top#Proton-荷兰-北荷兰-阿姆斯特丹-01",
+	}
+
+	pass, violations := ValidateSubscriptionSecurity(testLinks, "dash.icta.top")
+	if !pass {
+		t.Fatalf("Security validation failed: %v", violations)
+	}
+
+	// Check that a link with real egress IP or upstream domain fails
+	badLinks := []string{
+		"hysteria2://pass@124.156.207.253:8444#SUI-新加坡-01",
+		"vless://uuid@workers.dev:443#bad",
+	}
+	badPass, _ := ValidateSubscriptionSecurity(badLinks, "dash.icta.top")
+	if badPass {
+		t.Fatalf("Expected security violation for exposed IP/upstream domain")
+	}
+}
+

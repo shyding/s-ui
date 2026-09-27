@@ -10,8 +10,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util"
@@ -34,6 +36,29 @@ type CandidateNode struct {
 	Region   string
 	City     string
 	Priority int
+	Speed    float64
+	Latency  int64
+	NodeKey  string
+}
+
+func (c *CandidateNode) GroupKey() string {
+	prov := strings.TrimSpace(c.Provider)
+	if prov == "" {
+		prov = "SUI"
+	}
+	country := strings.TrimSpace(c.Country)
+	if country == "" {
+		country = "未知"
+	}
+	region := strings.TrimSpace(c.Region)
+	if region == "" {
+		region = "未知"
+	}
+	city := strings.TrimSpace(c.City)
+	if city == "" {
+		city = "未知"
+	}
+	return fmt.Sprintf("%s-%s-%s-%s", prov, country, region, city)
 }
 
 func getProtocolPriority(proto string) int {
@@ -199,12 +224,84 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 	return candidates
 }
 
-// GroupAndFilterTop3Links groups candidate nodes by (provider, country, region, city),
-// sorts each group by priority/performance, retains at most TOP 3, and assigns -01, -02, -03 remarks.
-func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
-	groups := make(map[string][]CandidateNode)
+// FilterHealthyAndGroupTop3Links enforces strict FAIL-CLOSED verification:
+// 1. Every candidate MUST match an active, unexpired NodeHealthStatus in healthMap or DB.
+// 2. Missing health check -> UNVERIFIED -> DISCARD (FAIL-CLOSED).
+// 3. Status != "available", tcp_check != true, tls_check != true, proxy_check != true -> DISCARD.
+// 4. speed <= 0 or latency <= 0 -> DISCARD.
+// 5. LastCheckTime older than ttl -> STALE -> DISCARD.
+// 6. Group remaining healthy nodes by (provider, country, region, city).
+// 7. Sort within group by speed DESC, latency ASC, priority DESC, uri ASC (tie-breaker).
+// 8. Retain at most TOP 3 per group and format standard remark: {来源}-{国家}-{区域}-{城市}-{编号}.
+func FilterHealthyAndGroupTop3Links(
+	candidates []CandidateNode,
+	healthMap map[string]*model.NodeHealthStatus,
+	ttl time.Duration,
+) []string {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if ttl <= 0 {
+		ttl = model.DefaultHealthTTL
+	}
+
+	// If healthMap is nil, load from DB
+	if healthMap == nil {
+		healthMap = make(map[string]*model.NodeHealthStatus)
+		db := database.GetDB()
+		if db != nil {
+			var records []model.NodeHealthStatus
+			if err := db.Find(&records).Error; err == nil {
+				for i := range records {
+					rec := &records[i]
+					if rec.Node != "" {
+						healthMap[rec.Node] = rec
+					}
+					gKey := rec.GroupKey()
+					if gKey != "" {
+						healthMap[gKey] = rec
+					}
+				}
+			}
+		}
+	}
+
+	// 1. Filter healthy candidates (FAIL-CLOSED)
+	var healthyCandidates []CandidateNode
 	for _, c := range candidates {
-		key := fmt.Sprintf("%s-%s-%s-%s", c.Provider, c.Country, c.Region, c.City)
+		// Look up health record by URI, NodeKey, or GroupKey
+		var rec *model.NodeHealthStatus
+		if c.Uri != "" && healthMap[c.Uri] != nil {
+			rec = healthMap[c.Uri]
+		} else if c.NodeKey != "" && healthMap[c.NodeKey] != nil {
+			rec = healthMap[c.NodeKey]
+		} else if healthMap[c.GroupKey()] != nil {
+			rec = healthMap[c.GroupKey()]
+		}
+
+		// FAIL-CLOSED: No record = UNVERIFIED -> discard
+		if rec == nil {
+			continue
+		}
+
+		// Enforce all health checks and freshness
+		if !rec.IsHealthyWithTTL(ttl) {
+			continue
+		}
+
+		c.Speed = rec.Speed
+		c.Latency = rec.Latency
+		healthyCandidates = append(healthyCandidates, c)
+	}
+
+	if len(healthyCandidates) == 0 {
+		return nil
+	}
+
+	// 2. Group by provider + country + region + city
+	groups := make(map[string][]CandidateNode)
+	for _, c := range healthyCandidates {
+		key := c.GroupKey()
 		groups[key] = append(groups[key], c)
 	}
 
@@ -222,14 +319,20 @@ func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
 	var result []string
 	seenUris := make(map[string]bool)
 
+	// 3. Sort within group by speed DESC, latency ASC, priority DESC, uri ASC (tie-breaker)
 	for _, k := range groupKeys {
 		groupItems := groups[k]
-		// Sort by protocol priority DESC, then protocol ASC
 		sort.SliceStable(groupItems, func(i, j int) bool {
+			if groupItems[i].Speed != groupItems[j].Speed {
+				return groupItems[i].Speed > groupItems[j].Speed
+			}
+			if groupItems[i].Latency != groupItems[j].Latency {
+				return groupItems[i].Latency < groupItems[j].Latency
+			}
 			if groupItems[i].Priority != groupItems[j].Priority {
 				return groupItems[i].Priority > groupItems[j].Priority
 			}
-			return groupItems[i].Protocol < groupItems[j].Protocol
+			return groupItems[i].Uri < groupItems[j].Uri
 		})
 
 		limit := 3
@@ -251,6 +354,13 @@ func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
 
 	return result
 }
+
+// GroupAndFilterTop3Links groups candidate nodes by (provider, country, region, city),
+// applies FAIL-CLOSED health filtering, retains at most TOP 3, and assigns -01, -02, -03 remarks.
+func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
+	return FilterHealthyAndGroupTop3Links(candidates, nil, model.DefaultHealthTTL)
+}
+
 
 func setRemarkOnUri(uri, proto, remark string) string {
 	if proto == "vmess" {
@@ -274,10 +384,60 @@ func setRemarkOnUri(uri, proto, remark string) string {
 	return uri + "#" + remark
 }
 
+// FormatTop3Links formats candidate nodes into TOP3 without health filtering (for offline expansion/display)
+func FormatTop3Links(candidates []CandidateNode) []string {
+	groups := make(map[string][]CandidateNode)
+	for _, c := range candidates {
+		key := c.GroupKey()
+		groups[key] = append(groups[key], c)
+	}
+
+	var groupKeys []string
+	for k := range groups {
+		if k != "SUI-新加坡-中央区-新加坡城" {
+			groupKeys = append(groupKeys, k)
+		}
+	}
+	sort.Strings(groupKeys)
+	if _, ok := groups["SUI-新加坡-中央区-新加坡城"]; ok {
+		groupKeys = append([]string{"SUI-新加坡-中央区-新加坡城"}, groupKeys...)
+	}
+
+	var result []string
+	seenUris := make(map[string]bool)
+
+	for _, k := range groupKeys {
+		groupItems := groups[k]
+		sort.SliceStable(groupItems, func(i, j int) bool {
+			if groupItems[i].Priority != groupItems[j].Priority {
+				return groupItems[i].Priority > groupItems[j].Priority
+			}
+			return groupItems[i].Protocol < groupItems[j].Protocol
+		})
+
+		limit := 3
+		if len(groupItems) < limit {
+			limit = len(groupItems)
+		}
+
+		for idx := 0; idx < limit; idx++ {
+			item := groupItems[idx]
+			stdRemark := service.FormatStandardRemark(item.Provider, item.Country, item.Region, item.City, idx+1)
+			finalUri := setRemarkOnUri(item.Uri, item.Protocol, stdRemark)
+			if !seenUris[finalUri] {
+				seenUris[finalUri] = true
+				result = append(result, finalUri)
+			}
+		}
+	}
+
+	return result
+}
+
 // ExpandEgressLinks expands a base inbound link across active country egress pools with TOP3 grouping
 func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.EgressRegion) []string {
 	candidates := s.ExpandEgressCandidates(uri, activeRegions)
-	return GroupAndFilterTop3Links(candidates)
+	return FormatTop3Links(candidates)
 }
 
 func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool) []string {
@@ -287,12 +447,9 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		return nil
 	}
 
-	var activeRegions []service.EgressRegion
-	if types == "all" {
-		activeRegions = service.GetActiveEgressRegions(database.GetDB())
-	}
-
-	var allCandidates []CandidateNode
+	var result []string
+	seen := make(map[string]bool)
+	localCount := 0
 
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
@@ -304,36 +461,59 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		cleanUri = strings.ReplaceAll(cleanUri, "sub.icta.qzz.io", "dash.icta.top")
 
 		switch link.Type {
+		case "external":
+			// Prevent leaking real VPS IP in external links (plain-text check)
+			if strings.Contains(cleanUri, "124.156.207.253") || strings.Contains(cleanUri, "127.0.0.1") {
+				continue
+			}
+			// For vmess, the IP is embedded in base64 JSON — decode and check `add` field
+			if strings.HasPrefix(cleanUri, "vmess://") {
+				rawB64 := strings.TrimPrefix(cleanUri, "vmess://")
+				if decoded, err := util.B64StrToByte(rawB64); err == nil {
+					var vObj map[string]interface{}
+					if json.Unmarshal(decoded, &vObj) == nil {
+						if add, _ := vObj["add"].(string); add == "124.156.207.253" || add == "127.0.0.1" {
+							continue
+						}
+					}
+				}
+			}
+			if !seen[cleanUri] {
+				seen[cleanUri] = true
+				result = append(result, cleanUri)
+			}
+		case "sub":
+			// Original sub nodes must be directly returned
+			for _, subLink := range s.getExternalSub(link.Uri) {
+				subLink = strings.ReplaceAll(subLink, "dash.icta.qzz.io", "dash.icta.top")
+				subLink = strings.ReplaceAll(subLink, "sub.icta.qzz.io", "dash.icta.top")
+				if strings.Contains(subLink, "124.156.207.253") {
+					continue
+				}
+				if !seen[subLink] {
+					seen[subLink] = true
+					result = append(result, subLink)
+				}
+			}
 		case "local":
 			if types == "all" {
 				if len(allowedTags) > 0 && !allowedTags[link.Remark] {
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				candidates := s.ExpandEgressCandidates(finalLink, activeRegions)
-				allCandidates = append(allCandidates, candidates...)
-			}
-		case "external", "sub":
-			// Under strict security isolation: only virtual nodes pointing to dash.icta.top are emitted.
-			// Raw external IPs and upstream domains are never exposed in subscriptions.
-			if strings.Contains(cleanUri, "dash.icta.top") {
-				proto := strings.Split(cleanUri, "://")[0]
-				p, c, r, ct := service.ParseStandardRemarkComponents(cleanUri)
-				allCandidates = append(allCandidates, CandidateNode{
-					Uri:      cleanUri,
-					Protocol: proto,
-					Provider: p,
-					Country:  c,
-					Region:   r,
-					City:     ct,
-					Priority: getProtocolPriority(proto),
-				})
+				proto := strings.Split(finalLink, "://")[0]
+				localCount++
+				stdRemark := service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", localCount)
+				finalLink = setRemarkOnUri(finalLink, proto, stdRemark)
+				if !seen[finalLink] {
+					seen[finalLink] = true
+					result = append(result, finalLink)
+				}
 			}
 		}
 	}
 
-	// Apply smart grouping and TOP3 selection across all inbounds
-	return GroupAndFilterTop3Links(allCandidates)
+	return result
 }
 
 // ValidateSubscriptionSecurity audits a list of subscription links for security isolation:

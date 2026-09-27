@@ -20,7 +20,11 @@ type NodeHealthStatus struct {
 	Speed         float64 `json:"speed"`                  // Measured speed in Mbps or score
 	Status        string  `json:"status"`                 // "available" or "unavailable"
 	LastCheckTime string  `json:"last_check_time"`        // Timestamp of last check
+	LastError     string  `json:"last_error"`             // Reason for failure e.g. WIREGUARD_HANDSHAKE_TIMEOUT
 }
+
+// DefaultHealthTTL defines maximum allowed age for a health check before it is considered STALE
+const DefaultHealthTTL = 15 * time.Minute
 
 // GroupKey returns provider + country + region + city for TOP3 aggregation
 func (n *NodeHealthStatus) GroupKey() string {
@@ -48,10 +52,38 @@ func (n *NodeHealthStatus) StandardRemark(index int) string {
 	return fmt.Sprintf("%s-%02d", n.GroupKey(), index)
 }
 
-// IsHealthy enforces the strict state rule:
-// 只有：tcp_check=true AND tls_check=true AND proxy_check=true 才允许进入订阅
+// IsHealthyWithTTL enforces strict FAIL-CLOSED verification:
+// 1. n != nil
+// 2. Status == "available"
+// 3. TCPCheck == true
+// 4. TLSCheck == true
+// 5. ProxyCheck == true
+// 6. Latency > 0
+// 7. Speed > 0
+// 8. LastCheckTime is within TTL
+func (n *NodeHealthStatus) IsHealthyWithTTL(ttl time.Duration) bool {
+	if n == nil {
+		return false
+	}
+	if !n.TCPCheck || !n.TLSCheck || !n.ProxyCheck || n.Status != "available" || n.Latency <= 0 || n.Speed <= 0 {
+		return false
+	}
+	if ttl <= 0 {
+		ttl = DefaultHealthTTL
+	}
+	if strings.TrimSpace(n.LastCheckTime) == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, n.LastCheckTime)
+	if err != nil {
+		return false
+	}
+	return time.Since(t) <= ttl
+}
+
+// IsHealthy checks if the node health status satisfies all requirements within DefaultHealthTTL
 func (n *NodeHealthStatus) IsHealthy() bool {
-	return n.TCPCheck && n.TLSCheck && n.ProxyCheck && n.Status == "available" && n.Latency > 0
+	return n.IsHealthyWithTTL(DefaultHealthTTL)
 }
 
 // SetCheckedAtNow updates LastCheckTime to current UTC timestamp
