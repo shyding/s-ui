@@ -935,6 +935,16 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 	}
 	singboxConfig.Outbounds = cleanOutbounds
 
+	existingObTags := make(map[string]bool)
+	for _, obRaw := range cleanOutbounds {
+		var obMap map[string]interface{}
+		if err := json.Unmarshal(obRaw, &obMap); err == nil {
+			if tag, ok := obMap["tag"].(string); ok && tag != "" {
+				existingObTags[tag] = true
+			}
+		}
+	}
+
 	// Check if base genuine WARP endpoint exists (strictly segregated from ProtonVPN)
 	var baseWarpMap map[string]interface{}
 	var warpTag string = "warp-master"
@@ -1079,17 +1089,21 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			continue
 		}
 
-		poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, memberTags, "3m", 800)
-		if err == nil {
-			singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+		if !existingObTags[poolTag] {
+			poolOb, err := BuildUrlTestPoolJsonWithTolerance(poolTag, memberTags, "3m", 800)
+			if err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, poolOb)
+				existingObTags[poolTag] = true
+			}
 		}
 
 		// Also provide legacy country-level pool tag (e.g. cf-be-pool) aliased to the same memberTags
 		legacyCountryPoolTag := fmt.Sprintf("cf-%s-pool", strings.ToLower(locUpper))
-		if legacyCountryPoolTag != poolTag {
+		if legacyCountryPoolTag != poolTag && !existingObTags[legacyCountryPoolTag] {
 			legacyOb, err := BuildUrlTestPoolJsonWithTolerance(legacyCountryPoolTag, memberTags, "3m", 800)
 			if err == nil {
 				singboxConfig.Outbounds = append(singboxConfig.Outbounds, legacyOb)
+				existingObTags[legacyCountryPoolTag] = true
 			}
 		}
 	}

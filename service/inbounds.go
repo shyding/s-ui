@@ -318,6 +318,9 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 				userMap["flow"] = ""
 			}
 		}
+		if inboundType == "tuic" {
+			delete(userMap, "congestion_control")
+		}
 		if raw, err := json.Marshal(userMap); err == nil {
 			usersJson = append(usersJson, json.RawMessage(raw))
 		}
