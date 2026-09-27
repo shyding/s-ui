@@ -43,10 +43,10 @@ var defaultConfig = `{
 var defaultValueMap = map[string]string{
 	"webListen":     "",
 	"webDomain":     "",
-	"webPort":       "2095",
+	"webPort":       "2053",
 	"secret":        common.Random(32),
-	"webCertFile":   "",
-	"webKeyFile":    "",
+	"webCertFile":   "/usr/local/s-ui/certs/fullchain.pem",
+	"webKeyFile":    "/usr/local/s-ui/certs/privkey.pem",
 	"webPath":       "/app/",
 	"webURI":        "",
 	"sessionMaxAge": "0",
@@ -56,8 +56,8 @@ var defaultValueMap = map[string]string{
 	"subPort":       "2096",
 	"subPath":       "/sub/",
 	"subDomain":     "",
-	"subCertFile":   "",
-	"subKeyFile":    "",
+	"subCertFile":   "/usr/local/s-ui/certs/fullchain.pem",
+	"subKeyFile":    "/usr/local/s-ui/certs/privkey.pem",
 	"subUpdates":    "12",
 	"subEncode":     "true",
 	"subShowInfo":   "false",
@@ -92,6 +92,30 @@ func (s *SettingService) GetAllSetting() (*map[string]string, error) {
 			}
 			allSetting[key] = defaultValue
 		}
+	}
+
+	// Auto-upgrade legacy default port 2095 or blank to 2053 (Cloudflare HTTPS compliant)
+	if allSetting["webPort"] == "2095" || allSetting["webPort"] == "" {
+		_ = s.saveSetting("webPort", "2053")
+		allSetting["webPort"] = "2053"
+	}
+
+	// Auto-populate cert paths if empty and cert files exist
+	if allSetting["webCertFile"] == "" && s.fileExists("/usr/local/s-ui/certs/fullchain.pem") == nil {
+		_ = s.saveSetting("webCertFile", "/usr/local/s-ui/certs/fullchain.pem")
+		allSetting["webCertFile"] = "/usr/local/s-ui/certs/fullchain.pem"
+	}
+	if allSetting["webKeyFile"] == "" && s.fileExists("/usr/local/s-ui/certs/privkey.pem") == nil {
+		_ = s.saveSetting("webKeyFile", "/usr/local/s-ui/certs/privkey.pem")
+		allSetting["webKeyFile"] = "/usr/local/s-ui/certs/privkey.pem"
+	}
+	if allSetting["subCertFile"] == "" && s.fileExists("/usr/local/s-ui/certs/fullchain.pem") == nil {
+		_ = s.saveSetting("subCertFile", "/usr/local/s-ui/certs/fullchain.pem")
+		allSetting["subCertFile"] = "/usr/local/s-ui/certs/fullchain.pem"
+	}
+	if allSetting["subKeyFile"] == "" && s.fileExists("/usr/local/s-ui/certs/privkey.pem") == nil {
+		_ = s.saveSetting("subKeyFile", "/usr/local/s-ui/certs/privkey.pem")
+		allSetting["subKeyFile"] = "/usr/local/s-ui/certs/privkey.pem"
 	}
 
 	// Due to security principles

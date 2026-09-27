@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/alireza0/s-ui/config"
@@ -107,6 +108,11 @@ func (s *Server) Start() (err error) {
 		if webCert != "" && webKey != "" {
 			certFile = webCert
 			keyFile = webKey
+		} else if _, err1 := os.Stat("/usr/local/s-ui/certs/fullchain.pem"); err1 == nil {
+			if _, err2 := os.Stat("/usr/local/s-ui/certs/privkey.pem"); err2 == nil {
+				certFile = "/usr/local/s-ui/certs/fullchain.pem"
+				keyFile = "/usr/local/s-ui/certs/privkey.pem"
+			}
 		}
 	}
 

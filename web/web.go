@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -168,23 +169,29 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
-	if certFile != "" || keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			listener.Close()
-			return err
+	if certFile == "" || keyFile == "" {
+		if _, err1 := os.Stat("/usr/local/s-ui/certs/fullchain.pem"); err1 == nil {
+			if _, err2 := os.Stat("/usr/local/s-ui/certs/privkey.pem"); err2 == nil {
+				certFile = "/usr/local/s-ui/certs/fullchain.pem"
+				keyFile = "/usr/local/s-ui/certs/privkey.pem"
+			}
 		}
-		c := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		}
-		listener = network.NewAutoHttpsListener(listener)
-		listener = tls.NewListener(listener, c)
 	}
 
-	if certFile != "" || keyFile != "" {
-		logger.Info("web server run https on", listener.Addr())
+	if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err == nil {
+			c := &tls.Config{
+				Certificates: []tls.Certificate{cert},
+			}
+			listener = network.NewDualHttpHttpsListener(listener, c)
+			logger.Info("Web server run http/https dual mode on", listener.Addr())
+		} else {
+			logger.Warningf("Failed to load TLS cert for web server (%v), falling back to plain HTTP", err)
+			logger.Info("Web server run http on", listener.Addr())
+		}
 	} else {
-		logger.Info("web server run http on", listener.Addr())
+		logger.Info("Web server run http on", listener.Addr())
 	}
 	s.listener = listener
 

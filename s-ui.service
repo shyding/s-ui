@@ -9,6 +9,7 @@ WorkingDirectory=/usr/local/s-ui/
 ExecStart=/usr/local/s-ui/sui
 Restart=on-failure
 RestartSec=10s
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
