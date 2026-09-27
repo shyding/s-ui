@@ -9,6 +9,7 @@ import (
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util"
 )
@@ -47,14 +48,15 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 	}
 
 	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
+
+	// Enforce strict subscription security isolation
+	if pass, violations := ValidateSubscriptionSecurity(linksArray, "dash.icta.top"); !pass {
+		logger.Warning("Subscription security check detected non-standard links for client", client.Name, violations)
+	}
+
 	result := strings.Join(linksArray, "\n")
 	result = strings.ReplaceAll(result, "dash.icta.qzz.io", "dash.icta.top")
 	result = strings.ReplaceAll(result, "sub.icta.qzz.io", "dash.icta.top")
-	// Revive dead external Cloudflare Clean IP domains with active live backends
-	result = strings.ReplaceAll(result, "pq-us5.globals-download.com", "icta.us.ci")
-	result = strings.ReplaceAll(result, "path=%2Fpq%2Fus5", "path=%2F%3Fed%3D2048")
-	result = strings.ReplaceAll(result, "path=/pq/us5", "path=/?ed=2048")
-	result = strings.ReplaceAll(result, "blue-wood-9d78.dshymail.workers.dev", "sim.icta.top")
 
 	headers := s.getClientHeaders(client)
 

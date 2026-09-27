@@ -110,6 +110,7 @@ func InitDB(dbPath string) error {
 		&model.Changes{},
 		&model.Subscription{},
 		&model.CloudflareEndpoint{},
+		&model.NodeHealthStatus{},
 	)
 	if err != nil {
 		return err
