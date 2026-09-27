@@ -478,18 +478,45 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					}
 				}
 			}
+			// ── 健康门禁：仅下发 TCP+TLS 通过 & 真实地理备注核实的节点 ──
+			nodeKey := extractNodeKey(cleanUri)
+			if nodeKey == "" {
+				continue
+			}
+			status, healthErr := service.GetNodeHealthStatus(nodeKey)
+			if healthErr != nil {
+				logger.Debugf("external node %s: no health record, skip", nodeKey)
+				continue
+			}
+			if !status.IsHealthyWithTTL(30 * time.Minute) {
+				continue
+			}
+			proto := strings.SplitN(cleanUri, "://", 2)[0]
+			cleanUri = setRemarkOnUri(cleanUri, proto, buildVerifiedRemark(status))
 			if !seen[cleanUri] {
 				seen[cleanUri] = true
 				result = append(result, cleanUri)
 			}
 		case "sub":
-			// Original sub nodes must be directly returned
 			for _, subLink := range s.getExternalSub(link.Uri) {
 				subLink = strings.ReplaceAll(subLink, "dash.icta.qzz.io", "dash.icta.top")
 				subLink = strings.ReplaceAll(subLink, "sub.icta.qzz.io", "dash.icta.top")
 				if strings.Contains(subLink, "124.156.207.253") {
 					continue
 				}
+				subKey := extractNodeKey(subLink)
+				if subKey == "" {
+					continue
+				}
+				status, healthErr := service.GetNodeHealthStatus(subKey)
+				if healthErr != nil {
+					continue
+				}
+				if !status.IsHealthyWithTTL(30 * time.Minute) {
+					continue
+				}
+				proto := strings.SplitN(subLink, "://", 2)[0]
+				subLink = setRemarkOnUri(subLink, proto, buildVerifiedRemark(status))
 				if !seen[subLink] {
 					seen[subLink] = true
 					result = append(result, subLink)
@@ -514,6 +541,64 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 	}
 
 	return result
+}
+
+// extractNodeKey 从节点 URI 提取 "host:port" 用于查询 node_health_statuses
+func extractNodeKey(uri string) string {
+	if strings.HasPrefix(uri, "vmess://") {
+		rawB64 := strings.TrimPrefix(uri, "vmess://")
+		decoded, err := util.B64StrToByte(rawB64)
+		if err != nil {
+			return ""
+		}
+		var obj map[string]interface{}
+		if json.Unmarshal(decoded, &obj) != nil {
+			return ""
+		}
+		host, _ := obj["add"].(string)
+		port := fmt.Sprintf("%v", obj["port"])
+		if host == "" || port == "" || port == "<nil>" {
+			return ""
+		}
+		return host + ":" + port
+	}
+	parts := strings.SplitN(uri, "://", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	rest := parts[1]
+	if idx := strings.Index(rest, "#"); idx != -1 {
+		rest = rest[:idx]
+	}
+	if idx := strings.Index(rest, "?"); idx != -1 {
+		rest = rest[:idx]
+	}
+	if idx := strings.Index(rest, "@"); idx != -1 {
+		rest = rest[idx+1:]
+	}
+	return rest
+}
+
+// buildVerifiedRemark 使用 ip-api.com 核实的真实地理位置构建规范备注
+// 格式: {Provider}-{国家}-{区域}-{城市}
+func buildVerifiedRemark(s *model.NodeHealthStatus) string {
+	provider := s.Provider
+	if provider == "" {
+		provider = "EXT"
+	}
+	country := s.Country
+	if country == "" {
+		country = "未知"
+	}
+	region := s.Region
+	if region == "" {
+		region = "未知"
+	}
+	city := s.City
+	if city == "" {
+		city = "未知"
+	}
+	return fmt.Sprintf("%s-%s-%s-%s", provider, country, region, city)
 }
 
 // ValidateSubscriptionSecurity audits a list of subscription links for security isolation:

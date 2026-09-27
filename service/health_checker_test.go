@@ -51,16 +51,17 @@ func TestHealthChecker_Stage1_CheckNode(t *testing.T) {
 }
 
 func TestHealthChecker_FilterAndGroupTop3(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
 	nodes := []*model.NodeHealthStatus{
 		// Group 1: 4 healthy nodes (should retain top 3)
-		{Node: "n1", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 50, Speed: 200},
-		{Node: "n2", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 80, Speed: 125},
-		{Node: "n3", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 100, Speed: 100},
-		{Node: "n4", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 150, Speed: 66},
+		{Node: "n1", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 50, Speed: 200, LastCheckTime: now},
+		{Node: "n2", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 80, Speed: 125, LastCheckTime: now},
+		{Node: "n3", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 100, Speed: 100, LastCheckTime: now},
+		{Node: "n4", Provider: "Cloudflare", Country: "美国", Region: "加州", City: "洛杉矶", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 150, Speed: 66, LastCheckTime: now},
 
 		// Group 2: 1 healthy, 1 unhealthy
-		{Node: "n5", Provider: "Proton", Country: "日本", Region: "关东", City: "东京", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 30, Speed: 333},
-		{Node: "n6", Provider: "Proton", Country: "日本", Region: "关东", City: "东京", TCPCheck: false, TLSCheck: false, ProxyCheck: false, Status: "unavailable", Latency: -1, Speed: 0},
+		{Node: "n5", Provider: "Proton", Country: "日本", Region: "关东", City: "东京", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Status: "available", Latency: 30, Speed: 333, LastCheckTime: now},
+		{Node: "n6", Provider: "Proton", Country: "日本", Region: "关东", City: "东京", TCPCheck: false, TLSCheck: false, ProxyCheck: false, Status: "unavailable", Latency: -1, Speed: 0, LastCheckTime: now},
 	}
 
 	filtered := FilterAndGroupTop3(nodes)
