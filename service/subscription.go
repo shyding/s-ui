@@ -23,8 +23,9 @@ type SubscriptionService struct {
 
 const hproxyLiveURL = "https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json"
 const proxyScrapeLiveURL = "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/all/data.json"
-const userProvidedLiveURL = "https://qwfgfewgefw.xn--fiqs8s9rjgsr.com/search?token=b6989c253cf13423904c371dd9717933"
-const seededClientNodesURL = "file:///usr/local/s-ui/scripts/seed_client_nodes.txt"
+
+const userProvidedSubscriptionName = "User Provided Live Candidates"
+const seededClientNodesSubscriptionName = "Local v2rayN Seed Nodes"
 
 func EnsureHProxySubscription() error {
 	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 30)
@@ -35,22 +36,41 @@ func EnsureProxyScrapeSubscription() error {
 }
 
 func EnsureUserProvidedSubscription() error {
-	return ensureCandidateSubscription("User Provided Live Candidates", userProvidedLiveURL, 30)
+	return ensureRuntimeCandidateSubscription(userProvidedSubscriptionName, strings.TrimSpace(os.Getenv("SUI_USER_CANDIDATE_URL")), 30)
 }
 
 func EnsureSeededClientNodesSubscription() error {
+	path := strings.TrimSpace(os.Getenv("SUI_SEED_NODES_FILE"))
+	if path != "" {
+		path = "file://" + path
+	}
+	return ensureRuntimeCandidateSubscription(seededClientNodesSubscriptionName, path, 1440)
+}
+
+func ensureRuntimeCandidateSubscription(name, sourceURL string, interval int) error {
 	db := database.GetDB()
 	var existing model.Subscription
-	if err := db.Where("url = ?", seededClientNodesURL).First(&existing).Error; err == nil {
-		return nil
+	if strings.TrimSpace(sourceURL) == "" {
+		return db.Model(&model.Subscription{}).Where("name = ?", name).Updates(map[string]interface{}{
+			"enabled": false,
+			"url":     "",
+		}).Error
+	}
+	if err := db.Where("name = ?", name).First(&existing).Error; err == nil {
+		return db.Model(&existing).Updates(map[string]interface{}{
+			"url":             sourceURL,
+			"enabled":         true,
+			"update_interval": interval,
+			"update_mode":     "incremental",
+		}).Error
 	} else if err != gorm.ErrRecordNotFound {
 		return err
 	}
 	return db.Create(&model.Subscription{
-		Name:           "Local v2rayN Seed Nodes",
-		Url:            seededClientNodesURL,
+		Name:           name,
+		Url:            sourceURL,
 		Enabled:        true,
-		UpdateInterval: 1440,
+		UpdateInterval: interval,
 		UpdateMode:     "incremental",
 		CreatedAt:      time.Now().Unix(),
 	}).Error
@@ -181,17 +201,6 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 		Failed:  len(result.Errors),
 		Errors:  result.Errors,
 	}
-	previous := make(map[string]model.Outbound)
-	if subscription.UpdateMode == "replace" {
-		var existing []model.Outbound
-		if err := db.Where("subscription_id = ?", id).Find(&existing).Error; err != nil {
-			return nil, err
-		}
-		for _, outbound := range existing {
-			previous[outbound.Tag] = outbound
-		}
-	}
-
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if subscription.UpdateMode == "replace" {
 			if err := tx.Where("subscription_id = ?", id).Delete(&model.Outbound{}).Error; err != nil {
@@ -208,17 +217,6 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 			outbound.Country, _ = outMap["country"].(string)
 			outbound.Region, _ = outMap["region"].(string)
 			outbound.City, _ = outMap["city"].(string)
-			if old, ok := previous[outbound.Tag]; ok && strings.HasPrefix(outbound.Tag, "hproxy-") && old.Available {
-				outbound.LandingIP = old.LandingIP
-				outbound.Country = old.Country
-				outbound.Region = old.Region
-				outbound.City = old.City
-				outbound.LastTestTime = old.LastTestTime
-				outbound.FraudScore = old.FraudScore
-				outbound.IPType = old.IPType
-				outbound.Available = true
-			}
-
 			delete(outMap, "type")
 			delete(outMap, "tag")
 

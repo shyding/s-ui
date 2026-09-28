@@ -4,9 +4,45 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/alireza0/s-ui/database/model"
 	"github.com/sagernet/sing-box/option"
 )
+
+func TestVerifiedCloudflareUsesMeasuredLandingLocation(t *testing.T) {
+	db := setupCFTestDB(t)
+	if err := SeedInitialCloudflareEndpoints(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Outbound{
+		Tag:          "cf-us-lax-pool",
+		Type:         "urltest",
+		Available:    true,
+		LastTestTime: time.Now().Unix(),
+		LandingIP:    "203.0.113.10",
+		Country:      "JP",
+		Region:       "关东",
+		City:         "东京",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var matched EgressRegion
+	for _, region := range GetVerifiedEgressRegions(db, time.Minute) {
+		if region.Code == "cf-us-lax" {
+			matched = region
+			break
+		}
+	}
+	if matched.Name != "Cloudflare-日本-关东-东京" {
+		t.Fatalf("Cloudflare region must use measured landing location, got %q", matched.Name)
+	}
+	provider, country, region, city := ResolveEgressComponents(matched.Code, matched.Name)
+	if provider != "Cloudflare" || country != "日本" || region != "关东" || city != "东京" {
+		t.Fatalf("unexpected Cloudflare remark components: %s/%s/%s/%s", provider, country, region, city)
+	}
+}
 
 func TestCityLevelEgressAndProtonKeyExtraction(t *testing.T) {
 	db := setupCFTestDB(t)

@@ -386,6 +386,12 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 	// 1. Cloudflare Dynamic Regions (cf-{country}-{city})
 	if strings.HasPrefix(code, "cf-") {
 		provider = "Cloudflare"
+		if strings.HasPrefix(name, "Cloudflare-") {
+			parts := strings.SplitN(strings.TrimPrefix(name, "Cloudflare-"), "-", 3)
+			if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
+				return provider, parts[0], parts[1], parts[2]
+			}
+		}
 		parts := strings.Split(code, "-")
 		if len(parts) >= 3 {
 			colo := parts[2]

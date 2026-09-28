@@ -163,6 +163,14 @@ func TestEnsureCloudflarePoolsInOutbounds(t *testing.T) {
 
 	EnsureCloudflarePoolsInOutbounds(singboxConfig, db)
 
+	var poolHealthRecord model.Outbound
+	if err := db.Where("tag = ?", "cf-us-lax-pool").First(&poolHealthRecord).Error; err != nil {
+		t.Fatalf("expected durable Cloudflare health record: %v", err)
+	}
+	if poolHealthRecord.Type != "urltest" || poolHealthRecord.Available {
+		t.Fatalf("unexpected initial Cloudflare health record: type=%q available=%v", poolHealthRecord.Type, poolHealthRecord.Available)
+	}
+
 	// Verify outbounds now contain cf-*-pool
 	foundUSPool := false
 	foundJPPool := false

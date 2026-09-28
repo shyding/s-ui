@@ -41,3 +41,35 @@ func TestRefreshRejectsEmptyParsedPayloadWithoutDeletingInventory(t *testing.T) 
 		t.Fatalf("replace refresh deleted known-good inventory: got %d rows", count)
 	}
 }
+
+func TestRuntimeCandidateWithoutEnvironmentIsDisabled(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AutoMigrate(&model.Subscription{}); err != nil {
+		t.Fatal(err)
+	}
+	database.SetDB(db)
+
+	subscription := model.Subscription{
+		Name:    userProvidedSubscriptionName,
+		Url:     "https://example.invalid/secret-token",
+		Enabled: true,
+	}
+	if err = db.Create(&subscription).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SUI_USER_CANDIDATE_URL", "")
+	if err = EnsureUserProvidedSubscription(); err != nil {
+		t.Fatal(err)
+	}
+
+	var updated model.Subscription
+	if err = db.First(&updated, subscription.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updated.Enabled || updated.Url != "" {
+		t.Fatalf("unconfigured runtime source must be disabled and cleared, got enabled=%v url=%q", updated.Enabled, updated.Url)
+	}
+}

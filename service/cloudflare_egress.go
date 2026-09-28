@@ -862,6 +862,36 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 	return regions
 }
 
+// syncCloudflarePoolRecords creates a durable health record for every dynamic
+// Cloudflare pool. The pool configuration itself is assembled in memory from
+// current endpoints, while this row stores only VPS-side test results. Keeping
+// the two concerns separate prevents an untested Anycast edge from publication.
+func syncCloudflarePoolRecords(db *gorm.DB, regions []EgressRegion) {
+	if db == nil {
+		return
+	}
+	activeTags := make([]string, 0, len(regions))
+	for _, region := range regions {
+		if region.OutboundTag == "" {
+			continue
+		}
+		activeTags = append(activeTags, region.OutboundTag)
+		var existing model.Outbound
+		if err := db.Where("tag = ?", region.OutboundTag).First(&existing).Error; err == gorm.ErrRecordNotFound {
+			_ = db.Create(&model.Outbound{
+				Tag:     region.OutboundTag,
+				Type:    "urltest",
+				Options: json.RawMessage(`{}`),
+			}).Error
+		}
+	}
+	query := db.Where("tag LIKE ?", "cf-%-pool")
+	if len(activeTags) > 0 {
+		query = query.Where("tag NOT IN ?", activeTags)
+	}
+	_ = query.Delete(&model.Outbound{}).Error
+}
+
 // StartCloudflareDynamicUpdater starts periodic background updater to maintain freshness
 func StartCloudflareDynamicUpdater(db *gorm.DB, interval time.Duration) {
 	if interval <= 0 {
@@ -953,8 +983,10 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 	}
 	cfRegions := GetActiveCloudflareRegions(db)
 	if len(cfRegions) == 0 {
+		_ = db.Where("tag LIKE ?", "cf-%-pool").Delete(&model.Outbound{}).Error
 		return
 	}
+	syncCloudflarePoolRecords(db, cfRegions)
 
 	// Filter out stale Cloudflare pool definitions so clean ones with active endpoints are rebuilt
 	cleanOutbounds := make([]json.RawMessage, 0, len(singboxConfig.Outbounds))

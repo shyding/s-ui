@@ -11,6 +11,20 @@ import (
 )
 
 var egressHealthWorkerOnce sync.Once
+var egressReloadMu sync.Mutex
+var lastEgressReload time.Time
+
+const minimumEgressReloadInterval = 15 * time.Minute
+
+func canReloadEgress(now time.Time) bool {
+	egressReloadMu.Lock()
+	defer egressReloadMu.Unlock()
+	if !lastEgressReload.IsZero() && now.Sub(lastEgressReload) < minimumEgressReloadInterval {
+		return false
+	}
+	lastEgressReload = now
+	return true
+}
 
 func StartEgressHealthWorker(interval time.Duration, reload ...func() error) {
 	egressHealthWorkerOnce.Do(func() {
@@ -119,7 +133,7 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 	logger.Infof("public-proxy candidate health check finished: tested=%d passed=%d", len(proxyResults), passed)
-	if (passed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil {
+	if (passed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
 		if err := reload[0](); err != nil {
 			logger.Warning("sing-box reload after egress promotion failed:", err)
 		} else {

@@ -254,6 +254,10 @@ To run backend (from root folder of repository):
 | SUI_BIN_FOLDER |                    `string`                    | `"bin"`       |
 | SUI_DB_FOLDER  |                    `string`                    | `"db"`        |
 | SINGBOX_API    |                    `string`                    | -             |
+| SUI_USER_CANDIDATE_URL | `string` | - |
+| SUI_SEED_NODES_FILE | absolute path | - |
+
+`SUI_USER_CANDIDATE_URL` and `SUI_SEED_NODES_FILE` are runtime-only sources for external candidate nodes. Keep tokens and node URIs outside Git (for example in the systemd environment file with restrictive permissions). A candidate is published only after a VPS-side proxy request succeeds and its landing IP, country, region, and city are recorded.
 
 </details>
 

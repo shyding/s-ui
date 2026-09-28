@@ -34,3 +34,8 @@ scripts/monitor_deploy.py
 __pycache__/
 *.pyc
 
+# Runtime-only subscription material. Do not commit node URIs or access tokens.
+scripts/seed_client_nodes.txt
+.env
+scratch/
+

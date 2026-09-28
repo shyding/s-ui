@@ -661,6 +661,19 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 		verifiedHProxyCities[strings.ToUpper(strings.TrimSpace(candidate.Country))+"|"+SanitizeTag(candidate.City)] = true
 	}
 	for _, region := range GetActiveEgressRegions(db) {
+		if strings.HasPrefix(region.Code, "cf-") {
+			var outbound model.Outbound
+			if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err != nil {
+				continue
+			}
+			countryCode := NormalizeCountryCode(outbound.Country)
+			if outbound.LandingIP == "" || len(countryCode) != 2 || strings.TrimSpace(outbound.Region) == "" || strings.TrimSpace(outbound.City) == "" {
+				continue
+			}
+			region.Name = fmt.Sprintf("Cloudflare-%s-%s-%s", GetCountryName(countryCode), outbound.Region, outbound.City)
+			verified = append(verified, region)
+			continue
+		}
 		if region.Code == "seed" {
 			var seedSubscription model.Subscription
 			var count int64
@@ -693,7 +706,7 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 }
 
 func outboundCountryMatchesRegion(outbound model.Outbound, region EgressRegion) bool {
-	if strings.HasPrefix(region.Code, "cf-") || region.Code == "sg" {
+	if region.Code == "sg" {
 		return true
 	}
 	expected := strings.ToUpper(protonCountryCode(region))
