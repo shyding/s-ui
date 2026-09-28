@@ -211,6 +211,63 @@ func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
 	}
 }
 
+func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
+	testDb := t.TempDir() + "/test_client_egress_links.db"
+	_ = database.InitDB(testDb)
+	db := database.GetDB()
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+
+	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
+	linksJSON := json.RawMessage(`[
+		{"type":"local","remark":"vless-in","uri":"vless://403db7be-930b-449e-b5f4-34537cb594c7@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vless-in"},
+		{"type":"external","remark":"external","uri":"vless://external-user@198.51.100.10:443?security=tls&type=ws#external"},
+		{"type":"sub","remark":"sub","uri":"https://example.invalid/sub"}
+	]`)
+
+	links := (&LinkService{}).GetAuthorizedLinks(&linksJSON, "all", "", nil)
+	if len(links) < len(service.StandardEgressRegions) {
+		t.Fatalf("expected local links for every standard egress region, got %d", len(links))
+	}
+
+	for _, link := range links {
+		if strings.Contains(link, "198.51.100.10") || strings.Contains(link, "example.invalid") {
+			t.Fatalf("external link leaked into client subscription: %s", link)
+		}
+		u, err := url.Parse(link)
+		if err != nil || u.Host != "dash.icta.top:2096" {
+			t.Fatalf("client link must point to the VPS entry, got %s", link)
+		}
+		if strings.Contains(u.Fragment, "未知") {
+			t.Fatalf("client link must have a configured egress remark, got %s", u.Fragment)
+		}
+	}
+
+	expectedUSUUID := service.DeriveUUID(baseUUID, "us")
+	if !strings.Contains(strings.Join(links, "\n"), expectedUSUUID) {
+		t.Fatal("expected a US egress link with a derived UUID")
+	}
+}
+
+func TestGetLocalLinks_ExcludesExternalAndSubLinks(t *testing.T) {
+	linksJSON := json.RawMessage(`[
+		{"type":"local","remark":"local","uri":"vless://user@dash.icta.top:2096?security=tls&type=ws#local"},
+		{"type":"external","remark":"external","uri":"vless://user@198.51.100.10:443?security=tls&type=ws#external"},
+		{"type":"sub","remark":"sub","uri":"https://example.invalid/sub"}
+	]`)
+
+	links := (&LinkService{}).GetLocalLinks(&linksJSON, "", nil)
+	if len(links) != 1 {
+		t.Fatalf("expected one local link, got %d", len(links))
+	}
+	if !strings.Contains(links[0], "dash.icta.top:2096") {
+		t.Fatalf("expected the local VPS link, got %s", links[0])
+	}
+}
+
 func TestExpandEgressLinks_TUIC_And_Hysteria2(t *testing.T) {
 	s := &LinkService{}
 	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
@@ -704,4 +761,3 @@ func TestSubscriptionNoUpstreamLeak(t *testing.T) {
 		t.Fatalf("Expected security violation for exposed IP/upstream domain")
 	}
 }
-

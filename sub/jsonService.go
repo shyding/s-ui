@@ -61,7 +61,7 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		return nil, nil, err
 	}
 
-	links := j.LinkService.GetLinks(&client.Links, "external", "")
+	links := j.LinkService.GetLocalLinks(&client.Links, "", nil)
 	tagNumEnable := 0
 	if len(links) > 1 {
 		tagNumEnable = 1

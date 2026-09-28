@@ -361,7 +361,6 @@ func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
 	return FilterHealthyAndGroupTop3Links(candidates, nil, model.DefaultHealthTTL)
 }
 
-
 func setRemarkOnUri(uri, proto, remark string) string {
 	if proto == "vmess" {
 		parts := strings.Split(uri, "://")
@@ -449,7 +448,7 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 
 	var result []string
 	seen := make(map[string]bool)
-	localCount := 0
+	activeRegions := service.GetActiveEgressRegions(database.GetDB())
 
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
@@ -461,82 +460,48 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		cleanUri = strings.ReplaceAll(cleanUri, "sub.icta.qzz.io", "dash.icta.top")
 
 		switch link.Type {
-		case "external":
-			// Prevent leaking real VPS IP in external links (plain-text check)
-			if strings.Contains(cleanUri, "124.156.207.253") || strings.Contains(cleanUri, "127.0.0.1") {
-				continue
-			}
-			// For vmess, the IP is embedded in base64 JSON — decode and check `add` field
-			if strings.HasPrefix(cleanUri, "vmess://") {
-				rawB64 := strings.TrimPrefix(cleanUri, "vmess://")
-				if decoded, err := util.B64StrToByte(rawB64); err == nil {
-					var vObj map[string]interface{}
-					if json.Unmarshal(decoded, &vObj) == nil {
-						if add, _ := vObj["add"].(string); add == "124.156.207.253" || add == "127.0.0.1" {
-							continue
-						}
-					}
-				}
-			}
-			// ── 健康门禁：仅下发 TCP+TLS 通过 & 真实地理备注核实的节点 ──
-			nodeKey := extractNodeKey(cleanUri)
-			if nodeKey == "" {
-				continue
-			}
-			status, healthErr := service.GetNodeHealthStatus(nodeKey)
-			if healthErr != nil {
-				logger.Debugf("external node %s: no health record, skip", nodeKey)
-				continue
-			}
-			if !status.IsHealthyWithTTL(30 * time.Minute) {
-				continue
-			}
-			proto := strings.SplitN(cleanUri, "://", 2)[0]
-			cleanUri = setRemarkOnUri(cleanUri, proto, buildVerifiedRemark(status))
-			if !seen[cleanUri] {
-				seen[cleanUri] = true
-				result = append(result, cleanUri)
-			}
-		case "sub":
-			for _, subLink := range s.getExternalSub(link.Uri) {
-				subLink = strings.ReplaceAll(subLink, "dash.icta.qzz.io", "dash.icta.top")
-				subLink = strings.ReplaceAll(subLink, "sub.icta.qzz.io", "dash.icta.top")
-				if strings.Contains(subLink, "124.156.207.253") {
-					continue
-				}
-				subKey := extractNodeKey(subLink)
-				if subKey == "" {
-					continue
-				}
-				status, healthErr := service.GetNodeHealthStatus(subKey)
-				if healthErr != nil {
-					continue
-				}
-				if !status.IsHealthyWithTTL(30 * time.Minute) {
-					continue
-				}
-				proto := strings.SplitN(subLink, "://", 2)[0]
-				subLink = setRemarkOnUri(subLink, proto, buildVerifiedRemark(status))
-				if !seen[subLink] {
-					seen[subLink] = true
-					result = append(result, subLink)
-				}
-			}
+		case "external", "sub":
+			continue
 		case "local":
 			if types == "all" {
 				if len(allowedTags) > 0 && !allowedTags[link.Remark] {
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				proto := strings.Split(finalLink, "://")[0]
-				localCount++
-				stdRemark := service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", localCount)
-				finalLink = setRemarkOnUri(finalLink, proto, stdRemark)
-				if !seen[finalLink] {
-					seen[finalLink] = true
-					result = append(result, finalLink)
+				for _, egressLink := range s.ExpandEgressLinks(finalLink, activeRegions) {
+					if !seen[egressLink] {
+						seen[egressLink] = true
+						result = append(result, egressLink)
+					}
 				}
 			}
+		}
+	}
+
+	return result
+}
+
+func (s *LinkService) GetLocalLinks(linkJson *json.RawMessage, clientInfo string, allowedTags map[string]bool) []string {
+	links := []Link{}
+	if err := json.Unmarshal(*linkJson, &links); err != nil {
+		return nil
+	}
+
+	result := make([]string, 0, len(links))
+	seen := make(map[string]bool)
+	for _, link := range links {
+		if link.Type != "local" || strings.HasPrefix(link.Uri, "http2://") {
+			continue
+		}
+		if len(allowedTags) > 0 && !allowedTags[link.Remark] {
+			continue
+		}
+		uri := strings.ReplaceAll(link.Uri, "dash.icta.qzz.io", "dash.icta.top")
+		uri = strings.ReplaceAll(uri, "sub.icta.qzz.io", "dash.icta.top")
+		uri = s.addClientInfo(uri, clientInfo)
+		if !seen[uri] {
+			seen[uri] = true
+			result = append(result, uri)
 		}
 	}
 
