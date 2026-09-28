@@ -3,6 +3,7 @@ package sub
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/logger"
@@ -88,7 +89,7 @@ func (s *ClashService) GetClash(subId string) (*string, []string, error) {
 		}
 	}
 
-	activeRegions := service.GetActiveEgressRegions(database.GetDB())
+	activeRegions := service.GetVerifiedEgressRegions(database.GetDB(), 30*time.Minute)
 	var expandedOutbounds []map[string]interface{}
 	var expandedOutTags []string
 	for _, ob := range *outbounds {

@@ -448,7 +448,7 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 
 	var result []string
 	seen := make(map[string]bool)
-	activeRegions := service.GetActiveEgressRegions(database.GetDB())
+	activeRegions := service.GetVerifiedEgressRegions(database.GetDB(), 30*time.Minute)
 
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
@@ -468,7 +468,11 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				for _, egressLink := range s.ExpandEgressLinks(finalLink, activeRegions) {
+				egressLinks := []string{setRemarkOnUri(finalLink, strings.SplitN(finalLink, "://", 2)[0], service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", 1))}
+				if len(activeRegions) > 0 {
+					egressLinks = s.ExpandEgressLinks(finalLink, activeRegions)
+				}
+				for _, egressLink := range egressLinks {
 					if !seen[egressLink] {
 						seen[egressLink] = true
 						result = append(result, egressLink)

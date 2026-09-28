@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
@@ -74,7 +75,7 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		}
 	}
 
-	activeRegions := service.GetActiveEgressRegions(database.GetDB())
+	activeRegions := service.GetVerifiedEgressRegions(database.GetDB(), 30*time.Minute)
 	var expandedOutbounds []map[string]interface{}
 	var expandedOutTags []string
 	for _, ob := range *outbounds {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
@@ -558,6 +559,24 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 	return active
 }
 
+func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
+	if db == nil {
+		db = database.GetDB()
+	}
+	if db == nil {
+		return nil
+	}
+	cutoff := time.Now().Add(-ttl).Unix()
+	var verified []EgressRegion
+	for _, region := range GetActiveEgressRegions(db) {
+		var outbound model.Outbound
+		if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err == nil {
+			verified = append(verified, region)
+		}
+	}
+	return verified
+}
+
 // FindWorkingWireGuardPrivateKey finds an active, valid WireGuard client private key from existing non-WARP endpoints
 func FindWorkingWireGuardPrivateKey(singboxConfig *SingBoxConfig, db *gorm.DB) (string, []string) {
 	dummyKey := "yBVl8qcgy/OTwV7fZ4bQzeQv5OAR3AJ2C583nN5u218="
@@ -626,4 +645,3 @@ func sliceContains(s []string, item string) bool {
 	}
 	return false
 }
-

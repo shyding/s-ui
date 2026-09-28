@@ -94,6 +94,7 @@ func (a *APP) Start() error {
 	// Start background node health checker (TCP+TLS+geo verification for external nodes)
 	// Runs every 20 minutes; writes verified status + real location to node_health_statuses
 	service.StartNodeHealthWorker(20 * time.Minute)
+	service.StartEgressHealthWorker(20 * time.Minute)
 
 	return nil
 }
