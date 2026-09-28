@@ -12,7 +12,7 @@ import (
 
 var egressHealthWorkerOnce sync.Once
 
-func StartEgressHealthWorker(interval time.Duration) {
+func StartEgressHealthWorker(interval time.Duration, reload ...func() error) {
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
 			runEgressHealthCheck()
@@ -60,7 +60,7 @@ func runEgressHealthCheck() {
 	if len(candidateTags) == 0 {
 		return
 	}
-	proxyResults, err := (&NodeTestService{}).TestSelectedOutboundsWithIPInternal(candidateTags, 20)
+	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 20)
 	if err != nil {
 		logger.Warning("HProxy candidate health check failed:", err)
 		return
@@ -72,4 +72,11 @@ func runEgressHealthCheck() {
 		}
 	}
 	logger.Infof("HProxy candidate health check finished: tested=%d passed=%d", len(proxyResults), passed)
+	if passed > 0 && len(reload) > 0 && reload[0] != nil {
+		if err := reload[0](); err != nil {
+			logger.Warning("sing-box reload after HProxy promotion failed:", err)
+		} else {
+			logger.Infof("sing-box reloaded after promoting %d HProxy exits", passed)
+		}
+	}
 }
