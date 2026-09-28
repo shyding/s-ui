@@ -426,13 +426,15 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 		return "HProxy", country, city, city
 	}
 
-	// 2. ProtonVPN Regions
-	if code == "us" {
-		return "Proton", "美国", "加州", "洛杉矶"
-	} else if code == "jp" {
-		return "Proton", "日本", "关东", "东京"
-	} else if code == "nl" {
-		return "Proton", "荷兰", "北荷兰", "阿姆斯特丹"
+	// 2. ProtonVPN regions always use a VPS-measured location when published.
+	if strings.HasPrefix(code, "proton-") || code == "us" || code == "jp" || code == "nl" {
+		if strings.HasPrefix(name, "Proton-") {
+			parts := strings.SplitN(strings.TrimPrefix(name, "Proton-"), "-", 3)
+			if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
+				return "Proton", parts[0], parts[1], parts[2]
+			}
+		}
+		return "Proton", "未知", "未知", "未知"
 	}
 
 	// 3. Fallback to ParseStandardRemarkComponents

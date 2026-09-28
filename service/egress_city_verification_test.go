@@ -44,6 +44,40 @@ func TestVerifiedCloudflareUsesMeasuredLandingLocation(t *testing.T) {
 	}
 }
 
+func TestVerifiedProtonUsesMeasuredLandingLocation(t *testing.T) {
+	db := setupCFTestDB(t)
+	if err := db.Create(&model.Outbound{
+		Tag:          "proton-mx-pool",
+		Type:         "urltest",
+		Available:    true,
+		LastTestTime: time.Now().Unix(),
+		LandingIP:    "203.0.113.11",
+		Country:      "MEXICO",
+		Region:       "Mexico City",
+		City:         "Mexico City",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Outbound{Tag: "out-proton-mx-free-1", Country: "MX"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var matched EgressRegion
+	for _, region := range GetVerifiedEgressRegions(db, time.Minute) {
+		if region.Code == "proton-mx" {
+			matched = region
+			break
+		}
+	}
+	if matched.Name != "Proton-墨西哥-Mexico City-Mexico City" {
+		t.Fatalf("Proton region must use measured landing location, got %q", matched.Name)
+	}
+	provider, country, region, city := ResolveEgressComponents(matched.Code, matched.Name)
+	if provider != "Proton" || country != "墨西哥" || region != "Mexico City" || city != "Mexico City" {
+		t.Fatalf("unexpected Proton remark components: %s/%s/%s/%s", provider, country, region, city)
+	}
+}
+
 func TestCityLevelEgressAndProtonKeyExtraction(t *testing.T) {
 	db := setupCFTestDB(t)
 	_ = SeedInitialCloudflareEndpoints(db)

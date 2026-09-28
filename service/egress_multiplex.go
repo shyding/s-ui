@@ -666,12 +666,11 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 			if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err != nil {
 				continue
 			}
-			countryCode := NormalizeCountryCode(outbound.Country)
-			if outbound.LandingIP == "" || len(countryCode) != 2 || strings.TrimSpace(outbound.Region) == "" || strings.TrimSpace(outbound.City) == "" {
+			measured, ok := measuredEgressRegion("Cloudflare", region, outbound)
+			if !ok {
 				continue
 			}
-			region.Name = fmt.Sprintf("Cloudflare-%s-%s-%s", GetCountryName(countryCode), outbound.Region, outbound.City)
-			verified = append(verified, region)
+			verified = append(verified, measured)
 			continue
 		}
 		if region.Code == "seed" {
@@ -699,10 +698,27 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 		}
 		var outbound model.Outbound
 		if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err == nil && outboundCountryMatchesRegion(outbound, region) {
+			if strings.HasPrefix(region.Code, "proton-") || region.Code == "us" || region.Code == "jp" || region.Code == "nl" {
+				measured, ok := measuredEgressRegion("Proton", region, outbound)
+				if !ok {
+					continue
+				}
+				verified = append(verified, measured)
+				continue
+			}
 			verified = append(verified, region)
 		}
 	}
 	return verified
+}
+
+func measuredEgressRegion(provider string, region EgressRegion, outbound model.Outbound) (EgressRegion, bool) {
+	countryCode := NormalizeCountryCode(outbound.Country)
+	if outbound.LandingIP == "" || len(countryCode) != 2 || strings.TrimSpace(outbound.Region) == "" || strings.TrimSpace(outbound.City) == "" {
+		return EgressRegion{}, false
+	}
+	region.Name = fmt.Sprintf("%s-%s-%s-%s", provider, GetCountryName(countryCode), strings.TrimSpace(outbound.Region), strings.TrimSpace(outbound.City))
+	return region, true
 }
 
 func outboundCountryMatchesRegion(outbound model.Outbound, region EgressRegion) bool {
@@ -710,7 +726,7 @@ func outboundCountryMatchesRegion(outbound model.Outbound, region EgressRegion) 
 		return true
 	}
 	expected := strings.ToUpper(protonCountryCode(region))
-	actual := strings.ToUpper(strings.TrimSpace(outbound.Country))
+	actual := NormalizeCountryCode(outbound.Country)
 	return len(expected) == 2 && expected == actual
 }
 
