@@ -551,6 +551,27 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 				}
 			}
 		}
+
+		var hproxyCandidates []model.Outbound
+		if err := db.Where("tag LIKE ? AND available = ? AND country != '' AND city != ''", "hproxy-%", true).Find(&hproxyCandidates).Error; err == nil {
+			seenPools := make(map[string]bool)
+			for _, candidate := range hproxyCandidates {
+				poolTag := hproxyPoolTag(candidate.Country, candidate.City)
+				if seenPools[poolTag] {
+					continue
+				}
+				seenPools[poolTag] = true
+				code := strings.TrimSuffix(poolTag, "-pool")
+				if seenCodes[code] {
+					continue
+				}
+				active = append(active, EgressRegion{
+					Code: code, Name: fmt.Sprintf("%s-%s-HProxy", GetCountryName(candidate.Country), candidate.City),
+					Flag: GetCountryFlag(candidate.Country), OutboundTag: poolTag,
+				})
+				seenCodes[code] = true
+			}
+		}
 	}
 
 	if len(active) == 0 {
@@ -569,6 +590,13 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 	cutoff := time.Now().Add(-ttl).Unix()
 	var verified []EgressRegion
 	for _, region := range GetActiveEgressRegions(db) {
+		if strings.HasPrefix(region.Code, "hproxy-") {
+			var count int64
+			if db.Model(&model.Outbound{}).Where("tag LIKE ? AND available = ? AND last_test_time >= ?", region.Code+"-%", true, cutoff).Count(&count).Error == nil && count > 0 {
+				verified = append(verified, region)
+			}
+			continue
+		}
 		var outbound model.Outbound
 		if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err == nil {
 			verified = append(verified, region)

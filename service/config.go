@@ -92,6 +92,7 @@ func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
 	}
 	EnsureCloudflarePoolsInOutbounds(&singboxConfig, database.GetDB())
 	EnsureProtonPoolsInOutbounds(&singboxConfig, database.GetDB())
+	EnsureHProxyPoolsInOutbounds(&singboxConfig, database.GetDB())
 	s.SanitizeOutboundDependencies(&singboxConfig)
 	return &singboxConfig, nil
 }

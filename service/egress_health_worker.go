@@ -1,10 +1,12 @@
 package service
 
 import (
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
 )
 
@@ -51,4 +53,25 @@ func runEgressHealthCheck() {
 			logger.Warningf("egress pool %s unavailable: %s", result.Tag, result.Error)
 		}
 	}
+
+	var candidateTags []string
+	cutoff := time.Now().Add(-30 * time.Minute).Unix()
+	db.Model(&model.Outbound{}).
+		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
+		Order("last_test_time ASC").Limit(200).Pluck("tag", &candidateTags)
+	if len(candidateTags) == 0 {
+		return
+	}
+	proxyResults, err := (&NodeTestService{}).TestSelectedOutboundsWithIPInternal(candidateTags, 20)
+	if err != nil {
+		logger.Warning("HProxy candidate health check failed:", err)
+		return
+	}
+	passed := 0
+	for _, result := range proxyResults {
+		if result.Available && strings.HasPrefix(result.Tag, "hproxy-") {
+			passed++
+		}
+	}
+	logger.Infof("HProxy candidate health check finished: tested=%d passed=%d", len(proxyResults), passed)
 }

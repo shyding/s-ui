@@ -14,7 +14,7 @@ import (
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
-	
+
 	"github.com/sagernet/sing-box/adapter"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -25,20 +25,20 @@ import (
 type NodeTestService struct{}
 
 type NodeTestResult struct {
-	Tag       string `json:"tag"`
-	Server    string `json:"server"`
-	Port      int    `json:"port"`
-	Latency   int64  `json:"latency"`     // TCP handshake latency
-	RealLatency int64 `json:"realLatency"` // HTTP connection latency (True Delay)
-	Available bool   `json:"available"`
-	LandingIP string `json:"landingIP"`
-	Country   string `json:"country"`
-	Region    string `json:"region"`
-	City      string `json:"city"`
-	ISP       string `json:"isp"`
-	IPType    string `json:"ipType"`
-	FraudScore int   `json:"fraudScore"`
-	Error     string `json:"error,omitempty"`
+	Tag         string `json:"tag"`
+	Server      string `json:"server"`
+	Port        int    `json:"port"`
+	Latency     int64  `json:"latency"`     // TCP handshake latency
+	RealLatency int64  `json:"realLatency"` // HTTP connection latency (True Delay)
+	Available   bool   `json:"available"`
+	LandingIP   string `json:"landingIP"`
+	Country     string `json:"country"`
+	Region      string `json:"region"`
+	City        string `json:"city"`
+	ISP         string `json:"isp"`
+	IPType      string `json:"ipType"`
+	FraudScore  int    `json:"fraudScore"`
+	Error       string `json:"error,omitempty"`
 }
 
 // TestOutbound tests a single outbound TCP connection
@@ -103,8 +103,14 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		return result, nil
 	}
 
-	// For UDP-based protocols, we must connect through sing-box to test real proxy capability
-	if corePtr != nil && corePtr.IsRunning() {
+	// Every imported proxy must be tested through sing-box. Testing only the
+	// upstream server socket would measure the VPS-to-proxy hop, not the exit.
+	proxyTypes := map[string]bool{
+		"http": true, "socks": true, "mixed": true, "shadowsocks": true,
+		"vmess": true, "vless": true, "trojan": true, "hysteria2": true,
+		"tuic": true, "wireguard": true,
+	}
+	if (proxyTypes[outbound.Type] || hasEndpoint || isPool) && corePtr != nil && corePtr.IsRunning() {
 		ctx := corePtr.GetCtx()
 		if ctx != nil {
 			outboundManager := service.FromContext[adapter.OutboundManager](ctx)
@@ -121,7 +127,7 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 						}
 						return result, nil
 					}
-					
+
 					result.Latency = latency
 					result.Available = true
 					return result, nil
@@ -186,7 +192,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	if proxyErr == nil && latency > 0 {
 		result.RealLatency = latency
 	}
-	
+
 	// If RealLatency test failed using gstatic, try the IP API connection as fallback (server latency)
 	if result.RealLatency == 0 {
 		// We will measure it during IP check
@@ -211,14 +217,14 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 			return s.tryPing0(ctx, outbound_adapter, res)
 		},
 	}
-	
+
 	s.executeIPLookups(dialCtx, result, ipLookupTasks)
-	
+
 	if result.LandingIP == "" {
 		if result.Error == "" {
 			result.Error = "all IP lookup services failed"
 		}
-		
+
 		// If all IP lookups failed, the proxy is practically unusable for internet access,
 		// even if the basic TCP connection or handshake (RealLatency) succeeded.
 		result.Available = false
@@ -292,14 +298,14 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 			return s.tryPing0WithDialer(dialer, res)
 		},
 	}
-	
+
 	s.executeIPLookups(ctx, result, ipLookupTasks)
-	
+
 	if result.LandingIP == "" {
 		if result.Error == "" {
 			result.Error = "all IP lookup services failed"
 		}
-		
+
 		result.Available = false
 	} else {
 		// Try to get fraud score
@@ -310,7 +316,6 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 
 	return result, nil
 }
-
 
 // createOutboundHTTPClient creates an http.Client that routes through a sing-box outbound
 func (s *NodeTestService) createOutboundHTTPClient(ctx context.Context, outbound adapter.Outbound) *http.Client {
@@ -714,7 +719,7 @@ func (s *NodeTestService) TestAllOutbounds(concurrency int) ([]*NodeTestResult, 
 	results := make([]*NodeTestResult, 0, len(outbounds))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	// Semaphore for concurrency control
 	sem := make(chan struct{}, concurrency)
 
@@ -761,7 +766,7 @@ func (s *NodeTestService) TestSelectedOutbounds(tags []string, concurrency int) 
 	results := make([]*NodeTestResult, 0, len(outbounds))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	sem := make(chan struct{}, concurrency)
 
 	for _, outbound := range outbounds {
@@ -806,7 +811,7 @@ func (s *NodeTestService) TestAllOutboundsWithIP(concurrency int, ctx context.Co
 	results := make([]*NodeTestResult, 0, len(outbounds))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	sem := make(chan struct{}, concurrency)
 
 	for _, outbound := range outbounds {
@@ -850,7 +855,7 @@ func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency
 	results := make([]*NodeTestResult, 0, len(outbounds))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	sem := make(chan struct{}, concurrency)
 
 	for _, outbound := range outbounds {
@@ -883,12 +888,12 @@ func (s *NodeTestService) TestAllOutboundsWithIPInternal(concurrency int) ([]*No
 	if !corePtr.IsRunning() {
 		return nil, fmt.Errorf("sing-box is not running")
 	}
-	
+
 	ctx := corePtr.GetCtx()
 	if ctx == nil {
 		return nil, fmt.Errorf("sing-box context not available")
 	}
-	
+
 	return s.TestAllOutboundsWithIP(concurrency, ctx)
 }
 
@@ -897,12 +902,12 @@ func (s *NodeTestService) TestSelectedOutboundsWithIPInternal(tags []string, con
 	if !corePtr.IsRunning() {
 		return nil, fmt.Errorf("sing-box is not running")
 	}
-	
+
 	ctx := corePtr.GetCtx()
 	if ctx == nil {
 		return nil, fmt.Errorf("sing-box context not available")
 	}
-	
+
 	return s.TestSelectedOutboundsWithIP(tags, concurrency, ctx)
 }
 
@@ -912,12 +917,12 @@ func (s *NodeTestService) TestSelectedAndSave(tags []string, concurrency int) ([
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Save results to database
 	for _, result := range results {
 		s.SaveTestResult(result)
 	}
-	
+
 	return results, nil
 }
 
@@ -925,7 +930,7 @@ func (s *NodeTestService) TestSelectedAndSave(tags []string, concurrency int) ([
 func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 	db := database.GetDB()
 	now := time.Now().Unix()
-	
+
 	updates := map[string]interface{}{
 		"last_test_time": now,
 		"available":      result.Available,
@@ -959,7 +964,7 @@ func (s *NodeTestService) getIPTypeAndScore(ctx context.Context, outbound adapte
 	// Actually, we should request scamalytics from the SERVER (direct) to check the LANDING IP.
 	// But the server might be blocked too.
 	// Let's try requesting through the proxy first, if fails, maybe direct?
-	// Usually we want to see how the IP is viewed by the world, so querying from the server (which is not the node) 
+	// Usually we want to see how the IP is viewed by the world, so querying from the server (which is not the node)
 	// about the node's IP is the correct way: server checks "scamalytics.com/ip/<landing_ip>"
 
 	s.getScamalyticsScore(ctx, outbound, result)
@@ -970,14 +975,14 @@ func (s *NodeTestService) getIPTypeAndScoreWithDialer(dialer proxy.Dialer, resul
 }
 
 func (s *NodeTestService) getScamalyticsScore(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) {
-	// We'll try to fetch from scamalytics using the proxy to avoid server IP bans, 
+	// We'll try to fetch from scamalytics using the proxy to avoid server IP bans,
 	// but we represent the LandingIP in the URL.
 	url := fmt.Sprintf("https://scamalytics.com/ip/%s", result.LandingIP)
-	
+
 	// destination := M.ParseSocksaddr("scamalytics.com:443")
 	// For simplicity in this text-based tool, we might need a proper HTTP client over the outbound.
 	// Constructing HTTP client over custom dialer:
-	
+
 	// Create a custom transport
 	tr := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -989,38 +994,38 @@ func (s *NodeTestService) getScamalyticsScore(ctx context.Context, outbound adap
 			return outbound.DialContext(ctx, N.NetworkTCP, dest)
 		},
 		TLSHandshakeTimeout: 10 * time.Second,
-		DisableKeepAlives: true,
+		DisableKeepAlives:   true,
 	}
-	
+
 	client := &http.Client{
 		Transport: tr,
 		Timeout:   15 * time.Second,
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return
 	}
 	// Mimic browser
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		// If proxy fails, try direct? Maybe not.
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	}
-	
+
 	// Parse HTML for score
 	// Look for: "Fraud Score: </div><div ...>X</div>" or similar
 	// Data structure changes often, but usually "Fraud Score" is visible.
 	// Current structure (approx): <div class="score">Fraud Score: X</div>
-	
+
 	html := string(body)
 	// Simple regex or string search
 	// Regex for "Fraud Score: \d+" or similar
@@ -1031,55 +1036,61 @@ func (s *NodeTestService) getScamalyticsScore(ctx context.Context, outbound adap
 	} else {
 		// Try finding JSON in the page if they use it
 		// Or another pattern: <div class="score_box">...100...</div>
-		// This is brittle. 
+		// This is brittle.
 		// Fallback: scamlone.com or similar if scamalytics fails?
 		// For now just try this.
-		
+
 		// Another pattern seen: "score": "0" in JSON-LD or similar?
 		// pattern: <div style="...background-color: ...">0</div> (the score is often large)
-		
+
 		// Use a simpler heuristic check if regex fails
 		if strings.Contains(html, "High Risk") {
-			if result.FraudScore == 0 { result.FraudScore = 75 }
+			if result.FraudScore == 0 {
+				result.FraudScore = 75
+			}
 		} else if strings.Contains(html, "Medium Risk") {
-			if result.FraudScore == 0 { result.FraudScore = 50 }
+			if result.FraudScore == 0 {
+				result.FraudScore = 50
+			}
 		} else if strings.Contains(html, "Low Risk") {
-			if result.FraudScore == 0 { result.FraudScore = 15 } // Arbitrary low
+			if result.FraudScore == 0 {
+				result.FraudScore = 15
+			} // Arbitrary low
 		}
 	}
 }
 
 func (s *NodeTestService) getScamalyticsScoreWithDialer(dialer proxy.Dialer, result *NodeTestResult) {
 	url := fmt.Sprintf("https://scamalytics.com/ip/%s", result.LandingIP)
-	
+
 	tr := &http.Transport{
-		Dial: dialer.Dial,
+		Dial:                dialer.Dial,
 		TLSHandshakeTimeout: 10 * time.Second,
-		DisableKeepAlives: true,
+		DisableKeepAlives:   true,
 	}
-	
+
 	client := &http.Client{
 		Transport: tr,
 		Timeout:   15 * time.Second,
 	}
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	}
-	
+
 	html := string(body)
 	re := regexp.MustCompile(`Fraud Score:\s*(\d+)`)
 	matches := re.FindStringSubmatch(html)
@@ -1094,13 +1105,13 @@ func (s *NodeTestService) TestAllAndSave(concurrency int) ([]*NodeTestResult, er
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Save results to database
 	// Save results to database
 	for _, result := range results {
 		s.SaveTestResult(result)
 	}
-	
+
 	return results, nil
 }
 
@@ -1109,10 +1120,10 @@ func (s *NodeTestService) inferIPType(isp, hostname string) string {
 	if isp == "" && hostname == "" {
 		return ""
 	}
-	
+
 	lowerISP := strings.ToLower(isp)
 	lowerHost := strings.ToLower(hostname)
-	
+
 	// Hosting keywords for Hostname
 	hostKeywords := []string{
 		"ec2", "compute", "cloud", "vps", "server", "hosting", "datacenter", "colocation",
@@ -1120,62 +1131,63 @@ func (s *NodeTestService) inferIPType(isp, hostname string) string {
 		"oracle", "alibaba", "tencent", "kamatera", "hetzner", "ovh", "choopa", "leaseweb",
 		"m247", "fly.io", "cloudflare", "fastly", "akamai", "cdn",
 	}
-	
+
 	for _, keyword := range hostKeywords {
 		if strings.Contains(lowerHost, keyword) {
 			return "Hosting"
 		}
 	}
-	
+
 	// Hosting keywords for ISP
 	hostingKeywords := []string{
-		"cloud", "vps", "data", "hosting", "server", "solution", "tech", "network", 
-		"amazon", "google", "microsoft", "oracle", "aliyun", "tencent", "digitalocean", 
+		"cloud", "vps", "data", "hosting", "server", "solution", "tech", "network",
+		"amazon", "google", "microsoft", "oracle", "aliyun", "tencent", "digitalocean",
 		"vultr", "linode", "hetzner", "ovh", "leaseweb", "choopa", "m247", "fly.io",
 		"cloudflare", "fastly", "akamai", "cdn",
 	}
-	
+
 	for _, keyword := range hostingKeywords {
 		if strings.Contains(lowerISP, keyword) {
 			return "Hosting"
 		}
 	}
-	
+
 	// ISP keywords
 	ispKeywords := []string{
-		"telecom", "mobile", "cable", "broadband", "internet", "comcast", "verizon", 
+		"telecom", "mobile", "cable", "broadband", "internet", "comcast", "verizon",
 		"spectrum", "t-mobile", "vodafone", "att", "orange", "deutsche telekom",
 		"telefonica", "bt", "virgin", "sky", "charter", "cox", "century",
 	}
-	
+
 	for _, keyword := range ispKeywords {
 		if strings.Contains(lowerISP, keyword) {
 			return "ISP"
 		}
 	}
-	
+
 	return "Business"
 }
+
 // IPLookupTask is a function signature for IP lookup tasks
 type IPLookupTask func(ctx context.Context, result *NodeTestResult) error
 
 // executeIPLookups executes multiple IP lookup tasks concurrently and returns the first success
 func (s *NodeTestService) executeIPLookups(ctx context.Context, baseResult *NodeTestResult, tasks []IPLookupTask) {
-	// Create a new context for the group of tasks if needed, 
+	// Create a new context for the group of tasks if needed,
 	// but we can rely on the passed ctx (dialCtx) which likely has a timeout.
 	// However, we want to return as soon as one succeeds.
-	
+
 	type taskResult struct {
 		res *NodeTestResult
 		err error
 	}
 	resultChan := make(chan taskResult, len(tasks))
-	
+
 	// Launch all tasks
 	for _, task := range tasks {
 		go func(t IPLookupTask) {
 			// Create a copy of the result to avoid race conditions when writing to it
-			tempResult := *baseResult 
+			tempResult := *baseResult
 			err := t(ctx, &tempResult)
 			if err == nil {
 				resultChan <- taskResult{res: &tempResult, err: nil}
@@ -1204,7 +1216,7 @@ func (s *NodeTestService) executeIPLookups(ctx context.Context, baseResult *Node
 			failures++
 		}
 	}
-	
+
 	// If we are here, all tasks failed (or returned nil)
 	// baseResult remains unchanged (failed state) except for the error
 	if len(errs) > 0 {
@@ -1212,12 +1224,12 @@ func (s *NodeTestService) executeIPLookups(ctx context.Context, baseResult *Node
 		for _, errStr := range errs {
 			simplifiedMap[s.simplifyError(errStr)] = true
 		}
-		
+
 		var uniqueErrs []string
 		for errStr := range simplifiedMap {
 			uniqueErrs = append(uniqueErrs, errStr)
 		}
-		
+
 		errorMsg := strings.Join(uniqueErrs, ", ")
 		baseResult.Error = fmt.Sprintf("IP lookup failed %s", errorMsg)
 	}
