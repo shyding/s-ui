@@ -10,7 +10,7 @@ import (
 	"github.com/alireza0/s-ui/util"
 )
 
-const hproxyCandidateLimit = 2000
+const hproxyCandidateLimit = 5000
 
 type hproxyRecord struct {
 	Proxy       string   `json:"proxy"`

@@ -647,18 +647,41 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 	var verified []EgressRegion
 	for _, region := range GetActiveEgressRegions(db) {
 		if strings.HasPrefix(region.Code, "hproxy-") {
+			parts := strings.Split(strings.TrimPrefix(region.Code, "hproxy-"), "-")
+			if len(parts) < 2 {
+				continue
+			}
+			countryCode := strings.ToUpper(parts[0])
+			cityCode := strings.TrimPrefix(strings.TrimSuffix(region.Code, "-pool"), "hproxy-"+strings.ToLower(countryCode)+"-")
 			var count int64
-			if db.Model(&model.Outbound{}).Where("tag LIKE ? AND available = ? AND last_test_time >= ?", region.Code+"-%", true, cutoff).Count(&count).Error == nil && count > 0 {
+			var candidates []model.Outbound
+			if err := db.Where("tag LIKE ? AND available = ? AND last_test_time >= ? AND country = ?", "hproxy-%", true, cutoff, countryCode).Find(&candidates).Error; err == nil {
+				for _, candidate := range candidates {
+					if SanitizeTag(candidate.City) == cityCode {
+						count++
+					}
+				}
+			}
+			if count > 0 {
 				verified = append(verified, region)
 			}
 			continue
 		}
 		var outbound model.Outbound
-		if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err == nil {
+		if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err == nil && outboundCountryMatchesRegion(outbound, region) {
 			verified = append(verified, region)
 		}
 	}
 	return verified
+}
+
+func outboundCountryMatchesRegion(outbound model.Outbound, region EgressRegion) bool {
+	if strings.HasPrefix(region.Code, "cf-") || region.Code == "sg" {
+		return true
+	}
+	expected := strings.ToUpper(protonCountryCode(region))
+	actual := strings.ToUpper(strings.TrimSpace(outbound.Country))
+	return len(expected) == 2 && expected == actual
 }
 
 // FindWorkingWireGuardPrivateKey finds an active, valid WireGuard client private key from existing non-WARP endpoints

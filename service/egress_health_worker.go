@@ -57,7 +57,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	cutoff := time.Now().Add(-30 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
-		Order("last_test_time ASC").Limit(300).Pluck("tag", &candidateTags)
+		Order("last_test_time ASC").Limit(400).Pluck("tag", &candidateTags)
 	if len(candidateTags) == 0 {
 		return
 	}
