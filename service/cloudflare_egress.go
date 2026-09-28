@@ -744,11 +744,16 @@ func RefreshCloudflareEndpoints(db *gorm.DB) error {
 
 	if len(validEps) > 0 {
 		_ = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.CloudflareEndpoint{}).Where("status = ?", "online").Update("status", "offline").Error; err != nil {
+				return err
+			}
 			for _, ep := range validEps {
-				_ = tx.Clauses(clause.OnConflict{
+				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "ip"}, {Name: "port"}},
 					DoUpdates: clause.AssignmentColumns([]string{"loc", "colo", "city", "country_name", "flag", "latency_ms", "status", "last_checked"}),
-				}).Create(ep).Error
+				}).Create(ep).Error; err != nil {
+					return err
+				}
 			}
 			return nil
 		})

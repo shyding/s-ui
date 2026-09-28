@@ -31,6 +31,9 @@ func parseSubscriptionContent(content, subscriptionName string) (*util.Subscript
 	if result, ok, err := parseHProxyCandidates(content, subscriptionName); ok || err != nil {
 		return result, err
 	}
+	if result, ok, err := parseProxyScrapeCandidates(content, subscriptionName); ok || err != nil {
+		return result, err
+	}
 	return util.ParseSubscription(content, subscriptionName)
 }
 

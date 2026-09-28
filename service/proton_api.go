@@ -39,20 +39,20 @@ type ProtonLogicalServer struct {
 	EntryCountry string          `json:"EntryCountry"` // e.g. "US"
 	ExitCountry  string          `json:"ExitCountry"`  // e.g. "US"
 	Domain       string          `json:"Domain"`
-	Tier         int             `json:"Tier"`         // 0 = Free, 1 = Basic, 2 = Plus
+	Tier         int             `json:"Tier"` // 0 = Free, 1 = Basic, 2 = Plus
 	Features     int             `json:"Features"`
-	Load         int             `json:"Load"`         // Current load percentage (0-100)
+	Load         int             `json:"Load"` // Current load percentage (0-100)
 	Score        float64         `json:"Score"`
 	City         string          `json:"City,omitempty"`
 	Region       string          `json:"Region,omitempty"`
-	Status       int             `json:"Status"`       // 1 = Online, 0 = Offline
+	Status       int             `json:"Status"` // 1 = Online, 0 = Offline
 	Servers      []*ProtonServer `json:"Servers"`
 }
 
 // ProtonServer represents a physical server instance
 type ProtonServer struct {
 	ID              string `json:"ID"`
-	EntryIP         string `json:"EntryIP"`         // Endpoint IP for WireGuard
+	EntryIP         string `json:"EntryIP"` // Endpoint IP for WireGuard
 	ExitIP          string `json:"ExitIP"`
 	Domain          string `json:"Domain"`
 	Status          int    `json:"Status"`
@@ -220,7 +220,7 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 		return 0, nil
 	}
 	countryCode = strings.ToLower(strings.TrimSpace(countryCode))
-	poolTag := fmt.Sprintf("%s-pool", countryCode)
+	poolTag := protonPoolTag(countryCode)
 
 	var outboundTags []string
 	importedCount := 0
@@ -276,7 +276,7 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 				Tag:       outTag,
 				Country:   conf.Country,
 				LandingIP: conf.ServerIP,
-				Available: true,
+				Available: false,
 			}
 			_ = newOut.UnmarshalJSON(outJson)
 			if err := db.Create(&newOut).Error; err != nil {
@@ -285,7 +285,7 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 		} else {
 			existingOut.Country = conf.Country
 			existingOut.LandingIP = conf.ServerIP
-			existingOut.Available = true
+			existingOut.Available = false
 			_ = existingOut.UnmarshalJSON(outJson)
 			db.Save(&existingOut)
 		}
@@ -304,13 +304,14 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 					Type:      "urltest",
 					Tag:       poolTag,
 					Country:   strings.ToUpper(countryCode),
-					Available: true,
+					Available: false,
 				}
 				_ = newPool.UnmarshalJSON(poolJson)
 				db.Create(&newPool)
 			} else {
 				poolOut.Type = "urltest"
 				poolOut.Country = strings.ToUpper(countryCode)
+				poolOut.Available = false
 				_ = poolOut.UnmarshalJSON(poolJson)
 				db.Save(&poolOut)
 			}
@@ -572,6 +573,36 @@ func loadCachedLogicals() []*ProtonLogicalServer {
 	return nil
 }
 
+func EnsureCachedProtonFreeNodes(db *gorm.DB) (int, error) {
+	if db == nil {
+		return 0, fmt.Errorf("database is not initialized")
+	}
+	privateKey, addresses := FindWorkingWireGuardPrivateKey(nil, db)
+	if privateKey == "" || len(addresses) == 0 {
+		return 0, fmt.Errorf("no registered Proton WireGuard credential is available")
+	}
+
+	freeServers := FilterFreeLogicalServers(loadCachedLogicals())
+	if len(freeServers) == 0 {
+		return 0, fmt.Errorf("no cached Proton free servers are available")
+	}
+
+	byCountry := make(map[string][]*WireGuardConf)
+	for _, conf := range ConvertToWireGuardConfigs(freeServers, privateKey, addresses) {
+		byCountry[conf.Country] = append(byCountry[conf.Country], conf)
+	}
+
+	total := 0
+	for country, configs := range byCountry {
+		count, err := BatchImportWireGuardToSUI(db, configs, country)
+		if err != nil {
+			return total, err
+		}
+		total += count
+	}
+	return total, nil
+}
+
 // HarvestProtonNodesViaBrowser executes the automated browser harvester to fetch servers
 // with ZERO manual token/cookie copy-paste. Supports username/password automated login.
 func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string, headless bool, scriptPath string, countries ...string) (int, string, error) {
@@ -654,10 +685,6 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string,
 		return 0, "", fmt.Errorf("未能获取到 ProtonVPN 节点。建议使用【文件上传】直接选取本地 .conf 文件秒级导入！")
 	}
 
-	if len(countries) == 0 {
-		countries = []string{"US", "JP", "NL"}
-	}
-
 	freeServers := FilterFreeLogicalServers(res.Servers, countries...)
 	if len(freeServers) == 0 {
 		return 0, fmt.Sprintf("Found %d servers but no free servers matched countries %v", len(res.Servers), countries), nil
@@ -684,4 +711,3 @@ func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string,
 
 	return totalImported, fmt.Sprintf("Successfully harvested and imported %d ProtonVPN free nodes into S-UI pools", totalImported), nil
 }
-

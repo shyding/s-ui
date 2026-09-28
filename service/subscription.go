@@ -20,20 +20,29 @@ type SubscriptionService struct {
 }
 
 const hproxyLiveURL = "https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json"
+const proxyScrapeLiveURL = "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/all/data.json"
 
 func EnsureHProxySubscription() error {
+	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 30)
+}
+
+func EnsureProxyScrapeSubscription() error {
+	return ensureCandidateSubscription("ProxyScrape Live Candidates", proxyScrapeLiveURL, 30)
+}
+
+func ensureCandidateSubscription(name, url string, interval int) error {
 	db := database.GetDB()
 	var existing model.Subscription
-	if err := db.Where("url = ?", hproxyLiveURL).First(&existing).Error; err == nil {
+	if err := db.Where("url = ?", url).First(&existing).Error; err == nil {
 		return nil
 	} else if err != gorm.ErrRecordNotFound {
 		return err
 	}
 	return db.Create(&model.Subscription{
-		Name:           "HProxy Live Candidates",
-		Url:            hproxyLiveURL,
+		Name:           name,
+		Url:            url,
 		Enabled:        true,
-		UpdateInterval: 30,
+		UpdateInterval: interval,
 		UpdateMode:     "replace",
 		CreatedAt:      time.Now().Unix(),
 	}).Error

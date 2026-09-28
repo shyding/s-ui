@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,76 @@ var StandardEgressRegions = []EgressRegion{
 	{Code: "us", Name: "美国-ProtonVPN-智能优选", Flag: "🇺🇸", OutboundTag: "us-pool"},
 	{Code: "jp", Name: "日本-ProtonVPN-智能优选", Flag: "🇯🇵", OutboundTag: "jp-pool"},
 	{Code: "nl", Name: "荷兰-ProtonVPN-智能优选", Flag: "🇳🇱", OutboundTag: "nl-pool"},
+}
+
+func protonPoolTag(countryCode string) string {
+	code := strings.ToLower(strings.TrimSpace(countryCode))
+	if code == "us" || code == "jp" || code == "nl" {
+		return code + "-pool"
+	}
+	return "proton-" + code + "-pool"
+}
+
+func protonRegionForCountry(countryCode string) EgressRegion {
+	code := strings.ToLower(strings.TrimSpace(countryCode))
+	for _, region := range StandardEgressRegions {
+		if region.Code == code {
+			return region
+		}
+	}
+	upperCode := strings.ToUpper(code)
+	return EgressRegion{
+		Code:        "proton-" + code,
+		Name:        fmt.Sprintf("%s-ProtonVPN-智能优选", GetCountryName(upperCode)),
+		Flag:        GetCountryFlag(upperCode),
+		OutboundTag: protonPoolTag(code),
+	}
+}
+
+func protonCountryCode(region EgressRegion) string {
+	return strings.TrimPrefix(region.Code, "proton-")
+}
+
+func GetProtonEgressRegions(db *gorm.DB) []EgressRegion {
+	if db == nil {
+		db = database.GetDB()
+	}
+	if db == nil {
+		return nil
+	}
+
+	var countries []string
+	if err := db.Model(&model.Outbound{}).
+		Where("tag LIKE ? AND country != ''", "out-proton-%").
+		Distinct().Pluck("country", &countries).Error; err != nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	regions := make([]EgressRegion, 0, len(countries))
+	for _, country := range countries {
+		code := strings.ToLower(strings.TrimSpace(country))
+		if len(code) != 2 || seen[code] {
+			continue
+		}
+		seen[code] = true
+		regions = append(regions, protonRegionForCountry(code))
+	}
+	sort.Slice(regions, func(left, right int) bool { return regions[left].Code < regions[right].Code })
+	return regions
+}
+
+func protonCountryFromEndpointTag(tag string) (string, bool) {
+	for _, prefix := range []string{"ep-proton-", "ep-dyn-"} {
+		if !strings.HasPrefix(tag, prefix) {
+			continue
+		}
+		countryCode := strings.Split(strings.TrimPrefix(tag, prefix), "-")[0]
+		if len(countryCode) == 2 {
+			return countryCode, true
+		}
+	}
+	return "", false
 }
 
 // DeriveUUID generates a deterministic, standard RFC 4122 UUIDv5 for a given user UUID and region code.
@@ -346,7 +417,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 		var obMap map[string]interface{}
 		if err := json.Unmarshal(obRaw, &obMap); err == nil {
 			tag, _ := obMap["tag"].(string)
-			if tag == "us-pool" || tag == "jp-pool" || tag == "nl-pool" {
+			if tag == "us-pool" || tag == "jp-pool" || tag == "nl-pool" || (strings.HasPrefix(tag, "proton-") && strings.HasSuffix(tag, "-pool")) {
 				continue
 			}
 		}
@@ -354,7 +425,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 	}
 	singboxConfig.Outbounds = cleanOutbounds
 
-	// Map each region code ("us", "jp", "nl") to its matching endpoint tags
+	// Map each country code to its matching Proton endpoint tags.
 	regionEndpoints := make(map[string][]string)
 	for _, epRaw := range singboxConfig.Endpoints {
 		var epMap map[string]interface{}
@@ -368,10 +439,8 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			if strings.HasPrefix(lowerTag, "ep-cf-") || strings.Contains(lowerTag, "-cf-") {
 				continue
 			}
-			for _, code := range []string{"us", "jp", "nl"} {
-				if strings.Contains(lowerTag, "proton-"+code) || strings.HasPrefix(lowerTag, "ep-"+code) || strings.HasPrefix(lowerTag, "ep-dyn-"+code) {
-					regionEndpoints[code] = append(regionEndpoints[code], tag)
-				}
+			if countryCode, ok := protonCountryFromEndpointTag(lowerTag); ok {
+				regionEndpoints[countryCode] = append(regionEndpoints[countryCode], tag)
 			}
 		}
 	}
@@ -380,32 +449,23 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 	protonClientPrivKey, protonClientAddrs := FindWorkingWireGuardPrivateKey(singboxConfig, db)
 
 	existingEpTags := make(map[string]bool)
-	var warpTag string
 	for _, epRaw := range singboxConfig.Endpoints {
 		var epMap map[string]interface{}
 		if err := json.Unmarshal(epRaw, &epMap); err == nil {
 			if tag, ok := epMap["tag"].(string); ok && tag != "" {
 				existingEpTags[tag] = true
 			}
-			if isCloudflareWarpEndpoint(epMap) && warpTag == "" {
-				if tag, ok := epMap["tag"].(string); ok && tag != "" {
-					warpTag = tag
-				}
-			}
 		}
 	}
 
 	countryCache := GetCountryCache()
-	for _, reg := range StandardEgressRegions {
-		if reg.Code == "sg" {
-			continue
-		}
-		poolTag := reg.OutboundTag // e.g. "us-pool", "jp-pool", "nl-pool"
-		eps := regionEndpoints[reg.Code]
+	for _, reg := range GetProtonEgressRegions(db) {
+		countryCode := protonCountryCode(reg)
+		poolTag := reg.OutboundTag
+		eps := regionEndpoints[countryCode]
 
 		// Supplement with dynamic physical servers from country cache for guaranteed connectivity
-		countryCode := strings.ToUpper(reg.Code)
-		cServers := countryCache.GetCountryServers(countryCode)
+		cServers := countryCache.GetCountryServers(strings.ToUpper(countryCode))
 		if len(cServers) > 0 {
 			var dynTags []string
 			seenEntryIPs := make(map[string]bool)
@@ -415,7 +475,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 				}
 				seenEntryIPs[s.EntryIP] = true
 				sIdx := len(dynTags)
-				epTag := fmt.Sprintf("ep-dyn-%s-%d", reg.Code, sIdx)
+				epTag := fmt.Sprintf("ep-dyn-%s-%d", countryCode, sIdx)
 				if !existingEpTags[epTag] {
 					epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, protonClientPrivKey, protonClientAddrs)
 					if err == nil {
@@ -432,7 +492,7 @@ func EnsureProtonPoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB) {
 			}
 			// For US and JP, place dynamic servers first so healthy resolved servers are prioritized
 			// For NL, ep-proton-nl from DB works 100% (185.184.195.85) -> place DB first, then dynTags
-			if reg.Code == "us" || reg.Code == "jp" {
+			if countryCode == "us" || countryCode == "jp" {
 				if len(dynTags) > 0 {
 					eps = append(dynTags, eps...)
 				}
@@ -531,15 +591,11 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 			tagMap[ep] = true
 		}
 
-		// Check StandardEgressRegions (e.g. us, jp, nl)
-		for _, reg := range StandardEgressRegions {
-			if reg.Code == "sg" {
-				continue // Cloudflare cf-sg handles Singapore egress
-			}
+		for _, reg := range GetProtonEgressRegions(db) {
 			if !seenCodes[reg.Code] {
 				hasEp := false
 				for _, epTag := range epTags {
-					if strings.HasPrefix(epTag, "ep-proton-"+reg.Code) || strings.HasPrefix(epTag, "ep-"+reg.Code) {
+					if countryCode, ok := protonCountryFromEndpointTag(strings.ToLower(epTag)); ok && countryCode == protonCountryCode(reg) {
 						hasEp = true
 						break
 					}

@@ -45,6 +45,14 @@ func (a *APP) Init() error {
 	if err := service.EnsureHProxySubscription(); err != nil {
 		logger.Warning("failed to ensure HProxy subscription:", err)
 	}
+	if err := service.EnsureProxyScrapeSubscription(); err != nil {
+		logger.Warning("failed to ensure ProxyScrape subscription:", err)
+	}
+	if count, err := service.EnsureCachedProtonFreeNodes(database.GetDB()); err != nil {
+		logger.Warning("failed to expand cached Proton free nodes:", err)
+	} else if count > 0 {
+		logger.Infof("expanded %d cached Proton free nodes", count)
+	}
 
 	// Init Setting
 	a.SettingService.GetAllSetting()
