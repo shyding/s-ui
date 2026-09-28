@@ -52,6 +52,27 @@ func runEgressHealthCheck(reload ...func() error) {
 			logger.Infof("Proton child health check finished: tested=%d passed=%d", len(protonResults), passed)
 		}
 	}
+	var seedTags []string
+	var seedSubscription model.Subscription
+	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
+		db.Model(&model.Outbound{}).
+			Where("subscription_id = ? AND (last_test_time < ? OR available = ?)", seedSubscription.Id, protonCutoff, false).
+			Order("last_test_time ASC").Limit(400).Pluck("tag", &seedTags)
+	}
+	seedPassed := 0
+	if len(seedTags) > 0 {
+		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 30)
+		if err != nil {
+			logger.Warning("seed client node health check failed:", err)
+		} else {
+			for _, result := range seedResults {
+				if result.Available {
+					seedPassed++
+				}
+			}
+			logger.Infof("seed client node health check finished: tested=%d passed=%d", len(seedResults), seedPassed)
+		}
+	}
 
 	for _, region := range GetProtonEgressRegions(db) {
 		if region.OutboundTag != "" {
@@ -98,11 +119,11 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 	logger.Infof("public-proxy candidate health check finished: tested=%d passed=%d", len(proxyResults), passed)
-	if passed > 0 && len(reload) > 0 && reload[0] != nil {
+	if (passed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil {
 		if err := reload[0](); err != nil {
-			logger.Warning("sing-box reload after public-proxy promotion failed:", err)
+			logger.Warning("sing-box reload after egress promotion failed:", err)
 		} else {
-			logger.Infof("sing-box reloaded after promoting %d public-proxy exits", passed)
+			logger.Infof("sing-box reloaded after promoting %d public-proxy and %d seed exits", passed, seedPassed)
 		}
 	}
 }

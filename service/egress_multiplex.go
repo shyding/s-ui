@@ -628,6 +628,13 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 				seenCodes[code] = true
 			}
 		}
+		var seedSubscription model.Subscription
+		if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
+			var seedCount int64
+			if db.Model(&model.Outbound{}).Where("subscription_id = ? AND available = ?", seedSubscription.Id, true).Count(&seedCount).Error == nil && seedCount > 0 {
+				active = append(active, EgressRegion{Code: "seed", Name: "VPS-verified local v2rayN", Flag: "🌐", OutboundTag: "seed-pool"})
+			}
+		}
 	}
 
 	if len(active) == 0 {
@@ -646,6 +653,17 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 	cutoff := time.Now().Add(-ttl).Unix()
 	var verified []EgressRegion
 	for _, region := range GetActiveEgressRegions(db) {
+		if region.Code == "seed" {
+			var seedSubscription model.Subscription
+			var count int64
+			if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
+				_ = db.Model(&model.Outbound{}).Where("subscription_id = ? AND available = ? AND last_test_time >= ?", seedSubscription.Id, true, cutoff).Count(&count).Error
+			}
+			if count > 0 {
+				verified = append(verified, region)
+			}
+			continue
+		}
 		if strings.HasPrefix(region.Code, "hproxy-") {
 			parts := strings.Split(strings.TrimPrefix(region.Code, "hproxy-"), "-")
 			if len(parts) < 2 {
