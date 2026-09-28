@@ -15,17 +15,17 @@ var egressHealthWorkerOnce sync.Once
 func StartEgressHealthWorker(interval time.Duration, reload ...func() error) {
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
-			runEgressHealthCheck()
+			runEgressHealthCheck(reload...)
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for range ticker.C {
-				runEgressHealthCheck()
+				runEgressHealthCheck(reload...)
 			}
 		}()
 	})
 }
 
-func runEgressHealthCheck() {
+func runEgressHealthCheck(reload ...func() error) {
 	db := database.GetDB()
 	if db == nil {
 		return
