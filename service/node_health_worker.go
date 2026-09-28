@@ -384,7 +384,7 @@ func regionToChinese(region string) string {
 		"Ontario":     "安大略", "Quebec": "魁北克", "British Columbia": "不列颠哥伦比亚",
 		"New South Wales": "新南威尔士", "Victoria": "维多利亚",
 		"Virginia": "弗吉尼亚州", "District of Columbia": "哥伦比亚特区", "Telangana": "特伦甘纳邦",
-		"Gangwon-do": "江原道", "Taipei City": "台北市", "Hessen": "黑森",
+		"Gangwon-do": "江原道", "Taipei City": "台北市",
 		"England": "英格兰", "Sai Kung District": "西贡区", "Provincie Noord-Holland": "北荷兰",
 		"Moscow": "莫斯科", "Saint Petersburg": "圣彼得堡",
 		"Seoul": "首尔", "Gyeonggi-do": "京畿道",
@@ -426,12 +426,11 @@ func cityToChinese(city string) string {
 		"Sao Paulo": "圣保罗", "Buenos Aires": "布宜诺斯艾利斯",
 		"Kyiv": "基辅", "Kharkiv": "哈尔科夫",
 		"Manassas": "马纳萨斯", "Hyderabad": "海得拉巴", "Chuncheon": "春川",
-		"Taipei": "台北", "Frankfurt am Main": "法兰克福", "Slough": "斯劳",
+		"Frankfurt am Main": "法兰克福", "Slough": "斯劳",
 		"Tseung Kwan O": "将军澳",
 		"Vilnius":       "维尔纽斯", "Riga": "里加", "Tallinn": "塔林",
 		"Lisbon": "里斯本", "Madrid": "马德里", "Rome": "罗马",
-		"Milan": "米兰", "Barcelona": "巴塞罗那",
-		"Mexico City": "墨西哥城",
+		"Milan": "米兰", "Barcelona": "巴塞罗那", "Mexico City": "墨西哥城",
 	}
 	if cn, ok := m[city]; ok {
 		return cn
