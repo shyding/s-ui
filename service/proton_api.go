@@ -314,12 +314,11 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 				_ = newPool.UnmarshalJSON(poolJson)
 				db.Create(&newPool)
 			} else {
-				previousOptions := string(poolOut.Options)
 				previousCountry := poolOut.Country
 				poolOut.Type = "urltest"
 				poolOut.Country = strings.ToUpper(countryCode)
 				_ = poolOut.UnmarshalJSON(poolJson)
-				if previousCountry != strings.ToUpper(countryCode) || previousOptions != string(poolOut.Options) {
+				if previousCountry != strings.ToUpper(countryCode) {
 					poolOut.Available = false
 				}
 				db.Save(&poolOut)
