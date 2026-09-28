@@ -51,6 +51,9 @@ func (a *APP) Init() error {
 	if err := service.EnsureUserProvidedSubscription(); err != nil {
 		logger.Warning("failed to ensure user-provided subscription:", err)
 	}
+	if err := service.EnsureSeededClientNodesSubscription(); err != nil {
+		logger.Warning("failed to ensure seeded client nodes subscription:", err)
+	}
 	if count, err := service.EnsureCachedProtonFreeNodes(database.GetDB()); err != nil {
 		logger.Warning("failed to expand cached Proton free nodes:", err)
 	} else if count > 0 {

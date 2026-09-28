@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type SubscriptionService struct {
 const hproxyLiveURL = "https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json"
 const proxyScrapeLiveURL = "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/all/data.json"
 const userProvidedLiveURL = "https://qwfgfewgefw.xn--fiqs8s9rjgsr.com/search?token=b6989c253cf13423904c371dd9717933"
+const seededClientNodesURL = "file:///usr/local/s-ui/scripts/seed_client_nodes.txt"
 
 func EnsureHProxySubscription() error {
 	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 30)
@@ -34,6 +36,24 @@ func EnsureProxyScrapeSubscription() error {
 
 func EnsureUserProvidedSubscription() error {
 	return ensureCandidateSubscription("User Provided Live Candidates", userProvidedLiveURL, 30)
+}
+
+func EnsureSeededClientNodesSubscription() error {
+	db := database.GetDB()
+	var existing model.Subscription
+	if err := db.Where("url = ?", seededClientNodesURL).First(&existing).Error; err == nil {
+		return nil
+	} else if err != gorm.ErrRecordNotFound {
+		return err
+	}
+	return db.Create(&model.Subscription{
+		Name:           "Local v2rayN Seed Nodes",
+		Url:            seededClientNodesURL,
+		Enabled:        true,
+		UpdateInterval: 1440,
+		UpdateMode:     "incremental",
+		CreatedAt:      time.Now().Unix(),
+	}).Error
 }
 
 func ensureCandidateSubscription(name, url string, interval int) error {
@@ -259,6 +279,14 @@ func (s *SubscriptionService) RefreshMultiple(ids []uint) (map[uint]*RefreshResu
 
 // fetchUrl fetches content from a URL
 func (s *SubscriptionService) fetchUrl(url string) (string, error) {
+	if strings.HasPrefix(url, "file://") {
+		path := strings.TrimPrefix(url, "file://")
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		return string(body), nil
+	}
 	// Create a custom client directly to skip TLS verification
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
