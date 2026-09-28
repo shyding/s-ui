@@ -652,6 +652,14 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 	}
 	cutoff := time.Now().Add(-ttl).Unix()
 	var verified []EgressRegion
+	var verifiedHProxyCandidates []model.Outbound
+	if err := db.Where("tag LIKE ? AND available = ? AND last_test_time >= ? AND country != '' AND city != ''", "hproxy-%", true, cutoff).Find(&verifiedHProxyCandidates).Error; err != nil {
+		verifiedHProxyCandidates = nil
+	}
+	verifiedHProxyCities := make(map[string]bool, len(verifiedHProxyCandidates))
+	for _, candidate := range verifiedHProxyCandidates {
+		verifiedHProxyCities[strings.ToUpper(strings.TrimSpace(candidate.Country))+"|"+SanitizeTag(candidate.City)] = true
+	}
 	for _, region := range GetActiveEgressRegions(db) {
 		if region.Code == "seed" {
 			var seedSubscription model.Subscription
@@ -671,16 +679,7 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 			}
 			countryCode := strings.ToUpper(parts[0])
 			cityCode := strings.TrimPrefix(strings.TrimSuffix(region.Code, "-pool"), "hproxy-"+strings.ToLower(countryCode)+"-")
-			var count int64
-			var candidates []model.Outbound
-			if err := db.Where("tag LIKE ? AND available = ? AND last_test_time >= ? AND country = ?", "hproxy-%", true, cutoff, countryCode).Find(&candidates).Error; err == nil {
-				for _, candidate := range candidates {
-					if SanitizeTag(candidate.City) == cityCode {
-						count++
-					}
-				}
-			}
-			if count > 0 {
+			if verifiedHProxyCities[countryCode+"|"+cityCode] {
 				verified = append(verified, region)
 			}
 			continue

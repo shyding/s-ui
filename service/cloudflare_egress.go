@@ -1135,7 +1135,28 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// Strictly forbid Singapore fallback for non-Singapore pools to prevent location leakage.
+		// If no physical-server mapping exists, use the Cloudflare endpoint that
+		// produced this region's trace result. This keeps online Cloudflare
+		// endpoints from being silently discarded. The resulting pool still goes
+		// through the normal VPS-side health check before publication.
+		if len(memberTags) == 0 {
+			for _, cfEp := range cfDbEndpoints {
+				cleanIP := strings.ReplaceAll(cfEp.IP, ".", "-")
+				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, cfEp.Port)
+				if !existingEpTags[cfTag] {
+					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
+					if err == nil {
+						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
+						existingEpTags[cfTag] = true
+					}
+				}
+				if existingEpTags[cfTag] {
+					memberTags = append(memberTags, cfTag)
+				}
+			}
+		}
+
+		// Strictly forbid the global WARP fallback for non-Singapore pools.
 		// Only Singapore pools may use warpTag.
 		if locUpper == "SG" {
 			if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
