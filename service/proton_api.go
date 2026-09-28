@@ -603,6 +603,25 @@ func EnsureCachedProtonFreeNodes(db *gorm.DB) (int, error) {
 	return total, nil
 }
 
+func NormalizeStoredOutboundCountries(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	var outbounds []model.Outbound
+	if err := db.Where("country != ''").Find(&outbounds).Error; err != nil {
+		return err
+	}
+	for _, outbound := range outbounds {
+		normalized := NormalizeCountryCode(outbound.Country)
+		if normalized != outbound.Country {
+			if err := db.Model(&model.Outbound{}).Where("id = ?", outbound.Id).Update("country", normalized).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // HarvestProtonNodesViaBrowser executes the automated browser harvester to fetch servers
 // with ZERO manual token/cookie copy-paste. Supports username/password automated login.
 func HarvestProtonNodesViaBrowser(db *gorm.DB, username string, password string, headless bool, scriptPath string, countries ...string) (int, string, error) {

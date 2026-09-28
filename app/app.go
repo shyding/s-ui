@@ -53,6 +53,9 @@ func (a *APP) Init() error {
 	} else if count > 0 {
 		logger.Infof("expanded %d cached Proton free nodes", count)
 	}
+	if err := service.NormalizeStoredOutboundCountries(database.GetDB()); err != nil {
+		logger.Warning("failed to normalize outbound countries:", err)
+	}
 
 	// Init Setting
 	a.SettingService.GetAllSetting()

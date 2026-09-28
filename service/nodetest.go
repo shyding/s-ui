@@ -939,7 +939,7 @@ func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 	// Only update location/IP details if we actually got them
 	if result.LandingIP != "" {
 		updates["landing_ip"] = result.LandingIP
-		updates["country"] = result.Country
+		updates["country"] = NormalizeCountryCode(result.Country)
 		updates["region"] = result.Region
 		updates["city"] = result.City
 		updates["fraud_score"] = result.FraudScore

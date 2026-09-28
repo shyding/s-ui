@@ -145,6 +145,36 @@ func GetCountryName(loc string) string {
 	return loc
 }
 
+func NormalizeCountryCode(value string) string {
+	value = strings.TrimSpace(value)
+	upperValue := strings.ToUpper(value)
+	if len(upperValue) == 2 {
+		return upperValue
+	}
+	for code, name := range CountryNameMap {
+		if value == name {
+			return code
+		}
+	}
+	if code, ok := countryNameAliases[upperValue]; ok {
+		return code
+	}
+	return upperValue
+}
+
+var countryNameAliases = map[string]string{
+	"UNITED STATES": "US", "SINGAPORE": "SG", "JAPAN": "JP", "HONG KONG": "HK", "TAIWAN": "TW",
+	"SOUTH KOREA": "KR", "UNITED KINGDOM": "GB", "GERMANY": "DE", "FRANCE": "FR", "NETHERLANDS": "NL",
+	"CANADA": "CA", "AUSTRALIA": "AU", "INDIA": "IN", "BRAZIL": "BR", "ITALY": "IT", "SPAIN": "ES",
+	"SWITZERLAND": "CH", "SWEDEN": "SE", "NORWAY": "NO", "FINLAND": "FI", "DENMARK": "DK", "POLAND": "PL",
+	"RUSSIA": "RU", "TURKEY": "TR", "UNITED ARAB EMIRATES": "AE", "SOUTH AFRICA": "ZA", "MEXICO": "MX",
+	"ARGENTINA": "AR", "CHILE": "CL", "COLOMBIA": "CO", "NEW ZEALAND": "NZ", "IRELAND": "IE", "BELGIUM": "BE",
+	"AUSTRIA": "AT", "CZECHIA": "CZ", "CZECH REPUBLIC": "CZ", "GREECE": "GR", "ROMANIA": "RO", "THAILAND": "TH",
+	"VIETNAM": "VN", "MALAYSIA": "MY", "PHILIPPINES": "PH", "INDONESIA": "ID", "ISRAEL": "IL", "UKRAINE": "UA",
+	"PORTUGAL": "PT", "PERU": "PE", "ECUADOR": "EC", "EGYPT": "EG", "KENYA": "KE", "GHANA": "GH",
+	"MOROCCO": "MA", "SAUDI ARABIA": "SA", "QATAR": "QA", "HUNGARY": "HU", "BULGARIA": "BG", "NIGERIA": "NG",
+}
+
 // ColoToCityMap maps Cloudflare 3-letter IATA codes to localized city names
 var ColoToCityMap = map[string]string{
 	// Latin America

@@ -30,3 +30,17 @@ func TestProtonDynamicCountryPoolNaming(t *testing.T) {
 		t.Fatal("existing US pool tag must remain stable")
 	}
 }
+
+func TestNormalizeCountryCode(t *testing.T) {
+	for input, want := range map[string]string{
+		"Netherlands": "NL",
+		"Mexico":      "MX",
+		"Romania":     "RO",
+		"荷兰":          "NL",
+		"us":          "US",
+	} {
+		if got := NormalizeCountryCode(input); got != want {
+			t.Fatalf("NormalizeCountryCode(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
