@@ -22,6 +22,7 @@ type SubscriptionService struct {
 
 const hproxyLiveURL = "https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json"
 const proxyScrapeLiveURL = "https://cdn.jsdelivr.net/gh/proxyscrape/free-proxy-list@main/proxies/all/data.json"
+const userProvidedLiveURL = "https://qwfgfewgefw.xn--fiqs8s9rjgsr.com/search?token=b6989c253cf13423904c371dd9717933"
 
 func EnsureHProxySubscription() error {
 	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 30)
@@ -29,6 +30,10 @@ func EnsureHProxySubscription() error {
 
 func EnsureProxyScrapeSubscription() error {
 	return ensureCandidateSubscription("ProxyScrape Live Candidates", proxyScrapeLiveURL, 30)
+}
+
+func EnsureUserProvidedSubscription() error {
+	return ensureCandidateSubscription("User Provided Live Candidates", userProvidedLiveURL, 30)
 }
 
 func ensureCandidateSubscription(name, url string, interval int) error {
