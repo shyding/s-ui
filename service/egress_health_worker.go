@@ -31,19 +31,14 @@ func runEgressHealthCheck() {
 		return
 	}
 
-	seen := make(map[string]bool)
 	var tags []string
-	for _, region := range GetActiveEgressRegions(db) {
-		if region.OutboundTag != "" && !seen[region.OutboundTag] {
-			seen[region.OutboundTag] = true
+	for _, region := range StandardEgressRegions {
+		if region.OutboundTag != "" {
 			tags = append(tags, region.OutboundTag)
 		}
 	}
-	if len(tags) == 0 {
-		return
-	}
 
-	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, 1)
+	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, len(tags))
 	if err != nil {
 		logger.Warning("egress health check failed:", err)
 		return
@@ -54,6 +49,9 @@ func runEgressHealthCheck() {
 		}
 	}
 
+	// HProxy candidates are tested through the running Sing-Box core and are
+	// promoted in small batches. This keeps the VPS responsive while steadily
+	// increasing the verified city inventory.
 	var candidateTags []string
 	cutoff := time.Now().Add(-30 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
