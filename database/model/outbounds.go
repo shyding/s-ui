@@ -15,6 +15,7 @@ type Outbound struct {
 	FraudScore     int             `json:"fraudScore,omitempty" form:"fraudScore"`
 	IPType         string          `json:"ipType,omitempty" form:"ipType"`
 	Available      bool            `json:"available,omitempty" form:"available"`
+	LastError      string          `json:"lastError,omitempty" form:"lastError"`
 	SubscriptionId *uint           `json:"subscriptionId,omitempty" form:"subscriptionId"` // nil = manual, value = from subscription
 }
 
@@ -36,25 +37,45 @@ func (o *Outbound) UnmarshalJSON(data []byte) error {
 	delete(raw, "tag")
 
 	// Extract internal fields if present, and remove from Options
-	if val, ok := raw["landingIP"].(string); ok { o.LandingIP = val }
+	if val, ok := raw["landingIP"].(string); ok {
+		o.LandingIP = val
+	}
 	delete(raw, "landingIP")
-	if val, ok := raw["country"].(string); ok { o.Country = val }
+	if val, ok := raw["country"].(string); ok {
+		o.Country = val
+	}
 	delete(raw, "country")
-	if val, ok := raw["region"].(string); ok { o.Region = val }
+	if val, ok := raw["region"].(string); ok {
+		o.Region = val
+	}
 	delete(raw, "region")
-	if val, ok := raw["city"].(string); ok { o.City = val }
+	if val, ok := raw["city"].(string); ok {
+		o.City = val
+	}
 	delete(raw, "city")
-	if val, ok := raw["lastTestTime"].(float64); ok { o.LastTestTime = int64(val) }
+	if val, ok := raw["lastTestTime"].(float64); ok {
+		o.LastTestTime = int64(val)
+	}
 	delete(raw, "lastTestTime")
-	if val, ok := raw["fraudScore"].(float64); ok { o.FraudScore = int(val) }
+	if val, ok := raw["fraudScore"].(float64); ok {
+		o.FraudScore = int(val)
+	}
 	delete(raw, "fraudScore")
-	if val, ok := raw["ipType"].(string); ok { o.IPType = val }
+	if val, ok := raw["ipType"].(string); ok {
+		o.IPType = val
+	}
 	delete(raw, "ipType")
-	if val, ok := raw["available"].(bool); ok { o.Available = val }
+	if val, ok := raw["available"].(bool); ok {
+		o.Available = val
+	}
 	delete(raw, "available")
-	if val, ok := raw["subscriptionId"].(float64); ok { 
+	if val, ok := raw["lastError"].(string); ok {
+		o.LastError = val
+	}
+	delete(raw, "lastError")
+	if val, ok := raw["subscriptionId"].(float64); ok {
 		id := uint(val)
-		o.SubscriptionId = &id 
+		o.SubscriptionId = &id
 	}
 	delete(raw, "subscriptionId")
 
@@ -69,7 +90,7 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	combined := make(map[string]interface{})
 	combined["type"] = o.Type
 	combined["tag"] = o.Tag
-	
+
 	// Add location fields if they exist
 	if o.LandingIP != "" {
 		combined["landingIP"] = o.LandingIP
@@ -99,6 +120,9 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	if o.IPType != "" {
 		combined["ipType"] = o.IPType
 	}
+	if o.LastError != "" {
+		combined["lastError"] = o.LastError
+	}
 
 	if o.Options != nil {
 		var restFields map[string]json.RawMessage
@@ -108,9 +132,9 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 
 		for k, v := range restFields {
 			// Skip internal fields that might be incorrectly stored in Options
-			if k == "city" || k == "country" || k == "region" || 
-			   k == "landingIP" || k == "lastTestTime" || k == "subscriptionId" ||
-			   k == "fraudScore" || k == "ipType" || k == "available" {
+			if k == "city" || k == "country" || k == "region" ||
+				k == "landingIP" || k == "lastTestTime" || k == "subscriptionId" ||
+				k == "fraudScore" || k == "ipType" || k == "available" || k == "lastError" {
 				continue
 			}
 			combined[k] = v
@@ -135,9 +159,9 @@ func (o Outbound) SingBoxJSON() ([]byte, error) {
 
 		for k, v := range restFields {
 			// Skip internal fields that might be incorrectly stored in Options
-			if k == "city" || k == "country" || k == "region" || 
-			   k == "landingIP" || k == "lastTestTime" || k == "subscriptionId" ||
-			   k == "fraudScore" || k == "ipType" || k == "available" {
+			if k == "city" || k == "country" || k == "region" ||
+				k == "landingIP" || k == "lastTestTime" || k == "subscriptionId" ||
+				k == "fraudScore" || k == "ipType" || k == "available" || k == "lastError" {
 				continue
 			}
 			combined[k] = v

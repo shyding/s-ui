@@ -79,12 +79,15 @@ func runEgressHealthCheck(reload ...func() error) {
 		if err != nil {
 			logger.Warning("seed client node health check failed:", err)
 		} else {
+			failures := make(map[string]int)
 			for _, result := range seedResults {
 				if result.Available {
 					seedPassed++
+				} else {
+					failures[seedFailureClass(result.Error)]++
 				}
 			}
-			logger.Infof("seed client node health check finished: tested=%d passed=%d", len(seedResults), seedPassed)
+			logger.Infof("seed client node health check finished: tested=%d passed=%d failures=%v", len(seedResults), seedPassed, failures)
 		}
 	}
 
@@ -139,5 +142,25 @@ func runEgressHealthCheck(reload ...func() error) {
 		} else {
 			logger.Infof("sing-box reloaded after promoting %d public-proxy and %d seed exits", passed, seedPassed)
 		}
+	}
+}
+
+func seedFailureClass(err string) string {
+	err = strings.ToLower(strings.TrimSpace(err))
+	switch {
+	case err == "":
+		return "unknown"
+	case strings.Contains(err, "not found in sing-box"):
+		return "not_loaded"
+	case strings.Contains(err, "deadline") || strings.Contains(err, "timeout"):
+		return "timeout"
+	case strings.Contains(err, "network is unreachable"):
+		return "unreachable"
+	case strings.Contains(err, "tls"):
+		return "tls"
+	case strings.Contains(err, "dns") || strings.Contains(err, "lookup"):
+		return "dns"
+	default:
+		return "other"
 	}
 }

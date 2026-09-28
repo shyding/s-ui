@@ -934,6 +934,7 @@ func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 	updates := map[string]interface{}{
 		"last_test_time": now,
 		"available":      result.Available,
+		"last_error":     result.Error,
 	}
 
 	// Only update location/IP details if we actually got them
