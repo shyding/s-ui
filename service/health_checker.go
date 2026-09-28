@@ -426,6 +426,16 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 		return "HProxy", country, city, city
 	}
 
+	if strings.HasPrefix(code, "seed-") {
+		if strings.HasPrefix(name, "Seed-") {
+			parts := strings.SplitN(strings.TrimPrefix(name, "Seed-"), "-", 3)
+			if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
+				return "Seed", parts[0], parts[1], parts[2]
+			}
+		}
+		return "Seed", "未知", "未知", "未知"
+	}
+
 	// 2. ProtonVPN regions always use a VPS-measured location when published.
 	if strings.HasPrefix(code, "proton-") || code == "us" || code == "jp" || code == "nl" {
 		if strings.HasPrefix(name, "Proton-") {
@@ -447,22 +457,30 @@ func FormatStandardRemark(provider, country, region, city string, index int) str
 	if provider == "" {
 		provider = "SUI"
 	}
-	country = strings.TrimSpace(country)
-	if country == "" {
-		country = "未知"
-	}
-	region = strings.TrimSpace(region)
-	if region == "" {
-		region = "未知"
-	}
-	city = strings.TrimSpace(city)
-	if city == "" {
-		city = "未知"
-	}
+	country, region, city = LocalizeEgressLocation(country, region, city)
 	if index <= 0 {
 		index = 1
 	}
 	return fmt.Sprintf("%s-%s-%s-%s-%02d", provider, country, region, city, index)
+}
+
+// LocalizeEgressLocation keeps subscription-visible geography entirely Chinese.
+// The source/provider and sequence are intentionally left unchanged.
+func LocalizeEgressLocation(country, region, city string) (string, string, string) {
+	code := NormalizeCountryCode(country)
+	if len(code) == 2 {
+		country = GetCountryName(code)
+	} else {
+		country = "未知"
+	}
+	region = regionToChinese(strings.TrimSpace(region))
+	city = cityToChinese(strings.TrimSpace(city))
+	return country, region, city
+}
+
+func hasLocalizedEgressLocation(country, region, city string) bool {
+	_, region, city = LocalizeEgressLocation(country, region, city)
+	return region != "未知地区" && city != "未知城市"
 }
 
 // ValidateClientClosedLoop executes Stage 2: Client closed-loop verification

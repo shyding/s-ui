@@ -107,3 +107,19 @@ func TestResolveEgressComponents(t *testing.T) {
 		t.Errorf("Default SUI mismatch: prov=%s, c=%s, r=%s, ct=%s", prov, c, r, ct)
 	}
 }
+
+func TestSubscriptionGeographyIsLocalizedToChinese(t *testing.T) {
+	provider, country, region, city := ResolveEgressComponents(
+		"seed-us-california-los-angeles",
+		"Seed-美国-California-Los Angeles",
+	)
+	if provider != "Seed" || country != "美国" || region != "California" || city != "Los Angeles" {
+		t.Fatalf("unexpected seed components: %s/%s/%s/%s", provider, country, region, city)
+	}
+	if got := FormatStandardRemark(provider, country, region, city, 1); got != "Seed-美国-加州-洛杉矶-01" {
+		t.Fatalf("expected fully localized remark, got %q", got)
+	}
+	if got := FormatStandardRemark("Proton", "MX", "Mexico City", "Mexico City", 1); got != "Proton-墨西哥-墨西哥城-墨西哥城-01" {
+		t.Fatalf("expected Mexican geography to be localized, got %q", got)
+	}
+}

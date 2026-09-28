@@ -13,6 +13,10 @@ func hproxyPoolTag(country, city string) string {
 	return fmt.Sprintf("hproxy-%s-%s-pool", strings.ToLower(SanitizeTag(country)), strings.ToLower(SanitizeTag(city)))
 }
 
+func seedPoolTag(country, region, city string) string {
+	return fmt.Sprintf("seed-%s-%s-%s-pool", strings.ToLower(SanitizeTag(country)), strings.ToLower(SanitizeTag(region)), strings.ToLower(SanitizeTag(city)))
+}
+
 func EnsureHProxyPoolsInOutbounds(config *SingBoxConfig, db *gorm.DB) {
 	if config == nil || db == nil {
 		return
@@ -60,29 +64,29 @@ func EnsureSeedPoolInOutbounds(config *SingBoxConfig, db *gorm.DB) {
 		return
 	}
 	var candidates []model.Outbound
-	if err := db.Where("subscription_id = ? AND available = ?", subscription.Id, true).Find(&candidates).Error; err != nil {
+	if err := db.Where("subscription_id = ? AND available = ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", subscription.Id, true).Find(&candidates).Error; err != nil {
 		return
 	}
 	filtered := make([]json.RawMessage, 0, len(config.Outbounds))
 	for _, raw := range config.Outbounds {
 		var item map[string]interface{}
 		if json.Unmarshal(raw, &item) == nil {
-			if tag, _ := item["tag"].(string); tag == "seed-pool" {
+			if tag, _ := item["tag"].(string); strings.HasPrefix(tag, "seed-") && strings.HasSuffix(tag, "-pool") {
 				continue
 			}
 		}
 		filtered = append(filtered, raw)
 	}
 	config.Outbounds = filtered
-	if len(candidates) == 0 {
-		return
-	}
-	members := make([]string, 0, len(candidates))
+	groups := make(map[string][]string)
 	for _, candidate := range candidates {
-		members = append(members, candidate.Tag)
+		poolTag := seedPoolTag(candidate.Country, candidate.Region, candidate.City)
+		groups[poolTag] = append(groups[poolTag], candidate.Tag)
 	}
-	pool, err := BuildUrlTestPoolJsonWithTolerance("seed-pool", members, "5m", 1000)
-	if err == nil {
-		config.Outbounds = append(config.Outbounds, pool)
+	for poolTag, members := range groups {
+		pool, err := BuildUrlTestPoolJsonWithTolerance(poolTag, members, "5m", 1000)
+		if err == nil {
+			config.Outbounds = append(config.Outbounds, pool)
+		}
 	}
 }

@@ -376,23 +376,26 @@ func regionToChinese(region string) string {
 		"Oregon": "俄勒冈", "Georgia": "佐治亚", "Florida": "佛罗里达",
 		"Ohio": "俄亥俄", "Colorado": "科罗拉多", "Arizona": "亚利桑那",
 		"Tokyo": "关东", "Osaka": "近畿", "Aichi": "中部",
+		"Hong Kong": "香港", "Bangkok": "曼谷", "Istanbul": "伊斯坦布尔",
 		"Central Singapore": "中央区", "North West": "西北区",
 		"Hesse": "黑森", "Bavaria": "巴伐利亚", "North Rhine-Westphalia": "北威州",
 		"Ile-de-France": "法兰西岛", "Catalonia": "加泰罗尼亚",
-		"Ontario": "安大略", "Quebec": "魁北克", "British Columbia": "不列颠哥伦比亚",
+		"Mexico City": "墨西哥城",
+		"Ontario":     "安大略", "Quebec": "魁北克", "British Columbia": "不列颠哥伦比亚",
 		"New South Wales": "新南威尔士", "Victoria": "维多利亚",
+		"Virginia": "弗吉尼亚州", "District of Columbia": "哥伦比亚特区", "Telangana": "特伦甘纳邦",
+		"Gangwon-do": "江原道", "Taipei City": "台北市", "Hessen": "黑森",
+		"England": "英格兰", "Sai Kung District": "西贡区", "Provincie Noord-Holland": "北荷兰",
 		"Moscow": "莫斯科", "Saint Petersburg": "圣彼得堡",
 		"Seoul": "首尔", "Gyeonggi-do": "京畿道",
 	}
 	if cn, ok := m[region]; ok {
 		return cn
 	}
-	// Return original if too long
-	if len([]rune(region)) > 8 {
-		runes := []rune(region)
-		return string(runes[:8])
+	if strings.IndexFunc(region, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
+		return region
 	}
-	return region
+	return "未知地区"
 }
 
 // cityToChinese 映射常见城市名到中文
@@ -422,18 +425,21 @@ func cityToChinese(city string) string {
 		"Tel Aviv": "特拉维夫", "Johannesburg": "约翰内斯堡",
 		"Sao Paulo": "圣保罗", "Buenos Aires": "布宜诺斯艾利斯",
 		"Kyiv": "基辅", "Kharkiv": "哈尔科夫",
-		"Vilnius": "维尔纽斯", "Riga": "里加", "Tallinn": "塔林",
+		"Manassas": "马纳萨斯", "Hyderabad": "海得拉巴", "Chuncheon": "春川",
+		"Taipei": "台北", "Frankfurt am Main": "法兰克福", "Slough": "斯劳",
+		"Tseung Kwan O": "将军澳",
+		"Vilnius":       "维尔纽斯", "Riga": "里加", "Tallinn": "塔林",
 		"Lisbon": "里斯本", "Madrid": "马德里", "Rome": "罗马",
 		"Milan": "米兰", "Barcelona": "巴塞罗那",
+		"Mexico City": "墨西哥城",
 	}
 	if cn, ok := m[city]; ok {
 		return cn
 	}
-	if len([]rune(city)) > 8 {
-		runes := []rune(city)
-		return string(runes[:8])
+	if strings.IndexFunc(city, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
+		return city
 	}
-	return city
+	return "未知城市"
 }
 
 // parseURIComponents extracts host, port, useTLS, sni, proto from a proxy URI

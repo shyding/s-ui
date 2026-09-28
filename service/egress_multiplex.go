@@ -630,9 +630,25 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 		}
 		var seedSubscription model.Subscription
 		if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
-			var seedCount int64
-			if db.Model(&model.Outbound{}).Where("subscription_id = ? AND available = ?", seedSubscription.Id, true).Count(&seedCount).Error == nil && seedCount > 0 {
-				active = append(active, EgressRegion{Code: "seed", Name: "VPS-verified local v2rayN", Flag: "🌐", OutboundTag: "seed-pool"})
+			var seedCandidates []model.Outbound
+			if db.Where("subscription_id = ? AND available = ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", seedSubscription.Id, true).Find(&seedCandidates).Error == nil {
+				seenPools := make(map[string]bool)
+				for _, candidate := range seedCandidates {
+					if !hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) {
+						continue
+					}
+					poolTag := seedPoolTag(candidate.Country, candidate.Region, candidate.City)
+					if seenPools[poolTag] {
+						continue
+					}
+					seenPools[poolTag] = true
+					active = append(active, EgressRegion{
+						Code:        strings.TrimSuffix(poolTag, "-pool"),
+						Name:        fmt.Sprintf("Seed-%s-%s-%s", GetCountryName(NormalizeCountryCode(candidate.Country)), candidate.Region, candidate.City),
+						Flag:        GetCountryFlag(NormalizeCountryCode(candidate.Country)),
+						OutboundTag: poolTag,
+					})
+				}
 			}
 		}
 	}
@@ -656,9 +672,9 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 	if err := db.Where("tag LIKE ? AND available = ? AND last_test_time >= ? AND country != '' AND city != ''", "hproxy-%", true, cutoff).Find(&verifiedHProxyCandidates).Error; err != nil {
 		verifiedHProxyCandidates = nil
 	}
-	verifiedHProxyCities := make(map[string]bool, len(verifiedHProxyCandidates))
+	verifiedHProxyCities := make(map[string]model.Outbound, len(verifiedHProxyCandidates))
 	for _, candidate := range verifiedHProxyCandidates {
-		verifiedHProxyCities[strings.ToUpper(strings.TrimSpace(candidate.Country))+"|"+SanitizeTag(candidate.City)] = true
+		verifiedHProxyCities[strings.ToUpper(strings.TrimSpace(candidate.Country))+"|"+SanitizeTag(candidate.City)] = candidate
 	}
 	for _, region := range GetActiveEgressRegions(db) {
 		if strings.HasPrefix(region.Code, "cf-") {
@@ -673,14 +689,17 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 			verified = append(verified, measured)
 			continue
 		}
-		if region.Code == "seed" {
+		if strings.HasPrefix(region.Code, "seed-") {
 			var seedSubscription model.Subscription
-			var count int64
+			var candidates []model.Outbound
 			if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
-				_ = db.Model(&model.Outbound{}).Where("subscription_id = ? AND available = ? AND last_test_time >= ?", seedSubscription.Id, true, cutoff).Count(&count).Error
+				_ = db.Where("subscription_id = ? AND available = ? AND last_test_time >= ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", seedSubscription.Id, true, cutoff).Find(&candidates).Error
 			}
-			if count > 0 {
-				verified = append(verified, region)
+			for _, candidate := range candidates {
+				if hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) && seedPoolTag(candidate.Country, candidate.Region, candidate.City) == region.OutboundTag {
+					verified = append(verified, region)
+					break
+				}
 			}
 			continue
 		}
@@ -691,7 +710,7 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 			}
 			countryCode := strings.ToUpper(parts[0])
 			cityCode := strings.TrimPrefix(strings.TrimSuffix(region.Code, "-pool"), "hproxy-"+strings.ToLower(countryCode)+"-")
-			if verifiedHProxyCities[countryCode+"|"+cityCode] {
+			if candidate, ok := verifiedHProxyCities[countryCode+"|"+cityCode]; ok && hasLocalizedEgressLocation(candidate.Country, candidate.City, candidate.City) {
 				verified = append(verified, region)
 			}
 			continue
