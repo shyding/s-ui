@@ -283,10 +283,15 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 				continue
 			}
 		} else {
+			previousOptions := string(existingOut.Options)
+			previousServerIP := existingOut.LandingIP
+			previousCountry := existingOut.Country
 			existingOut.Country = conf.Country
 			existingOut.LandingIP = conf.ServerIP
-			existingOut.Available = false
 			_ = existingOut.UnmarshalJSON(outJson)
+			if previousServerIP != conf.ServerIP || previousCountry != conf.Country || previousOptions != string(existingOut.Options) {
+				existingOut.Available = false
+			}
 			db.Save(&existingOut)
 		}
 
@@ -309,10 +314,14 @@ func BatchImportWireGuardToSUI(db *gorm.DB, configs []*WireGuardConf, countryCod
 				_ = newPool.UnmarshalJSON(poolJson)
 				db.Create(&newPool)
 			} else {
+				previousOptions := string(poolOut.Options)
+				previousCountry := poolOut.Country
 				poolOut.Type = "urltest"
 				poolOut.Country = strings.ToUpper(countryCode)
-				poolOut.Available = false
 				_ = poolOut.UnmarshalJSON(poolJson)
+				if previousCountry != strings.ToUpper(countryCode) || previousOptions != string(poolOut.Options) {
+					poolOut.Available = false
+				}
 				db.Save(&poolOut)
 			}
 		}
