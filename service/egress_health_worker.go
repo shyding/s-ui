@@ -37,9 +37,9 @@ func runEgressHealthCheck(reload ...func() error) {
 	protonCutoff := time.Now().Add(-30 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "out-proton-%", protonCutoff, false).
-		Order("last_test_time ASC").Limit(60).Pluck("tag", &protonTags)
+		Order("last_test_time ASC").Limit(12).Pluck("tag", &protonTags)
 	if len(protonTags) > 0 {
-		protonResults, err := (&NodeTestService{}).TestSelectedAndSave(protonTags, 10)
+		protonResults, err := (&NodeTestService{}).TestSelectedAndSave(protonTags, 6)
 		if err != nil {
 			logger.Warning("Proton child health check failed:", err)
 		} else {

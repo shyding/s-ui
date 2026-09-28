@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -155,6 +156,16 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 		Failed:  len(result.Errors),
 		Errors:  result.Errors,
 	}
+	previous := make(map[string]model.Outbound)
+	if subscription.UpdateMode == "replace" {
+		var existing []model.Outbound
+		if err := db.Where("subscription_id = ?", id).Find(&existing).Error; err != nil {
+			return nil, err
+		}
+		for _, outbound := range existing {
+			previous[outbound.Tag] = outbound
+		}
+	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if subscription.UpdateMode == "replace" {
@@ -172,6 +183,16 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 			outbound.Country, _ = outMap["country"].(string)
 			outbound.Region, _ = outMap["region"].(string)
 			outbound.City, _ = outMap["city"].(string)
+			if old, ok := previous[outbound.Tag]; ok && strings.HasPrefix(outbound.Tag, "hproxy-") && old.Available {
+				outbound.LandingIP = old.LandingIP
+				outbound.Country = old.Country
+				outbound.Region = old.Region
+				outbound.City = old.City
+				outbound.LastTestTime = old.LastTestTime
+				outbound.FraudScore = old.FraudScore
+				outbound.IPType = old.IPType
+				outbound.Available = true
+			}
 
 			delete(outMap, "type")
 			delete(outMap, "tag")
