@@ -15,6 +15,7 @@ var egressHealthWorkerOnce sync.Once
 func StartEgressHealthWorker(interval time.Duration, reload ...func() error) {
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
+			time.Sleep(time.Minute)
 			runEgressHealthCheck(reload...)
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
@@ -41,11 +42,11 @@ func runEgressHealthCheck(reload ...func() error) {
 	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, len(tags))
 	if err != nil {
 		logger.Warning("egress health check failed:", err)
-		return
-	}
-	for _, result := range results {
-		if !result.Available {
-			logger.Warningf("egress pool %s unavailable: %s", result.Tag, result.Error)
+	} else {
+		for _, result := range results {
+			if !result.Available {
+				logger.Warningf("egress pool %s unavailable: %s", result.Tag, result.Error)
+			}
 		}
 	}
 
