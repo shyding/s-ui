@@ -33,6 +33,26 @@ func runEgressHealthCheck(reload ...func() error) {
 	}
 
 	tags := []string{"warp-6eV"}
+	var protonTags []string
+	protonCutoff := time.Now().Add(-30 * time.Minute).Unix()
+	db.Model(&model.Outbound{}).
+		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "out-proton-%", protonCutoff, false).
+		Order("last_test_time ASC").Limit(60).Pluck("tag", &protonTags)
+	if len(protonTags) > 0 {
+		protonResults, err := (&NodeTestService{}).TestSelectedAndSave(protonTags, 10)
+		if err != nil {
+			logger.Warning("Proton child health check failed:", err)
+		} else {
+			passed := 0
+			for _, result := range protonResults {
+				if result.Available {
+					passed++
+				}
+			}
+			logger.Infof("Proton child health check finished: tested=%d passed=%d", len(protonResults), passed)
+		}
+	}
+
 	for _, region := range GetProtonEgressRegions(db) {
 		if region.OutboundTag != "" {
 			tags = append(tags, region.OutboundTag)
