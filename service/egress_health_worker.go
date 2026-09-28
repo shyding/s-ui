@@ -58,6 +58,11 @@ func runEgressHealthCheck(reload ...func() error) {
 			tags = append(tags, region.OutboundTag)
 		}
 	}
+	for _, region := range GetActiveCloudflareRegions(db) {
+		if region.OutboundTag != "" {
+			tags = append(tags, region.OutboundTag)
+		}
+	}
 
 	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, min(len(tags), 12))
 	if err != nil {
@@ -77,11 +82,11 @@ func runEgressHealthCheck(reload ...func() error) {
 	cutoff := time.Now().Add(-30 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
-		Order("last_test_time ASC").Limit(400).Pluck("tag", &candidateTags)
+		Order("last_test_time ASC").Limit(800).Pluck("tag", &candidateTags)
 	if len(candidateTags) == 0 {
 		return
 	}
-	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 20)
+	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 30)
 	if err != nil {
 		logger.Warning("public-proxy candidate health check failed:", err)
 		return
