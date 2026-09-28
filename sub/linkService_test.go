@@ -374,7 +374,7 @@ func TestRegression_2_NodeQuantityAndTop3Grouping(t *testing.T) {
 
 	// Group verification
 	groupCounts := make(map[string]int)
-	remarkPattern := regexp.MustCompile(`^[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-\d{2}$`)
+	remarkPattern := regexp.MustCompile(`^[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-\d{2}$`)
 
 	for _, link := range result {
 		u, _ := url.Parse(link)
@@ -762,5 +762,16 @@ func TestSubscriptionNoUpstreamLeak(t *testing.T) {
 	badPass, _ := ValidateSubscriptionSecurity(badLinks, "dash.icta.top")
 	if badPass {
 		t.Fatalf("Expected security violation for exposed IP/upstream domain")
+	}
+}
+
+func TestSubscriptionSecurityAcceptsVerifiedGeographicNames(t *testing.T) {
+	links := []string{
+		"hysteria2://pass@dash.icta.top:8444?insecure=0&sni=dash.icta.top#HProxy-美国-California-Los%20Angeles-01",
+		"hysteria2://pass@dash.icta.top:8444?insecure=0&sni=dash.icta.top#HProxy-瑞士-Zug-H%C3%BCnenberg-01",
+	}
+	pass, violations := ValidateSubscriptionSecurity(links, "dash.icta.top")
+	if !pass {
+		t.Fatalf("geographic remarks must pass validation: %v", violations)
 	}
 }

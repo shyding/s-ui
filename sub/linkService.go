@@ -580,7 +580,7 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		allowedHost = "dash.icta.top"
 	}
 	var violations []string
-	remarkRegex := regexp.MustCompile(`^[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-[\p{Han}a-zA-Z0-9]+-\d{2}$`)
+	remarkRegex := regexp.MustCompile(`^[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-\d{2}$`)
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	bannedTokens := []string{
 		"原生直连", "默认出口", "智能优选", "洁净出口",
