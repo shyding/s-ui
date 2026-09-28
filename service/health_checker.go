@@ -400,6 +400,26 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 		return provider, "全球", "Anycast", strings.ToUpper(parts[len(parts)-1])
 	}
 
+	// HProxy regions encode the source, country and city in the pool code/name.
+	// Do not let them fall through to the native Singapore default.
+	if strings.HasPrefix(code, "hproxy-") {
+		parts := strings.SplitN(strings.TrimPrefix(code, "hproxy-"), "-", 2)
+		countryToken := ""
+		if len(parts) > 0 {
+			countryToken = parts[0]
+		}
+		country = GetCountryName(countryToken)
+		baseName := strings.TrimSuffix(name, "-HProxy")
+		nameParts := strings.SplitN(baseName, "-", 2)
+		if len(nameParts) == 2 {
+			country = nameParts[0]
+			city = nameParts[1]
+		} else if len(parts) == 2 {
+			city = strings.ReplaceAll(parts[1], "-", " ")
+		}
+		return "HProxy", country, city, city
+	}
+
 	// 2. ProtonVPN Regions
 	if code == "us" {
 		return "Proton", "美国", "加州", "洛杉矶"
@@ -485,4 +505,3 @@ func (h *HealthChecker) ValidateClientClosedLoop(
 
 	return verifiedCount > 0 && len(errors) == 0, verifiedCount, errors
 }
-
