@@ -2,6 +2,9 @@
   <v-row>
     <v-col cols="12" justify="center" align="center">
       <v-btn color="primary" @click="showAddModal">{{ $t('actions.add') }}</v-btn>
+      <v-btn color="secondary" class="ml-2" @click="showHProxyModal">
+        添加 HProxy 实时源
+      </v-btn>
       <v-btn 
         color="success" 
         class="ml-2" 
@@ -240,6 +243,19 @@ const showAddModal = () => {
     url: '',
     updateMode: 'replace',
     interval: 0,
+    enabled: true
+  }
+}
+
+const showHProxyModal = () => {
+  modal.value = {
+    visible: true,
+    isEdit: false,
+    id: 0,
+    name: 'HProxy Live Candidates',
+    url: 'https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json',
+    updateMode: 'replace',
+    interval: 30,
     enabled: true
   }
 }

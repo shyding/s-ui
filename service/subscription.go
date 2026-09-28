@@ -5,16 +5,39 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/util"
+	"gorm.io/gorm"
 )
 
-type SubscriptionService struct{}
+type SubscriptionService struct {
+	fetch func(string) (string, error)
+}
+
+const hproxyLiveURL = "https://raw.githubusercontent.com/hproxy-com/free-proxy-list/main/live.json"
+
+func EnsureHProxySubscription() error {
+	db := database.GetDB()
+	var existing model.Subscription
+	if err := db.Where("url = ?", hproxyLiveURL).First(&existing).Error; err == nil {
+		return nil
+	} else if err != gorm.ErrRecordNotFound {
+		return err
+	}
+	return db.Create(&model.Subscription{
+		Name:           "HProxy Live Candidates",
+		Url:            hproxyLiveURL,
+		Enabled:        true,
+		UpdateInterval: 30,
+		UpdateMode:     "replace",
+		CreatedAt:      time.Now().Unix(),
+	}).Error
+}
 
 // GetAll returns all subscriptions
 func (s *SubscriptionService) GetAll() ([]model.Subscription, error) {
@@ -35,7 +58,7 @@ func (s *SubscriptionService) GetById(id uint) (*model.Subscription, error) {
 // Add creates a new subscription
 func (s *SubscriptionService) Add(name, url, updateMode string, interval int) (*model.Subscription, error) {
 	db := database.GetDB()
-	
+
 	subscription := &model.Subscription{
 		Name:           name,
 		Url:            url,
@@ -44,19 +67,19 @@ func (s *SubscriptionService) Add(name, url, updateMode string, interval int) (*
 		UpdateMode:     updateMode,
 		CreatedAt:      time.Now().Unix(),
 	}
-	
+
 	err := db.Create(subscription).Error
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return subscription, nil
 }
 
 // Update updates a subscription
 func (s *SubscriptionService) Update(id uint, name, url, updateMode string, interval int, enabled bool) error {
 	db := database.GetDB()
-	
+
 	return db.Model(&model.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"name":            name,
 		"url":             url,
@@ -69,13 +92,13 @@ func (s *SubscriptionService) Update(id uint, name, url, updateMode string, inte
 // Delete removes a subscription and its associated outbounds
 func (s *SubscriptionService) Delete(id uint) error {
 	db := database.GetDB()
-	
+
 	// Delete associated outbounds first
 	err := db.Where("subscription_id = ?", id).Delete(&model.Outbound{}).Error
 	if err != nil {
 		return err
 	}
-	
+
 	// Delete subscription
 	return db.Delete(&model.Subscription{}, id).Error
 }
@@ -86,91 +109,103 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Fetch subscription content
-	content, err := s.fetchUrl(subscription.Url)
+	fetch := s.fetchUrl
+	if s.fetch != nil {
+		fetch = s.fetch
+	}
+	content, err := fetch(subscription.Url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch subscription: %v", err)
 	}
-	
+
 	// Parse subscription
-	result, err := util.ParseSubscription(content, subscription.Name)
+	result, err := parseSubscriptionContent(content, subscription.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse subscription: %v", err)
 	}
-	
+	if len(result.Outbounds) == 0 {
+		return nil, fmt.Errorf("subscription produced no usable nodes; keeping the last known-good inventory")
+	}
+
 	db := database.GetDB()
-	
-	// Handle update mode
-	if subscription.UpdateMode == "replace" {
-		// Delete existing outbounds from this subscription
-		err = db.Where("subscription_id = ?", id).Delete(&model.Outbound{}).Error
-		if err != nil {
-			return nil, err
+	var existingCount int64
+	if err := db.Model(&model.Outbound{}).Where("subscription_id = ?", id).Count(&existingCount).Error; err != nil {
+		return nil, err
+	}
+	if subscription.UpdateMode == "replace" && existingCount > 0 {
+		minimumAccepted := int(math.Max(1, math.Ceil(float64(existingCount)*0.2)))
+		if len(result.Outbounds) < minimumAccepted {
+			return nil, fmt.Errorf("subscription produced only %d nodes, below the safe replacement floor of %d; keeping the last known-good inventory", len(result.Outbounds), minimumAccepted)
 		}
 	}
-	
-	// Import new outbounds
+
 	importResult := &RefreshResult{
 		Success: 0,
 		Failed:  len(result.Errors),
 		Errors:  result.Errors,
 	}
-	
-	for _, outMap := range result.Outbounds {
-		outbound := &model.Outbound{
-			SubscriptionId: &id,
-		}
-		
-		// Set type and tag
-		outbound.Type, _ = outMap["type"].(string)
-		outbound.Tag, _ = outMap["tag"].(string)
-		
-		// Remove type and tag from options
-		delete(outMap, "type")
-		delete(outMap, "tag")
-		
-		// Serialize remaining options
-		options, err := json.Marshal(outMap)
-		if err != nil {
-			importResult.Failed++
-			importResult.Errors = append(importResult.Errors, fmt.Sprintf("Failed to serialize options: %v", err))
-			continue
-		}
-		outbound.Options = options
-		
-		// Check for existing tag (for incremental mode)
-		if subscription.UpdateMode == "incremental" {
-			var existing model.Outbound
-			if db.Where("tag = ?", outbound.Tag).First(&existing).Error == nil {
-				// Tag exists, skip
-				continue
+
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if subscription.UpdateMode == "replace" {
+			if err := tx.Where("subscription_id = ?", id).Delete(&model.Outbound{}).Error; err != nil {
+				return err
 			}
 		}
-		
-		// Create outbound
-		err = db.Create(outbound).Error
-		if err != nil {
-			importResult.Failed++
-			importResult.Errors = append(importResult.Errors, fmt.Sprintf("Failed to create outbound: %v", err))
-			continue
+
+		for _, outMap := range result.Outbounds {
+			outbound := &model.Outbound{SubscriptionId: &id}
+
+			outbound.Type, _ = outMap["type"].(string)
+			outbound.Tag, _ = outMap["tag"].(string)
+			outbound.LandingIP, _ = outMap["landing_ip"].(string)
+			outbound.Country, _ = outMap["country"].(string)
+			outbound.Region, _ = outMap["region"].(string)
+			outbound.City, _ = outMap["city"].(string)
+
+			delete(outMap, "type")
+			delete(outMap, "tag")
+
+			options, err := json.Marshal(outMap)
+			if err != nil {
+				importResult.Failed++
+				importResult.Errors = append(importResult.Errors, fmt.Sprintf("Failed to serialize options: %v", err))
+				continue
+			}
+			outbound.Options = options
+
+			if subscription.UpdateMode == "incremental" {
+				var existing model.Outbound
+				if tx.Where("tag = ?", outbound.Tag).First(&existing).Error == nil {
+					continue
+				}
+			}
+
+			if err := tx.Create(outbound).Error; err != nil {
+				return fmt.Errorf("failed to create outbound %q: %w", outbound.Tag, err)
+			}
+			importResult.Success++
 		}
-		importResult.Success++
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	
+
 	// Update subscription
 	db.Model(&model.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"last_update": time.Now().Unix(),
 		"node_count":  importResult.Success,
 	})
-	
+
 	return importResult, nil
 }
 
 // RefreshMultiple refreshes multiple subscriptions
 func (s *SubscriptionService) RefreshMultiple(ids []uint) (map[uint]*RefreshResult, error) {
 	results := make(map[uint]*RefreshResult)
-	
+
 	for _, id := range ids {
 		result, err := s.Refresh(id)
 		if err != nil {
@@ -183,7 +218,7 @@ func (s *SubscriptionService) RefreshMultiple(ids []uint) (map[uint]*RefreshResu
 			results[id] = result
 		}
 	}
-	
+
 	return results, nil
 }
 
@@ -197,58 +232,64 @@ func (s *SubscriptionService) fetchUrl(url string) (string, error) {
 		Transport: tr,
 		Timeout:   30 * time.Second,
 	}
-	
+
 	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP status: %d", resp.StatusCode)
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return string(body), nil
 }
 
 // StartAutoUpdate starts the auto-update goroutine
-func (s *SubscriptionService) StartAutoUpdate() {
+func (s *SubscriptionService) StartAutoUpdate(afterRefresh func() error) {
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
-			s.checkAndUpdate()
+			s.checkAndUpdate(afterRefresh)
 		}
 	}()
 }
 
-func (s *SubscriptionService) checkAndUpdate() {
+func (s *SubscriptionService) checkAndUpdate(afterRefresh func() error) {
 	subscriptions, err := s.GetAll()
 	if err != nil {
 		logger.Error("Failed to get subscriptions for auto-update:", err)
 		return
 	}
-	
+
 	now := time.Now().Unix()
-	
+
 	for _, sub := range subscriptions {
 		if !sub.Enabled || sub.UpdateInterval <= 0 {
 			continue
 		}
-		
+
 		// Check if it's time to update
 		intervalSeconds := int64(sub.UpdateInterval * 60)
 		if now-sub.LastUpdate >= intervalSeconds {
 			logger.Info("Auto-updating subscription:", sub.Name)
-			_, err := s.Refresh(sub.Id)
+			result, err := s.Refresh(sub.Id)
 			if err != nil {
 				logger.Error("Failed to auto-update subscription", sub.Name, ":", err)
+				continue
+			}
+			if result.Success > 0 && afterRefresh != nil {
+				if err := afterRefresh(); err != nil {
+					logger.Error("Failed to reload core after subscription update", sub.Name, ":", err)
+				}
 			}
 		}
 	}

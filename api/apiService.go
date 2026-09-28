@@ -964,6 +964,15 @@ func (a *ApiService) RefreshSubscription(c *gin.Context) {
 		jsonMsg(c, "", err)
 		return
 	}
+	for _, result := range results {
+		if result.Success > 0 {
+			if err := a.ConfigService.RestartCore(); err != nil {
+				jsonMsg(c, "subscription updated but core reload failed", err)
+				return
+			}
+			break
+		}
+	}
 
 	jsonObj(c, results, nil)
 }

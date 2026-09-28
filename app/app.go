@@ -42,6 +42,9 @@ func (a *APP) Init() error {
 
 	// Seed Cloudflare endpoints if needed
 	_ = service.SeedInitialCloudflareEndpoints(database.GetDB())
+	if err := service.EnsureHProxySubscription(); err != nil {
+		logger.Warning("failed to ensure HProxy subscription:", err)
+	}
 
 	// Init Setting
 	a.SettingService.GetAllSetting()
@@ -95,6 +98,7 @@ func (a *APP) Start() error {
 	// Runs every 20 minutes; writes verified status + real location to node_health_statuses
 	service.StartNodeHealthWorker(20 * time.Minute)
 	service.StartEgressHealthWorker(20 * time.Minute)
+	(&service.SubscriptionService{}).StartAutoUpdate(a.configService.RestartCore)
 
 	return nil
 }
