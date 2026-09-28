@@ -36,7 +36,7 @@ func EnsureProxyScrapeSubscription() error {
 }
 
 func EnsureUserProvidedSubscription() error {
-	return ensureRuntimeCandidateSubscription(userProvidedSubscriptionName, strings.TrimSpace(os.Getenv("SUI_USER_CANDIDATE_URL")), 30)
+	return ensureRuntimeCandidateSubscription(userProvidedSubscriptionName, strings.TrimSpace(os.Getenv("SUI_USER_CANDIDATE_URL")), 30, "replace")
 }
 
 func EnsureSeededClientNodesSubscription() error {
@@ -44,10 +44,10 @@ func EnsureSeededClientNodesSubscription() error {
 	if path != "" {
 		path = "file://" + path
 	}
-	return ensureRuntimeCandidateSubscription(seededClientNodesSubscriptionName, path, 1440)
+	return ensureRuntimeCandidateSubscription(seededClientNodesSubscriptionName, path, 1440, "replace")
 }
 
-func ensureRuntimeCandidateSubscription(name, sourceURL string, interval int) error {
+func ensureRuntimeCandidateSubscription(name, sourceURL string, interval int, updateMode string) error {
 	db := database.GetDB()
 	var existing model.Subscription
 	if strings.TrimSpace(sourceURL) == "" {
@@ -57,11 +57,24 @@ func ensureRuntimeCandidateSubscription(name, sourceURL string, interval int) er
 		}).Error
 	}
 	if err := db.Where("name = ?", name).First(&existing).Error; err == nil {
+		if existing.UpdateMode != updateMode {
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Where("subscription_id = ?", existing.Id).Delete(&model.Outbound{}).Error; err != nil {
+					return err
+				}
+				return tx.Model(&existing).Updates(map[string]interface{}{
+					"node_count":  0,
+					"last_update": 0,
+				}).Error
+			}); err != nil {
+				return err
+			}
+		}
 		return db.Model(&existing).Updates(map[string]interface{}{
 			"url":             sourceURL,
 			"enabled":         true,
 			"update_interval": interval,
-			"update_mode":     "incremental",
+			"update_mode":     updateMode,
 		}).Error
 	} else if err != gorm.ErrRecordNotFound {
 		return err
@@ -71,7 +84,7 @@ func ensureRuntimeCandidateSubscription(name, sourceURL string, interval int) er
 		Url:            sourceURL,
 		Enabled:        true,
 		UpdateInterval: interval,
-		UpdateMode:     "incremental",
+		UpdateMode:     updateMode,
 		CreatedAt:      time.Now().Unix(),
 	}).Error
 }

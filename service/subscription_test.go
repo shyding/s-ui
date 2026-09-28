@@ -73,3 +73,41 @@ func TestRuntimeCandidateWithoutEnvironmentIsDisabled(t *testing.T) {
 		t.Fatalf("unconfigured runtime source must be disabled and cleared, got enabled=%v url=%q", updated.Enabled, updated.Url)
 	}
 }
+
+func TestRuntimeSeedMigratesIncrementalInventoryToReplace(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.AutoMigrate(&model.Subscription{}, &model.Outbound{}); err != nil {
+		t.Fatal(err)
+	}
+	database.SetDB(db)
+
+	subscription := model.Subscription{Name: seededClientNodesSubscriptionName, Url: "file:///old", Enabled: true, UpdateMode: "incremental"}
+	if err = db.Create(&subscription).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(&model.Outbound{Tag: "stale-seed", Type: "vless", SubscriptionId: &subscription.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SUI_SEED_NODES_FILE", "C:/runtime/seed.txt")
+	if err = EnsureSeededClientNodesSubscription(); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int64
+	if err = db.Model(&model.Outbound{}).Where("subscription_id = ?", subscription.Id).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected stale incremental seed inventory to be cleared, got %d rows", count)
+	}
+	var updated model.Subscription
+	if err = db.First(&updated, subscription.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updated.UpdateMode != "replace" || updated.Url != "file://C:/runtime/seed.txt" || updated.LastUpdate != 0 {
+		t.Fatalf("unexpected migrated seed subscription: %+v", updated)
+	}
+}
