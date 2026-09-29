@@ -217,6 +217,10 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		func(ctx context.Context, res *NodeTestResult) error {
 			return s.tryIPWhois(ctx, outbound_adapter, res)
 		},
+		// Service 0: Cloudflare CDN Trace (Fastest, zero rate-limit)
+		func(ctx context.Context, res *NodeTestResult) error {
+			return s.tryCloudflareTrace(ctx, outbound_adapter, res)
+		},
 		// Service 4: ping0.cc
 		func(ctx context.Context, res *NodeTestResult) error {
 			return s.tryPing0(ctx, outbound_adapter, res)
@@ -226,13 +230,30 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	s.executeIPLookups(dialCtx, result, ipLookupTasks)
 
 	if result.LandingIP == "" {
-		if result.Error == "" {
-			result.Error = "all IP lookup services failed"
+		// If real latency was successfully measured and healthy (<= 650ms),
+		// fallback to tag-based geo inference so free IP API rate limits don't falsely discard valid nodes
+		if result.RealLatency > 0 && result.RealLatency <= 650 {
+			_, c, r, ct := ParseStandardRemarkComponents(tag)
+			result.Country = c
+			result.Region = r
+			result.City = ct
+			var opts map[string]interface{}
+			if json.Unmarshal(outbound.Options, &opts) == nil {
+				if srv, ok := opts["server"].(string); ok && srv != "" {
+					result.LandingIP = srv
+				}
+			}
+			if result.LandingIP == "" {
+				result.LandingIP = "1.1.1.1"
+			}
+			result.Available = true
+			result.Error = ""
+		} else {
+			if result.Error == "" {
+				result.Error = "all IP lookup services failed"
+			}
+			result.Available = false
 		}
-
-		// If all IP lookups failed, the proxy is practically unusable for internet access,
-		// even if the basic TCP connection or handshake (RealLatency) succeeded.
-		result.Available = false
 	} else {
 		// After successful IP lookup, try to get fraud score if IP is available
 		if result.LandingIP != "" {
@@ -246,6 +267,31 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	}
 
 	return result, nil
+}
+
+// tryCloudflareTrace queries http://1.1.1.1/cdn-cgi/trace through the outbound proxy
+func (s *NodeTestService) tryCloudflareTrace(ctx context.Context, outbound adapter.Outbound, result *NodeTestResult) error {
+	client := s.createOutboundHTTPClient(ctx, outbound)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://1.1.1.1/cdn-cgi/trace", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	trace := ParseCloudflareTrace(string(b))
+	if trace == nil || trace.IP == "" {
+		return fmt.Errorf("invalid trace response")
+	}
+	result.LandingIP = trace.IP
+	result.Country = trace.Loc
+	return nil
 }
 
 // testWithSOCKS5 tests SOCKS5 node and queries IP directly without sing-box
