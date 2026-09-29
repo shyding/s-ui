@@ -240,6 +240,9 @@ func TestGetActiveEgressRegions_IntegrationWithCloudflare(t *testing.T) {
 }
 
 func TestCloudflareOfficialIPsCompletenessAndFreshness(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network-dependent test in -short mode")
+	}
 	// 1. Verify baseline official CIDRs list contains all 15 IPv4 blocks
 	if len(CloudflareOfficialIPv4CIDRs) != 15 {
 		t.Fatalf("Expected exactly 15 official Cloudflare IPv4 CIDRs, got %d", len(CloudflareOfficialIPv4CIDRs))
