@@ -114,6 +114,7 @@ func (a *APP) Start() error {
 	// 出口健康检查 Worker：启动5分钟后跑第一次，之后每天凌晨04:30运行
 	// 低并发(5)，确保不会导致 CPU 过高。手动触发请使用 /api/egressHealthCheck
 	service.StartEgressHealthWorker(a.configService.RestartCore)
+	service.StartNodeHealthWorker()
 	(&service.SubscriptionService{}).StartAutoUpdate(a.configService.RestartCore)
 
 	return nil

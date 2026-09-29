@@ -54,7 +54,7 @@ func StartNodeHealthWorker() {
 // TriggerNodeHealthCheck 供 UI 手动触发；若已在运行则返回 false
 func TriggerNodeHealthCheck() bool {
 	if globalHealthWorker == nil {
-		return false
+		StartNodeHealthWorker()
 	}
 	if !isNodeCheckRunning.CompareAndSwap(false, true) {
 		return false
