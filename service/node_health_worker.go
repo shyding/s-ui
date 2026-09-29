@@ -391,6 +391,14 @@ func regionToChinese(region string) string {
 		"England": "英格兰", "Sai Kung District": "西贡区", "Provincie Noord-Holland": "北荷兰",
 		"Moscow": "莫斯科", "Saint Petersburg": "圣彼得堡",
 		"Seoul": "首尔", "Gyeonggi-do": "京畿道",
+		"Dubai": "迪拜", "Hanoi": "河内", "Selangor": "雪兰莪", "Batu Caves": "黑风洞",
+		"Kuala Lumpur": "吉隆坡", "Maharashtra": "马哈拉施特拉", "West Bengal": "西孟加拉",
+		"Karnataka": "卡纳塔克", "Tamil Nadu": "泰米尔纳德", "Delhi": "德里",
+		"Incheon": "仁川", "Daegu": "大邱", "Busan": "釜山", "Gwangju": "光州",
+		"Daejeon": "大田", "Ulsan": "蔚山", "Sejong": "世宗", "North Holland": "北荷兰",
+		"South Holland": "南荷兰", "Flanders": "弗拉芒", "Wallonia": "瓦隆",
+		"Guangdong": "广东", "Zhejiang": "浙江", "Jiangsu": "江苏", "Beijing": "北京",
+		"Shanghai": "上海", "Shandong": "山东", "Sichuan": "四川",
 	}
 	if cn, ok := m[region]; ok {
 		return cn
@@ -398,16 +406,13 @@ func regionToChinese(region string) string {
 	if strings.IndexFunc(region, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
 		return region
 	}
-	if strings.TrimSpace(region) != "" {
-		return strings.TrimSpace(region)
-	}
-	return "未知地区"
+	return ""
 }
 
 // cityToChinese 映射常见城市名到中文
 func cityToChinese(city string) string {
 	if city == "" {
-		return "未知"
+		return ""
 	}
 	m := map[string]string{
 		"Los Angeles": "洛杉矶", "San Jose": "圣何塞", "San Francisco": "旧金山",
@@ -418,7 +423,18 @@ func cityToChinese(city string) string {
 		"Buffalo": "布法罗", "Portland": "波特兰", "Las Vegas": "拉斯维加斯",
 		"North Bergen": "北卑尔根", "Clifton": "克利夫顿", "Calgary": "卡尔加里",
 		"Santa Clara": "圣克拉拉", "Council Bluffs": "康瑟尔布拉夫斯", "Mumbai": "孟买",
-		"Hanoi": "河内", "Surakarta": "梭罗",
+		"Hanoi": "河内", "Surakarta": "梭罗", "Dubai": "迪拜",
+		"Batu Caves": "黑风洞", "Kolkata": "加尔各答", "Chennai": "金奈",
+		"Bengaluru": "班加罗尔", "Pune": "浦那", "Incheon": "仁川",
+		"Daegu": "大邱", "Busan": "釜山", "Gwangju": "光州", "Daejeon": "大田",
+		"Ulsan": "蔚山", "Suwon": "水原", "Changwon": "昌原", "Seongnam": "城南",
+		"Goyang": "高阳", "Yongin": "龙仁", "Bucheon": "富川", "Ansan": "安山",
+		"Cheongju": "清州", "Jeonju": "全州", "Cheonan": "天安", "Pohang": "浦项",
+		"Gimhae": "金海", "Gumi": "龟尾", "Jeju": "济州", "Chiang Mai": "清迈",
+		"Phuket": "普吉", "Pattaya": "芭堤雅", "Almaty": "阿拉木图", "Astana": "阿斯塔纳",
+		"Tashkent": "塔什干", "Baku": "巴库", "Yerevan": "埃里温", "Tbilisi": "第比利斯",
+		"Nicosia": "尼科西亚", "Limassol": "利马索尔", "Larnaca": "拉纳卡",
+		"Athens": "雅典", "Thessaloniki": "塞萨洛尼基",
 		"Tokyo": "东京", "Osaka": "大阪", "Nagoya": "名古屋",
 		"Singapore": "新加坡城", "Frankfurt": "法兰克福", "Berlin": "柏林",
 		"Munich": "慕尼黑", "Hamburg": "汉堡", "Amsterdam": "阿姆斯特丹",
@@ -429,7 +445,7 @@ func cityToChinese(city string) string {
 		"Bucharest": "布加勒斯特", "Istanbul": "伊斯坦布尔", "Moscow": "莫斯科",
 		"Seoul": "首尔", "Hong Kong": "香港", "Taipei": "台北",
 		"Toronto": "多伦多", "Vancouver": "温哥华", "Montreal": "蒙特利尔",
-		"Sydney": "悉尼", "Melbourne": "墨尔本", "Dubai": "迪拜",
+		"Sydney": "悉尼", "Melbourne": "墨尔本",
 		"Jakarta": "雅加达", "Kuala Lumpur": "吉隆坡", "Bangkok": "曼谷",
 		"Tel Aviv": "特拉维夫", "Johannesburg": "约翰内斯堡",
 		"Sao Paulo": "圣保罗", "Buenos Aires": "布宜诺斯艾利斯",
@@ -447,10 +463,7 @@ func cityToChinese(city string) string {
 	if strings.IndexFunc(city, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
 		return city
 	}
-	if strings.TrimSpace(city) != "" {
-		return strings.TrimSpace(city)
-	}
-	return "未知城市"
+	return ""
 }
 
 // parseURIComponents extracts host, port, useTLS, sni, proto from a proxy URI

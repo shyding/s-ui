@@ -42,22 +42,8 @@ type CandidateNode struct {
 }
 
 func (c *CandidateNode) GroupKey() string {
-	prov := strings.TrimSpace(c.Provider)
-	if prov == "" {
-		prov = "SUI"
-	}
-	country := strings.TrimSpace(c.Country)
-	if country == "" {
-		country = "未知"
-	}
-	region := strings.TrimSpace(c.Region)
-	if region == "" {
-		region = "未知"
-	}
-	city := strings.TrimSpace(c.City)
-	if city == "" {
-		city = "未知"
-	}
+	prov := service.NormalizeProvider(c.Provider)
+	country, region, city := service.LocalizeEgressLocation(c.Country, c.Region, c.City)
 	return fmt.Sprintf("%s-%s-%s-%s", prov, country, region, city)
 }
 
@@ -615,11 +601,12 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		allowedHost = "dash.icta.top"
 	}
 	var violations []string
-	remarkRegex := regexp.MustCompile(`^[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-\d{2}$`)
+	remarkRegex := regexp.MustCompile(`^(Seed|Cloudflare|HProxy|SUI|Proton)-[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-\d{2}$`)
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	bannedTokens := []string{
 		"原生直连", "默认出口", "智能优选", "洁净出口",
 		"vmess-", "vless-", "trojan-", "tuic-", "hysteria2-",
+		"未知", "unknown", "unknow", "Unknown", "Unknow", "null", "NULL", "none", "None", "Undefined", "undefined",
 	}
 	bannedDomains := []string{
 		"workers.dev", "globals-download.com", "guardora.pro", "cloudflare.com",

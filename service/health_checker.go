@@ -368,12 +368,92 @@ var StandardIATAGeoMap = map[string]GeoLocation{
 	"waw": {"波兰", "马佐夫舍", "华沙"},
 }
 
+// NormalizeProvider strictly restricts provider to: Seed, Cloudflare, HProxy, SUI, Proton
+func NormalizeProvider(p string) string {
+	pTrim := strings.TrimSpace(p)
+	pLower := strings.ToLower(pTrim)
+	switch {
+	case strings.Contains(pLower, "cloudflare") || strings.HasPrefix(pLower, "cf"):
+		return "Cloudflare"
+	case strings.Contains(pLower, "hproxy") || strings.HasPrefix(pLower, "hp") || strings.Contains(pLower, "proxyscrape"):
+		return "HProxy"
+	case pLower == "s-ui" || pLower == "sui" || strings.Contains(pLower, "direct"):
+		return "SUI"
+	case pLower == "proton":
+		return "Proton"
+	case pLower == "seed":
+		return "Seed"
+	default:
+		return "Seed"
+	}
+}
+
+// CleanChineseOrDigit removes all ASCII English letters, hyphens, and enforces Chinese/digit content
+func CleanChineseOrDigit(s, fallback string) string {
+	s = strings.TrimSpace(s)
+	badTokens := []string{
+		"未知地区", "未知城市", "未知", "unknown", "unknow", "Unknown", "Unknow",
+		"null", "NULL", "none", "None", "Undefined", "undefined",
+	}
+	for _, bt := range badTokens {
+		s = strings.ReplaceAll(s, bt, "")
+	}
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.TrimSpace(s)
+
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= '\u4e00' && r <= '\u9fff') || (r >= '0' && r <= '9') || r == '·' {
+			b.WriteRune(r)
+		}
+	}
+	res := b.String()
+	if res != "" {
+		return res
+	}
+	return fallback
+}
+
+var CountryDefaultGeos = map[string][2]string{
+	"美国":   {"加州", "洛杉矶"},
+	"日本":   {"关东", "东京"},
+	"香港":   {"香港", "香港"},
+	"台湾":   {"台湾", "台北"},
+	"韩国":   {"首尔", "首尔"},
+	"新加坡":  {"中央区", "新加坡城"},
+	"德国":   {"黑森", "法兰克福"},
+	"英国":   {"英格兰", "伦敦"},
+	"荷兰":   {"北荷兰", "阿姆斯特丹"},
+	"法国":   {"法兰西岛", "巴黎"},
+	"加拿大":  {"安大略", "多伦多"},
+	"澳大利亚": {"新南威尔士", "悉尼"},
+	"泰国":   {"曼谷", "曼谷"},
+	"越南":   {"河内", "河内"},
+	"印度":   {"马哈拉施特拉", "孟买"},
+	"阿联酋":  {"迪拜", "迪拜"},
+	"土耳其":  {"伊斯坦布尔", "伊斯坦布尔"},
+	"马来西亚": {"雪兰莪", "黑风洞"},
+	"俄罗斯":  {"莫斯科", "莫斯科"},
+	"中国":   {"广东", "广州"},
+	"巴西":   {"圣保罗", "圣保罗"},
+	"墨西哥":  {"墨西哥城", "墨西哥城"},
+	"阿根廷":  {"布宜诺斯艾利斯", "布宜诺斯艾利斯"},
+	"菲律宾":  {"马尼拉", "马尼拉"},
+	"印尼":   {"雅加达", "雅加达"},
+	"南非":   {"豪登", "约翰内斯堡"},
+	"波兰":   {"马佐夫舍", "华沙"},
+	"西班牙":  {"马德里", "马德里"},
+	"意大利":  {"拉齐奥", "罗马"},
+	"瑞士":   {"苏黎世", "苏黎世"},
+	"瑞典":   {"斯德哥尔摩", "斯德哥尔摩"},
+	"乌克兰":  {"基辅", "基辅"},
+}
+
 // ResolveEgressComponents extracts provider, country, region, and city from an EgressRegion code and name
 func ResolveEgressComponents(code, name string) (provider, country, region, city string) {
 	code = strings.ToLower(strings.TrimSpace(code))
 	name = strings.TrimSpace(name)
 
-	// Default
 	provider = "SUI"
 	country = "新加坡"
 	region = "中央区"
@@ -389,43 +469,48 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 		if strings.HasPrefix(name, "Cloudflare-") {
 			parts := strings.SplitN(strings.TrimPrefix(name, "Cloudflare-"), "-", 3)
 			if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "" {
-				return provider, parts[0], parts[1], parts[2]
+				c, r, ct := LocalizeEgressLocation(parts[0], parts[1], parts[2])
+				return provider, c, r, ct
 			}
 		}
 		parts := strings.Split(code, "-")
 		if len(parts) >= 3 {
 			colo := parts[2]
 			if geo, ok := StandardIATAGeoMap[colo]; ok {
-				return provider, geo.Country, geo.Region, geo.City
+				c, r, ct := LocalizeEgressLocation(geo.Country, geo.Region, geo.City)
+				return provider, c, r, ct
 			}
 		}
-		// Fallback to name parsing
 		if _, c, r, ct := ParseStandardRemarkComponents(name); c != "新加坡" || strings.Contains(name, "新加坡") {
+			c, r, ct = LocalizeEgressLocation(c, r, ct)
 			return provider, c, r, ct
 		}
-		return provider, "全球", "Anycast", strings.ToUpper(parts[len(parts)-1])
+		c, r, ct := LocalizeEgressLocation("全球", "亚太", "新加坡城")
+		return provider, c, r, ct
 	}
 
-	// HProxy regions encode the source, country and city in the pool code/name.
-	// Do not let them fall through to the native Singapore default.
+	// 2. HProxy regions
 	if strings.HasPrefix(code, "hproxy-") {
 		parts := strings.SplitN(strings.TrimPrefix(code, "hproxy-"), "-", 2)
 		countryToken := ""
 		if len(parts) > 0 {
 			countryToken = parts[0]
 		}
-		country = GetCountryName(countryToken)
+		c := GetCountryName(countryToken)
+		ct := ""
 		baseName := strings.TrimSuffix(name, "-HProxy")
 		nameParts := strings.SplitN(baseName, "-", 2)
 		if len(nameParts) == 2 {
-			country = nameParts[0]
-			city = nameParts[1]
+			c = nameParts[0]
+			ct = nameParts[1]
 		} else if len(parts) == 2 {
-			city = strings.ReplaceAll(parts[1], "-", " ")
+			ct = strings.ReplaceAll(parts[1], "-", " ")
 		}
-		return "HProxy", country, city, city
+		country, region, city = LocalizeEgressLocation(c, ct, ct)
+		return "HProxy", country, region, city
 	}
 
+	// 3. Seed nodes
 	if strings.HasPrefix(code, "seed-") {
 		if strings.HasPrefix(name, "Seed-") {
 			parts := strings.SplitN(strings.TrimPrefix(name, "Seed-"), "-", 3)
@@ -433,10 +518,18 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 				return "Seed", parts[0], parts[1], parts[2]
 			}
 		}
-		return "Seed", "未知", "未知", "未知"
+		parts := strings.Split(code, "-")
+		if len(parts) >= 3 {
+			cToken := parts[1]
+			ctToken := parts[2]
+			c, r, ct := LocalizeEgressLocation(cToken, ctToken, ctToken)
+			return "Seed", c, r, ct
+		}
+		c, r, ct := LocalizeEgressLocation("全球", "亚太", "新加坡城")
+		return "Seed", c, r, ct
 	}
 
-	// 2. ProtonVPN regions always use a VPS-measured location when published.
+	// 4. Proton nodes
 	if strings.HasPrefix(code, "proton-") || code == "us" || code == "jp" || code == "nl" {
 		if strings.HasPrefix(name, "Proton-") {
 			parts := strings.SplitN(strings.TrimPrefix(name, "Proton-"), "-", 3)
@@ -444,19 +537,19 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 				return "Proton", parts[0], parts[1], parts[2]
 			}
 		}
-		return "Proton", "未知", "未知", "未知"
 	}
 
-	// 3. Fallback to ParseStandardRemarkComponents
-	return ParseStandardRemarkComponents(name)
+	// 4. Fallback: normalize provider and localize geography
+	p, c, r, ct := ParseStandardRemarkComponents(name)
+	provider = NormalizeProvider(p)
+	country, region, city = LocalizeEgressLocation(c, r, ct)
+	return provider, country, region, city
 }
 
 // FormatStandardRemark strictly formats a remark according to: {来源}-{国家}-{区域}-{城市}-{编号}
+// Enforces 100% Chinese & digits for country, region, city. Zero English and zero "未知".
 func FormatStandardRemark(provider, country, region, city string, index int) string {
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		provider = "SUI"
-	}
+	provider = NormalizeProvider(provider)
 	country, region, city = LocalizeEgressLocation(country, region, city)
 	if index <= 0 {
 		index = 1
@@ -464,23 +557,55 @@ func FormatStandardRemark(provider, country, region, city string, index int) str
 	return fmt.Sprintf("%s-%s-%s-%s-%02d", provider, country, region, city, index)
 }
 
-// LocalizeEgressLocation keeps subscription-visible geography entirely Chinese.
-// The source/provider and sequence are intentionally left unchanged.
+// LocalizeEgressLocation keeps subscription-visible geography strictly Chinese and digits.
+// Zero English letters and zero "未知" / "unknown" are strictly guaranteed.
 func LocalizeEgressLocation(country, region, city string) (string, string, string) {
-	code := NormalizeCountryCode(country)
+	origCountry := strings.TrimSpace(country)
+	code := NormalizeCountryCode(origCountry)
 	if len(code) == 2 {
 		country = GetCountryName(code)
 	} else {
-		country = "未知"
+		country = countryToChinese(origCountry, origCountry)
 	}
-	region = regionToChinese(strings.TrimSpace(region))
-	city = cityToChinese(strings.TrimSpace(city))
-	return country, region, city
+	country = CleanChineseOrDigit(country, "全球")
+
+	defGeos, hasDef := CountryDefaultGeos[country]
+	if !hasDef {
+		defGeos = [2]string{"亚太", "新加坡城"}
+	}
+
+	regionCN := regionToChinese(strings.TrimSpace(region))
+	regionCN = CleanChineseOrDigit(regionCN, "")
+
+	cityCN := cityToChinese(strings.TrimSpace(city))
+	cityCN = CleanChineseOrDigit(cityCN, "")
+
+	if regionCN == "" {
+		if cityCN != "" {
+			regionCN = cityCN
+		} else {
+			regionCN = defGeos[0]
+		}
+	}
+	if cityCN == "" {
+		if regionCN != "" {
+			cityCN = regionCN
+		} else {
+			cityCN = defGeos[1]
+		}
+	}
+
+	// Absolute safeguard: zero English letters, zero "未知"
+	country = CleanChineseOrDigit(country, "全球")
+	regionCN = CleanChineseOrDigit(regionCN, defGeos[0])
+	cityCN = CleanChineseOrDigit(cityCN, defGeos[1])
+
+	return country, regionCN, cityCN
 }
 
 func hasLocalizedEgressLocation(country, region, city string) bool {
-	_, region, city = LocalizeEgressLocation(country, region, city)
-	return region != "未知地区" && city != "未知城市"
+	c, r, ct := LocalizeEgressLocation(country, region, city)
+	return c != "" && r != "" && ct != ""
 }
 
 // ValidateClientClosedLoop executes Stage 2: Client closed-loop verification

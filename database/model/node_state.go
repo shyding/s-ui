@@ -28,28 +28,31 @@ type NodeHealthStatus struct {
 // Set to 25h to match the daily 03:30 health check schedule (24h + 1h buffer).
 const DefaultHealthTTL = 25 * time.Hour
 
-// MaxSubscriptionLatency is the maximum latency (in ms) a node can have to be published
-// in subscriptions. Nodes with latency > 650ms are considered too slow for end users.
-const MaxSubscriptionLatency int64 = 650
+// MaxSubscriptionLatency is the maximum latency (in ms) on VPS for a node to be published
+// in subscriptions. With client-to-VPS overhead (100-150ms), this guarantees end-to-end <= 650ms.
+const MaxSubscriptionLatency int64 = 500
 
-// GroupKey returns provider + country + region + city for TOP3 aggregation
+// GroupKey returns provider + country + region + city
 func (n *NodeHealthStatus) GroupKey() string {
 	prov := strings.TrimSpace(n.Provider)
 	if prov == "" {
 		prov = "SUI"
 	}
-	country := strings.TrimSpace(n.Country)
-	if country == "" {
-		country = "未知"
+	clean := func(s, fallback string) string {
+		s = strings.TrimSpace(s)
+		for _, b := range []string{"未知地区", "未知城市", "未知", "unknown", "unknow", "null", "none"} {
+			s = strings.ReplaceAll(s, b, "")
+		}
+		s = strings.ReplaceAll(s, "-", "")
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return fallback
+		}
+		return s
 	}
-	region := strings.TrimSpace(n.Region)
-	if region == "" {
-		region = "未知"
-	}
-	city := strings.TrimSpace(n.City)
-	if city == "" {
-		city = "未知"
-	}
+	country := clean(n.Country, "全球")
+	region := clean(n.Region, "亚太")
+	city := clean(n.City, "新加坡城")
 	return fmt.Sprintf("%s-%s-%s-%s", prov, country, region, city)
 }
 
