@@ -36,16 +36,39 @@ type NodeHealthWorker struct {
 var globalHealthWorker *NodeHealthWorker
 var workerOnce sync.Once
 
+// isNodeCheckRunning 防并发：同一时刻只允许一个 NodeHealthWorker 实例运行
+var isNodeCheckRunning atomic.Bool
+
 // StartNodeHealthWorker 启动全局后台健康检查 Worker（单例）
-// 策略：启动后等5分钟跑第一次，之后每24小时跑一次（慢速，低并发）
-func StartNodeHealthWorker(interval time.Duration) {
+// 策略：启动后等5分钟跑第一次，之后每天凌晨 04:30 跑一次（慢速，低并发）
+func StartNodeHealthWorker() {
 	workerOnce.Do(func() {
 		globalHealthWorker = &NodeHealthWorker{
-			interval:    interval,
-			concurrency: 5, // 极低并发，24h内慢慢跑完，不抢CPU
+			interval:    24 * time.Hour, // 仅用于日志，实际由 04:30 cron 控制
+			concurrency: 5,             // 极低并发，不抢 CPU
 		}
 		go globalHealthWorker.run()
 	})
+}
+
+// TriggerNodeHealthCheck 供 UI 手动触发；若已在运行则返回 false
+func TriggerNodeHealthCheck() bool {
+	if globalHealthWorker == nil {
+		return false
+	}
+	if !isNodeCheckRunning.CompareAndSwap(false, true) {
+		return false
+	}
+	go func() {
+		defer isNodeCheckRunning.Store(false)
+		globalHealthWorker.runOnce()
+	}()
+	return true
+}
+
+// IsNodeCheckRunning 查询节点健康检查是否正在运行
+func IsNodeCheckRunning() bool {
+	return isNodeCheckRunning.Load()
 }
 
 func (w *NodeHealthWorker) run() {
@@ -55,12 +78,22 @@ func (w *NodeHealthWorker) run() {
 
 	// 首次：等5分钟让 sing-box core 稳定再开始
 	time.Sleep(5 * time.Minute)
-	w.runOnce()
-
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
-	for range ticker.C {
+	if isNodeCheckRunning.CompareAndSwap(false, true) {
 		w.runOnce()
+		isNodeCheckRunning.Store(false)
+	}
+
+	// 每天凌晨 04:30 定时运行
+	for {
+		d := nextDailyAt(4, 30)
+		logger.Infof("NodeHealthWorker: 下次运行时间 %v 后 (04:30)", d.Round(time.Minute))
+		time.Sleep(d)
+		if isNodeCheckRunning.CompareAndSwap(false, true) {
+			w.runOnce()
+			isNodeCheckRunning.Store(false)
+		} else {
+			logger.Info("NodeHealthWorker: 上次检测仍在运行，跳过本次")
+		}
 	}
 }
 

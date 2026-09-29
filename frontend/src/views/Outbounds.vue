@@ -31,12 +31,20 @@
     :tag="stats.tag"
     @close="closeStats"
   />
+  <EgressHealthCheck
+    v-model="egressCheckModal.visible"
+    :visible="egressCheckModal.visible"
+    @close="egressCheckModal.visible = false"
+  />
   <v-row>
     <v-col cols="12" justify="center" align="center">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
       <v-btn color="secondary" class="ml-2" @click="showBatchModal">{{ $t('actions.batchImport') || 'Batch Import' }}</v-btn>
       <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
       <v-btn color="amber-darken-3" class="ml-2" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
+      <v-btn color="teal" class="ml-2" prepend-icon="mdi-shield-check" @click="egressCheckModal.visible = true">
+        健康检测
+      </v-btn>
       <v-btn color="info" class="ml-2" @click="showTestModal(false)">{{ $t('actions.testAll') || 'Test All' }}</v-btn>
       <v-btn 
         color="success" 
@@ -293,10 +301,14 @@ import BatchImport from '@/layouts/modals/BatchImport.vue'
 import ProtonSync from '@/layouts/modals/ProtonSync.vue'
 import NodeTest from '@/layouts/modals/NodeTest.vue'
 import Stats from '@/layouts/modals/Stats.vue'
+import EgressHealthCheck from '@/layouts/modals/EgressHealthCheck.vue'
 import { Outbound } from '@/types/outbounds'
 import { computed, ref, reactive } from 'vue'
 import HttpUtils from '@/plugins/httputil'
 import { push } from 'notivue'
+
+// 健康检测弹窗状态
+const egressCheckModal = reactive({ visible: false })
 
 const cfLoading = ref(false)
 

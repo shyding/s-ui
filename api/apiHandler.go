@@ -94,6 +94,9 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.DeleteSubscription(c)
 	case "refreshSubscription":
 		a.ApiService.RefreshSubscription(c)
+	case "egressHealthCheck":
+		// 手动触发出口健康检查；若已在运行则返回 409
+		a.ApiService.TriggerEgressHealthCheck(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -141,6 +144,9 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetSubscriptions(c)
 	case "cloudflareRegions":
 		a.ApiService.GetCloudflareRegions(c)
+	case "egressStatus":
+		// 查询出口健康检查是否正在运行
+		a.ApiService.GetEgressStatus(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

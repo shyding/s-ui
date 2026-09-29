@@ -1201,3 +1201,43 @@ func (a *ApiService) GetCloudflareRegions(c *gin.Context) {
 		"endpoints":     endpoints,
 	}, nil)
 }
+
+// TriggerEgressHealthCheck 手动触发出口健康检查
+// 若检查已在运行则返回 409 Conflict，防止并发导致 CPU 过高
+func (a *ApiService) TriggerEgressHealthCheck(c *gin.Context) {
+	if service.IsEgressCheckRunning() || service.IsNodeCheckRunning() {
+		c.JSON(409, gin.H{
+			"success": false,
+			"msg":     "健康检查正在运行中，请稍后再试",
+			"running": true,
+		})
+		return
+	}
+	egressOk := service.TriggerEgressHealthCheck()
+	nodeOk := service.TriggerNodeHealthCheck()
+	if !egressOk && !nodeOk {
+		c.JSON(409, gin.H{
+			"success": false,
+			"msg":     "健康检查正在运行中，请稍后再试",
+			"running": true,
+		})
+		return
+	}
+	jsonObj(c, gin.H{
+		"success": true,
+		"msg":     "健康检查已在后台启动（低并发，不影响服务）",
+		"running": true,
+	}, nil)
+}
+
+// GetEgressStatus 查询当前出口健康检查运行状态
+func (a *ApiService) GetEgressStatus(c *gin.Context) {
+	egressRunning := service.IsEgressCheckRunning()
+	nodeRunning := service.IsNodeCheckRunning()
+	jsonObj(c, gin.H{
+		"egressCheckRunning": egressRunning,
+		"nodeCheckRunning":   nodeRunning,
+		"anyRunning":         egressRunning || nodeRunning,
+		"nextSchedule":       "每天凌晨 04:30 自动运行",
+	}, nil)
+}

@@ -111,10 +111,9 @@ func (a *APP) Start() error {
 	// Start Cloudflare dynamic multi-region updater
 	service.StartCloudflareDynamicUpdater(database.GetDB(), 15*time.Minute)
 
-	// External source nodes are candidates for VPS egress only; they must not be
-	// measured as client-facing nodes from the VPS process.
-	// Run once at startup (after 5min delay), then once every 24h overnight.
-	service.StartEgressHealthWorker(24*time.Hour, a.configService.RestartCore)
+	// 出口健康检查 Worker：启动5分钟后跑第一次，之后每天凌晨04:30运行
+	// 低并发(5)，确保不会导致 CPU 过高。手动触发请使用 /api/egressHealthCheck
+	service.StartEgressHealthWorker(a.configService.RestartCore)
 	(&service.SubscriptionService{}).StartAutoUpdate(a.configService.RestartCore)
 
 	return nil

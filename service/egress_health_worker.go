@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -13,6 +14,12 @@ import (
 var egressHealthWorkerOnce sync.Once
 var egressReloadMu sync.Mutex
 var lastEgressReload time.Time
+
+// isEgressCheckRunning 防止并发：同一时刻只允许一个 check 实例运行
+var isEgressCheckRunning atomic.Bool
+
+// egressReloadFns 存储 reload 回调，供手动触发时使用
+var egressReloadFns []func() error
 
 const minimumEgressReloadInterval = 15 * time.Minute
 
@@ -26,20 +33,62 @@ func canReloadEgress(now time.Time) bool {
 	return true
 }
 
-func StartEgressHealthWorker(interval time.Duration, reload ...func() error) {
+// nextDailyAt 计算距今最近的下一个 hour:minute（本地时间）
+func nextDailyAt(hour, minute int) time.Duration {
+	now := time.Now()
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !next.After(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return time.Until(next)
+}
+
+// StartEgressHealthWorker 启动出口健康检查 Worker：
+//   - 启动后等 5 分钟（让 sing-box core 稳定）跑第一次
+//   - 之后每天凌晨 04:30 跑一次
+func StartEgressHealthWorker(reload ...func() error) {
+	egressReloadFns = reload
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
-			// Wait 5 minutes after startup so sing-box core can stabilize
-			// before we begin testing nodes (avoids CPU spike at boot)
+			// 等 5 分钟让 sing-box core 稳定后跑启动检测
 			time.Sleep(5 * time.Minute)
-			runEgressHealthCheck(reload...)
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for range ticker.C {
-				runEgressHealthCheck(reload...)
+			safeRunEgressHealthCheck()
+
+			// 每天凌晨 04:30 定时运行
+			for {
+				d := nextDailyAt(4, 30)
+				logger.Infof("EgressHealthWorker: 下次运行时间 %v 后 (04:30)", d.Round(time.Minute))
+				time.Sleep(d)
+				safeRunEgressHealthCheck()
 			}
 		}()
 	})
+}
+
+// TriggerEgressHealthCheck 供 UI 手动触发；若已在运行则返回 false
+func TriggerEgressHealthCheck() bool {
+	if !isEgressCheckRunning.CompareAndSwap(false, true) {
+		return false // 已有实例在跑，拒绝
+	}
+	go func() {
+		defer isEgressCheckRunning.Store(false)
+		runEgressHealthCheck(egressReloadFns...)
+	}()
+	return true
+}
+
+// IsEgressCheckRunning 查询当前是否正在检测（供 UI 显示状态）
+func IsEgressCheckRunning() bool {
+	return isEgressCheckRunning.Load()
+}
+
+func safeRunEgressHealthCheck() {
+	if !isEgressCheckRunning.CompareAndSwap(false, true) {
+		logger.Info("EgressHealthWorker: 上次检测仍在运行，跳过本次")
+		return
+	}
+	defer isEgressCheckRunning.Store(false)
+	runEgressHealthCheck(egressReloadFns...)
 }
 
 func runEgressHealthCheck(reload ...func() error) {
