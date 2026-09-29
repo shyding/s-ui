@@ -642,10 +642,11 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 						continue
 					}
 					country, region, city := LocalizeEgressLocation(candidate.Country, candidate.Region, candidate.City)
-					regCode := fmt.Sprintf("seed-%s-%02d", SanitizeTag(candidate.City), seedIndex)
+					cityWithIdx := fmt.Sprintf("%s%02d", city, seedIndex)
+					regCode := fmt.Sprintf("seed-ashburn-%02d", seedIndex)
 					active = append(active, EgressRegion{
 						Code:        regCode,
-						Name:        fmt.Sprintf("Seed-%s-%s-%s-%02d", country, region, city, seedIndex),
+						Name:        fmt.Sprintf("Seed-%s-%s-%s", country, region, cityWithIdx),
 						Flag:        GetCountryFlag(NormalizeCountryCode(candidate.Country)),
 						OutboundTag: candidate.Tag,
 					})
