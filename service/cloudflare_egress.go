@@ -1065,6 +1065,17 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 	countryCache := GetCountryCache()
 	workingPrivKey, workingAddrs := FindWorkingWireGuardPrivateKey(singboxConfig, db)
 
+	addDirectWrapper := func(ep string) string {
+		outTag := "out-" + ep
+		if !existingObTags[outTag] {
+			if outJson, err := BuildDirectOutboundJson(outTag, ep); err == nil {
+				singboxConfig.Outbounds = append(singboxConfig.Outbounds, outJson)
+				existingObTags[outTag] = true
+			}
+		}
+		return outTag
+	}
+
 	for _, reg := range cfRegions {
 		poolTag := reg.OutboundTag
 
@@ -1085,13 +1096,15 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 		var memberTags []string
 
-		// 1. Prioritize real physical servers in the target city / country
+		// 1. Prioritize real physical servers if a valid WireGuard key is present
 		var matchedServers []*PhysicalServerEntry
-		if coloUpper != "" {
-			matchedServers = countryCache.GetCityServers(locUpper, coloUpper)
-		}
-		if len(matchedServers) == 0 {
-			matchedServers = countryCache.GetCountryServers(locUpper)
+		if workingPrivKey != "" {
+			if coloUpper != "" {
+				matchedServers = countryCache.GetCityServers(locUpper, coloUpper)
+			}
+			if len(matchedServers) == 0 {
+				matchedServers = countryCache.GetCountryServers(locUpper)
+			}
 		}
 
 		var cfDbEndpoints []model.CloudflareEndpoint
@@ -1102,8 +1115,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Order("latency_ms ASC, id ASC").Find(&cfDbEndpoints).Error
 		}
 
-		// 1. For non-Singapore regional pools, prioritize real physical servers located in the target city / country
-		if len(matchedServers) > 0 {
+		if len(matchedServers) > 0 && workingPrivKey != "" {
 			seenEntryIPs := make(map[string]bool)
 			for _, s := range matchedServers {
 				if s.Tier != 0 || s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
@@ -1121,93 +1133,35 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 					}
 				}
 				if existingEpTags[epTag] {
-					memberTags = append(memberTags, epTag)
+					memberTags = append(memberTags, addDirectWrapper(epTag))
 				}
 				if len(memberTags) >= 1 {
 					break
 				}
 			}
-			if len(memberTags) == 0 {
-				for _, s := range matchedServers {
-					if s.EntryIP == "" || seenEntryIPs[s.EntryIP] {
-						continue
-					}
-					seenEntryIPs[s.EntryIP] = true
-					cleanIP := strings.ReplaceAll(s.EntryIP, ".", "-")
-					cleanIP = strings.ReplaceAll(cleanIP, ":", "-")
-					epTag := fmt.Sprintf("ep-cf-%s", cleanIP)
-					if !existingEpTags[epTag] {
-						epJson, err := BuildWireGuardEndpointJsonForServer(epTag, s, workingPrivKey, workingAddrs)
-						if err == nil {
-							singboxConfig.Endpoints = append(singboxConfig.Endpoints, epJson)
-							existingEpTags[epTag] = true
-						}
-					}
-					if existingEpTags[epTag] {
-						memberTags = append(memberTags, epTag)
-					}
-					if len(memberTags) >= 1 {
-						break
-					}
-				}
-			}
 		}
 
-		// Include known verified DB endpoints for this country (US, NL, JP, etc.)
-		targetPrefix := fmt.Sprintf("ep-proton-%s", strings.ToLower(locUpper))
-		for epTag := range existingEpTags {
-			if strings.HasPrefix(epTag, targetPrefix) {
-				memberTags = append([]string{epTag}, memberTags...)
-				break
-			}
-		}
-
-		// 2. For Singapore pools or if no physical servers exist, use verified Cloudflare endpoints
-		if locUpper == "SG" {
-			if len(cfDbEndpoints) > 0 {
-				targetEp := cfDbEndpoints[endpointIdx%len(cfDbEndpoints)]
-				cleanIP := strings.ReplaceAll(targetEp.IP, ".", "-")
-				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, targetEp.Port)
-				if !existingEpTags[cfTag] {
-					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, targetEp.IP, targetEp.Port, baseWarpMap)
-					if err == nil {
-						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
-						existingEpTags[cfTag] = true
-					}
-				}
-				if existingEpTags[cfTag] {
-					memberTags = append(memberTags, cfTag)
+		// 2. Verified Cloudflare official endpoints
+		if len(memberTags) == 0 && len(cfDbEndpoints) > 0 {
+			targetEp := cfDbEndpoints[endpointIdx%len(cfDbEndpoints)]
+			cleanIP := strings.ReplaceAll(targetEp.IP, ".", "-")
+			cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, targetEp.Port)
+			if !existingEpTags[cfTag] {
+				cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, targetEp.IP, targetEp.Port, baseWarpMap)
+				if err == nil {
+					singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
+					existingEpTags[cfTag] = true
 				}
 			}
-		}
-
-		// If no physical-server mapping exists, use the Cloudflare endpoint that
-		// produced this region's trace result. This keeps online Cloudflare
-		// endpoints from being silently discarded. The resulting pool still goes
-		// through the normal VPS-side health check before publication.
-		if len(memberTags) == 0 {
-			if len(cfDbEndpoints) > 0 {
-				targetEp := cfDbEndpoints[endpointIdx%len(cfDbEndpoints)]
-				cleanIP := strings.ReplaceAll(targetEp.IP, ".", "-")
-				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, targetEp.Port)
-				if !existingEpTags[cfTag] {
-					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, targetEp.IP, targetEp.Port, baseWarpMap)
-					if err == nil {
-						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
-						existingEpTags[cfTag] = true
-					}
-				}
-				if existingEpTags[cfTag] {
-					memberTags = append(memberTags, cfTag)
-				}
+			if existingEpTags[cfTag] {
+				memberTags = append(memberTags, addDirectWrapper(cfTag))
 			}
 		}
 
 		// Strictly forbid the global WARP fallback for non-Singapore pools.
-		// Only Singapore pools may use warpTag.
 		if locUpper == "SG" {
 			if len(memberTags) == 0 && warpTag != "" && existingEpTags[warpTag] {
-				memberTags = append(memberTags, warpTag)
+				memberTags = append(memberTags, addDirectWrapper(warpTag))
 			}
 		}
 
@@ -1223,7 +1177,7 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 			}
 		}
 
-		// Also provide legacy country-level pool tag (e.g. cf-be-pool) aliased to the same memberTags
+		// Also provide legacy country-level pool tag aliased to the same memberTags
 		legacyCountryPoolTag := fmt.Sprintf("cf-%s-pool", strings.ToLower(locUpper))
 		if legacyCountryPoolTag != poolTag && !existingObTags[legacyCountryPoolTag] {
 			legacyOb, err := BuildUrlTestPoolJsonWithTolerance(legacyCountryPoolTag, memberTags, "3m", 800)

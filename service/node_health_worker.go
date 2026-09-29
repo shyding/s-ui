@@ -398,6 +398,9 @@ func regionToChinese(region string) string {
 	if strings.IndexFunc(region, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
 		return region
 	}
+	if strings.TrimSpace(region) != "" {
+		return strings.TrimSpace(region)
+	}
 	return "未知地区"
 }
 
@@ -413,6 +416,9 @@ func cityToChinese(city string) string {
 		"Miami": "迈阿密", "Denver": "丹佛", "Phoenix": "凤凰城",
 		"Washington": "华盛顿", "Ashburn": "阿什本", "Newark": "纽瓦克",
 		"Buffalo": "布法罗", "Portland": "波特兰", "Las Vegas": "拉斯维加斯",
+		"North Bergen": "北卑尔根", "Clifton": "克利夫顿", "Calgary": "卡尔加里",
+		"Santa Clara": "圣克拉拉", "Council Bluffs": "康瑟尔布拉夫斯", "Mumbai": "孟买",
+		"Hanoi": "河内", "Surakarta": "梭罗",
 		"Tokyo": "东京", "Osaka": "大阪", "Nagoya": "名古屋",
 		"Singapore": "新加坡城", "Frankfurt": "法兰克福", "Berlin": "柏林",
 		"Munich": "慕尼黑", "Hamburg": "汉堡", "Amsterdam": "阿姆斯特丹",
@@ -440,6 +446,9 @@ func cityToChinese(city string) string {
 	}
 	if strings.IndexFunc(city, func(r rune) bool { return r >= '\u4e00' && r <= '\u9fff' }) >= 0 {
 		return city
+	}
+	if strings.TrimSpace(city) != "" {
+		return strings.TrimSpace(city)
 	}
 	return "未知城市"
 }
