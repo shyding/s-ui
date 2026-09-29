@@ -41,31 +41,46 @@ var defaultConfig = `{
 }`
 
 var defaultValueMap = map[string]string{
-	"webListen":     "",
-	"webDomain":     "",
-	"webPort":       "2053",
-	"secret":        common.Random(32),
-	"webCertFile":   "/usr/local/s-ui/certs/fullchain.pem",
-	"webKeyFile":    "/usr/local/s-ui/certs/privkey.pem",
-	"webPath":       "/app/",
-	"webURI":        "",
-	"sessionMaxAge": "0",
-	"trafficAge":    "30",
-	"timeLocation":  "Asia/Tehran",
-	"subListen":     "",
-	"subPort":       "2096",
-	"subPath":       "/sub/",
-	"subDomain":     "",
-	"subCertFile":   "/usr/local/s-ui/certs/fullchain.pem",
-	"subKeyFile":    "/usr/local/s-ui/certs/privkey.pem",
-	"subUpdates":    "12",
-	"subEncode":     "true",
-	"subShowInfo":   "false",
-	"subURI":        "",
-	"subJsonExt":    "",
-	"subClashExt":   "",
-	"config":        defaultConfig,
-	"version":       config.GetVersion(),
+	"webListen":       "",
+	"webDomain":       "",
+	"webPort":         "2053",
+	"secret":          common.Random(32),
+	"webCertFile":     "/usr/local/s-ui/certs/fullchain.pem",
+	"webKeyFile":      "/usr/local/s-ui/certs/privkey.pem",
+	"webPath":         "/app/",
+	"webURI":          "",
+	"sessionMaxAge":   "0",
+	"trafficAge":      "30",
+	"timeLocation":    "Asia/Tehran",
+	"subListen":       "",
+	"subPort":         "2096",
+	"subPath":         "/sub/",
+	"subDomain":       "",
+	"subCertFile":     "/usr/local/s-ui/certs/fullchain.pem",
+	"subKeyFile":      "/usr/local/s-ui/certs/privkey.pem",
+	"subUpdates":      "12",
+	"subEncode":       "true",
+	"subShowInfo":     "false",
+	"subURI":          "",
+	"subJsonExt":      "",
+	"subClashExt":     "",
+	"config":          defaultConfig,
+	"version":         config.GetVersion(),
+	"healthCheckTime": "03:30", // 每日健康检测时间（本地时间，格式 HH:MM）
+}
+
+// GetHealthCheckTime 返回配置的每日健康检测时间（格式 "HH:MM"，默认 "03:30"）
+func GetHealthCheckTime() string {
+	v, err := (&SettingService{}).getString("healthCheckTime")
+	if err != nil || v == "" {
+		return "03:30"
+	}
+	return v
+}
+
+// SetHealthCheckTime 保存每日健康检测时间（格式 "HH:MM"）
+func SetHealthCheckTime(t string) error {
+	return (&SettingService{}).saveSetting("healthCheckTime", t)
 }
 
 type SettingService struct {

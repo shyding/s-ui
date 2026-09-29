@@ -1230,14 +1230,36 @@ func (a *ApiService) TriggerEgressHealthCheck(c *gin.Context) {
 	}, nil)
 }
 
-// GetEgressStatus 查询当前出口健康检查运行状态
+// GetEgressStatus 查询当前出口健康检查运行状态和计划时间
 func (a *ApiService) GetEgressStatus(c *gin.Context) {
 	egressRunning := service.IsEgressCheckRunning()
 	nodeRunning := service.IsNodeCheckRunning()
+	healthCheckTime := service.GetHealthCheckTime()
 	jsonObj(c, gin.H{
 		"egressCheckRunning": egressRunning,
 		"nodeCheckRunning":   nodeRunning,
 		"anyRunning":         egressRunning || nodeRunning,
-		"nextSchedule":       "每天凌晨 04:30 自动运行",
+		"healthCheckTime":    healthCheckTime,
+		"nextSchedule":       "每天 " + healthCheckTime + " 自动运行",
 	}, nil)
+}
+
+// SaveHealthCheckTime 保存用户配置的每日健康检测时间
+func (a *ApiService) SaveHealthCheckTime(c *gin.Context) {
+	t := c.Request.FormValue("healthCheckTime")
+	if t == "" {
+		jsonMsg(c, "", common.NewError("healthCheckTime is required"))
+		return
+	}
+	// 基础格式校验 HH:MM
+	parts := strings.SplitN(t, ":", 2)
+	if len(parts) != 2 || len(parts[0]) < 1 || len(parts[1]) != 2 {
+		jsonMsg(c, "", common.NewError("invalid time format, expected HH:MM"))
+		return
+	}
+	if err := service.SetHealthCheckTime(t); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	jsonObj(c, gin.H{"success": true, "healthCheckTime": t}, nil)
 }

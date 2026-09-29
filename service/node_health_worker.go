@@ -83,10 +83,10 @@ func (w *NodeHealthWorker) run() {
 		isNodeCheckRunning.Store(false)
 	}
 
-	// 每天凌晨 04:30 定时运行
+	// 每天在用户配置的时间运行（从 DB settings 读取，默认 03:30）
 	for {
-		d := nextDailyAt(4, 30)
-		logger.Infof("NodeHealthWorker: 下次运行时间 %v 后 (04:30)", d.Round(time.Minute))
+		d, t := nextScheduledRun()
+		logger.Infof("NodeHealthWorker: 下次运行时间 %v 后 (%s)", d.Round(time.Minute), t)
 		time.Sleep(d)
 		if isNodeCheckRunning.CompareAndSwap(false, true) {
 			w.runOnce()

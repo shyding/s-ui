@@ -97,6 +97,9 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	case "egressHealthCheck":
 		// 手动触发出口健康检查；若已在运行则返回 409
 		a.ApiService.TriggerEgressHealthCheck(c)
+	case "saveHealthCheckTime":
+		// 保存用户配置的每日健康检测时间
+		a.ApiService.SaveHealthCheckTime(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

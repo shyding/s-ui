@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,9 +44,26 @@ func nextDailyAt(hour, minute int) time.Duration {
 	return time.Until(next)
 }
 
+// nextScheduledRun 从数据库读取 healthCheckTime 设置（格式 HH:MM），
+// 计算距下一次运行的时长。解析失败时默认使用 03:30。
+func nextScheduledRun() (time.Duration, string) {
+	timeStr := GetHealthCheckTime() // e.g. "03:30"
+	parts := strings.SplitN(timeStr, ":", 2)
+	hour, minute := 3, 30
+	if len(parts) == 2 {
+		if h, err := strconv.Atoi(parts[0]); err == nil && h >= 0 && h <= 23 {
+			hour = h
+		}
+		if m, err := strconv.Atoi(parts[1]); err == nil && m >= 0 && m <= 59 {
+			minute = m
+		}
+	}
+	return nextDailyAt(hour, minute), timeStr
+}
+
 // StartEgressHealthWorker 启动出口健康检查 Worker：
 //   - 启动后等 5 分钟（让 sing-box core 稳定）跑第一次
-//   - 之后每天凌晨 04:30 跑一次
+//   - 之后每天在用户配置的时间（默认 03:30）跑一次
 func StartEgressHealthWorker(reload ...func() error) {
 	egressReloadFns = reload
 	egressHealthWorkerOnce.Do(func() {
@@ -54,10 +72,10 @@ func StartEgressHealthWorker(reload ...func() error) {
 			time.Sleep(5 * time.Minute)
 			safeRunEgressHealthCheck()
 
-			// 每天凌晨 04:30 定时运行
+			// 每天在配置时间定时运行
 			for {
-				d := nextDailyAt(4, 30)
-				logger.Infof("EgressHealthWorker: 下次运行时间 %v 后 (04:30)", d.Round(time.Minute))
+				d, t := nextScheduledRun()
+				logger.Infof("EgressHealthWorker: 下次运行时间 %v 后 (%s)", d.Round(time.Minute), t)
 				time.Sleep(d)
 				safeRunEgressHealthCheck()
 			}
