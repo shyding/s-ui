@@ -8,7 +8,8 @@ import (
 
 // NodeHealthStatus encapsulates the two-stage health status, provenance, and performance metrics of a proxy node
 type NodeHealthStatus struct {
-	Node          string  `json:"node" gorm:"primaryKey"` // Unique identifier or outbound tag
+	Node          string  `json:"node" gorm:"primaryKey"` // Unique identifier: host:port
+	OriginalURI   string  `json:"original_uri"`           // 完整原始 URI（供订阅直接发布）
 	Provider      string  `json:"provider"`               // 来源: e.g. AWS, Azure, Cloudflare, S-UI, etc.
 	Country       string  `json:"country"`                // 国家: e.g. 日本, 美国, 新加坡, 德国, 荷兰
 	Region        string  `json:"region"`                 // 区域: e.g. 关东, 加州, 中央区, 黑森, 北荷兰
@@ -23,8 +24,13 @@ type NodeHealthStatus struct {
 	LastError     string  `json:"last_error"`             // Reason for failure e.g. WIREGUARD_HANDSHAKE_TIMEOUT
 }
 
-// DefaultHealthTTL defines maximum allowed age for a health check before it is considered STALE
-const DefaultHealthTTL = 15 * time.Minute
+// DefaultHealthTTL defines maximum allowed age for a health check before it is considered STALE.
+// Set to 25h to match the daily 03:30 health check schedule (24h + 1h buffer).
+const DefaultHealthTTL = 25 * time.Hour
+
+// MaxSubscriptionLatency is the maximum latency (in ms) a node can have to be published
+// in subscriptions. Nodes with latency > 650ms are considered too slow for end users.
+const MaxSubscriptionLatency int64 = 650
 
 // GroupKey returns provider + country + region + city for TOP3 aggregation
 func (n *NodeHealthStatus) GroupKey() string {
@@ -58,7 +64,7 @@ func (n *NodeHealthStatus) StandardRemark(index int) string {
 // 3. TCPCheck == true
 // 4. TLSCheck == true
 // 5. ProxyCheck == true
-// 6. Latency > 0
+// 6. Latency > 0 AND Latency <= MaxSubscriptionLatency (650ms)
 // 7. Speed > 0
 // 8. LastCheckTime is within TTL
 func (n *NodeHealthStatus) IsHealthyWithTTL(ttl time.Duration) bool {
@@ -66,6 +72,10 @@ func (n *NodeHealthStatus) IsHealthyWithTTL(ttl time.Duration) bool {
 		return false
 	}
 	if !n.TCPCheck || !n.TLSCheck || !n.ProxyCheck || n.Status != "available" || n.Latency <= 0 || n.Speed <= 0 {
+		return false
+	}
+	// Enforce latency cap: nodes slower than 650ms are not published
+	if n.Latency > MaxSubscriptionLatency {
 		return false
 	}
 	if ttl <= 0 {

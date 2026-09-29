@@ -168,15 +168,16 @@ func (w *NodeHealthWorker) runOnce() {
 
 			// Upsert into node_health_statuses
 			result := db.Exec(`
-				INSERT INTO node_health_statuses (node, provider, country, region, city, tcp_check, tls_check, proxy_check, latency, speed, status, last_check_time, last_error)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO node_health_statuses (node, original_uri, provider, country, region, city, tcp_check, tls_check, proxy_check, latency, speed, status, last_check_time, last_error)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(node) DO UPDATE SET
+					original_uri=excluded.original_uri,
 					provider=excluded.provider, country=excluded.country, region=excluded.region, city=excluded.city,
 					tcp_check=excluded.tcp_check, tls_check=excluded.tls_check, proxy_check=excluded.proxy_check,
 					latency=excluded.latency, speed=excluded.speed, status=excluded.status,
 					last_check_time=excluded.last_check_time, last_error=excluded.last_error
 			`,
-				status.Node, status.Provider, status.Country, status.Region, status.City,
+				status.Node, status.OriginalURI, status.Provider, status.Country, status.Region, status.City,
 				status.TCPCheck, status.TLSCheck, status.ProxyCheck,
 				status.Latency, status.Speed, status.Status,
 				status.LastCheckTime, status.LastError,
@@ -207,9 +208,10 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 
 	nodeKey := host + ":" + port
 	status := &model.NodeHealthStatus{
-		Node:     nodeKey,
-		Provider: proto,
-		Status:   "unavailable",
+		Node:        nodeKey,
+		OriginalURI: uri, // 存完整 URI 供订阅直接发布
+		Provider:    proto,
+		Status:      "unavailable",
 	}
 	status.SetCheckedAtNow()
 

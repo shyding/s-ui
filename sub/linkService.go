@@ -482,7 +482,70 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		}
 	}
 
+	// ─── 发布外部来源的健康节点（seed / hproxy / cloudflare）───
+	// 从 node_health_statuses 中查询所有合格的外部节点
+	// 条件：status=available, latency>0 且 <=650ms, speed>0, 有地理信息
+	db := database.GetDB()
+	if db != nil {
+		var healthyNodes []model.NodeHealthStatus
+		cutoff := time.Now().Add(-model.DefaultHealthTTL).Format(time.RFC3339)
+		err := db.Where(
+			"status = ? AND latency > 0 AND latency <= ? AND speed > 0 AND "+
+				"tcp_check = 1 AND tls_check = 1 AND proxy_check = 1 AND "+
+				"country != '' AND region != '' AND city != '' AND "+
+				"last_check_time > ? AND provider != ''",
+			"available", model.MaxSubscriptionLatency, cutoff,
+		).Order("provider ASC, country ASC, latency ASC").Find(&healthyNodes).Error
+
+		if err == nil && len(healthyNodes) > 0 {
+			// 按 GroupKey 分组 TOP3
+			groups := make(map[string][]model.NodeHealthStatus)
+			for _, n := range healthyNodes {
+				gk := n.GroupKey()
+				groups[gk] = append(groups[gk], n)
+			}
+			var gkeys []string
+			for k := range groups {
+				gkeys = append(gkeys, k)
+			}
+			sort.Strings(gkeys)
+
+			for _, gk := range gkeys {
+				items := groups[gk]
+				// 已经按 latency ASC 排序
+				limit := 3
+				if len(items) < limit {
+					limit = len(items)
+				}
+				for idx := 0; idx < limit; idx++ {
+					n := items[idx]
+					// 优先使用完整 URI，如果未填（旧记录）则跳过
+					uri := n.OriginalURI
+					if uri == "" {
+						continue // 没有完整 URI 的旧记录不能发布
+					}
+					// 用验证后的真实位置重写备注
+					stdRemark := service.FormatStandardRemark(n.Provider, n.Country, n.Region, n.City, idx+1)
+					finalUri := setRemarkOnUri(uri, guessProtocol(uri), stdRemark)
+					if !seen[finalUri] {
+						seen[finalUri] = true
+						result = append(result, finalUri)
+					}
+				}
+			}
+			logger.Infof("Subscription: published %d external healthy nodes (seed/hproxy/cf) from %d groups", len(healthyNodes), len(groups))
+		}
+	}
+
 	return result
+}
+
+// guessProtocol 从 URI 猜测协议名
+func guessProtocol(uri string) string {
+	if idx := strings.Index(uri, "://"); idx > 0 {
+		return uri[:idx]
+	}
+	return ""
 }
 
 func (s *LinkService) GetLocalLinks(linkJson *json.RawMessage, clientInfo string, allowedTags map[string]bool) []string {
