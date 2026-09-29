@@ -112,9 +112,32 @@ func runEgressHealthCheck(reload ...func() error) {
 	}
 
 	tags := []string{"warp-6eV"}
+	// 1. Regional pools (Cloudflare and Proton) are high-priority: test them FIRST
+	for _, region := range GetProtonEgressRegions(db) {
+		if region.OutboundTag != "" {
+			tags = append(tags, region.OutboundTag)
+		}
+	}
+	for _, region := range GetActiveCloudflareRegions(db) {
+		if region.OutboundTag != "" {
+			tags = append(tags, region.OutboundTag)
+		}
+	}
+
+	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, min(len(tags), 12))
+	if err != nil {
+		logger.Warning("egress health check failed:", err)
+	} else {
+		for _, result := range results {
+			if !result.Available {
+				logger.Warningf("egress pool %s unavailable: %s", result.Tag, result.Error)
+			}
+		}
+	}
+
 	var protonTags []string
 	protonCutoff := time.Now().Add(-25 * time.Hour).Unix()
-	// Proton子节点：每天测一遍，低并发(3)
+	// 2. Proton child nodes: daily check
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "out-proton-%", protonCutoff, false).
 		Order("last_test_time ASC").Limit(20).Pluck("tag", &protonTags)
@@ -132,7 +155,8 @@ func runEgressHealthCheck(reload ...func() error) {
 			logger.Infof("Proton child health check finished: tested=%d passed=%d", len(protonResults), passed)
 		}
 	}
-	// Seed节点：每天慢慢测，低并发(5)，每次200个
+
+	// 3. Seed nodes: background check
 	var seedTags []string
 	var seedSubscription model.Subscription
 	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
@@ -158,28 +182,6 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-
-	for _, region := range GetProtonEgressRegions(db) {
-		if region.OutboundTag != "" {
-			tags = append(tags, region.OutboundTag)
-		}
-	}
-	for _, region := range GetActiveCloudflareRegions(db) {
-		if region.OutboundTag != "" {
-			tags = append(tags, region.OutboundTag)
-		}
-	}
-
-	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, min(len(tags), 12))
-	if err != nil {
-		logger.Warning("egress health check failed:", err)
-	} else {
-		for _, result := range results {
-			if !result.Available {
-				logger.Warningf("egress pool %s unavailable: %s", result.Tag, result.Error)
-			}
-		}
-	}
 
 	// HProxy候选：每天测一遍，低并发(5)，每次300个
 	var candidateTags []string
