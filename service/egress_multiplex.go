@@ -636,23 +636,23 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 		if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
 			var seedCandidates []model.Outbound
 			if db.Where("subscription_id = ? AND available = ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", seedSubscription.Id, true).Find(&seedCandidates).Error == nil {
-				seenPools := make(map[string]bool)
+				seedIndex := 1
 				for _, candidate := range seedCandidates {
 					if !hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) {
 						continue
 					}
 					country, region, city := LocalizeEgressLocation(candidate.Country, candidate.Region, candidate.City)
-					poolTag := seedPoolTag(candidate.Country, candidate.Region, candidate.City)
-					if seenPools[poolTag] {
-						continue
-					}
-					seenPools[poolTag] = true
+					regCode := fmt.Sprintf("seed-%s-%02d", SanitizeTag(candidate.City), seedIndex)
 					active = append(active, EgressRegion{
-						Code:        strings.TrimSuffix(poolTag, "-pool"),
-						Name:        fmt.Sprintf("Seed-%s-%s-%s", country, region, city),
+						Code:        regCode,
+						Name:        fmt.Sprintf("Seed-%s-%s-%s-%02d", country, region, city, seedIndex),
 						Flag:        GetCountryFlag(NormalizeCountryCode(candidate.Country)),
-						OutboundTag: poolTag,
+						OutboundTag: candidate.Tag,
 					})
+					seedIndex++
+					if seedIndex > 120 {
+						break
+					}
 				}
 			}
 		}
@@ -701,7 +701,7 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 				_ = db.Where("subscription_id = ? AND available = ? AND last_test_time >= ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", seedSubscription.Id, true, cutoff).Find(&candidates).Error
 			}
 			for _, candidate := range candidates {
-				if hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) && seedPoolTag(candidate.Country, candidate.Region, candidate.City) == region.OutboundTag {
+				if candidate.Tag == region.OutboundTag {
 					verified = append(verified, region)
 					break
 				}

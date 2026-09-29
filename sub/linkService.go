@@ -414,9 +414,9 @@ func FormatTop3Links(candidates []CandidateNode) []string {
 			return groupItems[i].Protocol < groupItems[j].Protocol
 		})
 
-		limit := 3
-		if len(groupItems) < limit {
-			limit = len(groupItems)
+		limit := len(groupItems)
+		if limit > 120 {
+			limit = 120
 		}
 
 		for idx := 0; idx < limit; idx++ {
