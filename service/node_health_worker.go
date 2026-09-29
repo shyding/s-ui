@@ -37,11 +37,12 @@ var globalHealthWorker *NodeHealthWorker
 var workerOnce sync.Once
 
 // StartNodeHealthWorker 启动全局后台健康检查 Worker（单例）
+// 策略：启动后等5分钟跑第一次，之后每24小时跑一次（慢速，低并发）
 func StartNodeHealthWorker(interval time.Duration) {
 	workerOnce.Do(func() {
 		globalHealthWorker = &NodeHealthWorker{
 			interval:    interval,
-			concurrency: 60,
+			concurrency: 5, // 极低并发，24h内慢慢跑完，不抢CPU
 		}
 		go globalHealthWorker.run()
 	})
@@ -52,7 +53,8 @@ func (w *NodeHealthWorker) run() {
 	w.running = true
 	w.mu.Unlock()
 
-	// 首次立即运行
+	// 首次：等5分钟让 sing-box core 稳定再开始
+	time.Sleep(5 * time.Minute)
 	w.runOnce()
 
 	ticker := time.NewTicker(w.interval)

@@ -113,7 +113,8 @@ func (a *APP) Start() error {
 
 	// External source nodes are candidates for VPS egress only; they must not be
 	// measured as client-facing nodes from the VPS process.
-	service.StartEgressHealthWorker(5*time.Minute, a.configService.RestartCore)
+	// Run once at startup (after 5min delay), then once every 24h overnight.
+	service.StartEgressHealthWorker(24*time.Hour, a.configService.RestartCore)
 	(&service.SubscriptionService{}).StartAutoUpdate(a.configService.RestartCore)
 
 	return nil
