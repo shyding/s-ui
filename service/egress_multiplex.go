@@ -637,21 +637,27 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 			var seedCandidates []model.Outbound
 			if db.Where("subscription_id = ? AND available = ? AND landing_ip != '' AND country != '' AND region != '' AND city != ''", seedSubscription.Id, true).Find(&seedCandidates).Error == nil {
 				seedIndex := 1
+				seedCityCounts := make(map[string]int)
 				for _, candidate := range seedCandidates {
 					if !hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) {
 						continue
 					}
 					country, region, city := LocalizeEgressLocation(candidate.Country, candidate.Region, candidate.City)
-					cityWithIdx := fmt.Sprintf("%s%02d", city, seedIndex)
-					regCode := fmt.Sprintf("seed-ashburn-%02d", seedIndex)
+					cCode := strings.ToLower(NormalizeCountryCode(candidate.Country))
+					cityKey := fmt.Sprintf("%s-%s", cCode, city)
+					if seedCityCounts[cityKey] >= 3 {
+						continue
+					}
+					seedCityCounts[cityKey]++
+					regCode := fmt.Sprintf("seed-%s-%02d", cCode, seedIndex)
 					active = append(active, EgressRegion{
 						Code:        regCode,
-						Name:        fmt.Sprintf("Seed-%s-%s-%s", country, region, cityWithIdx),
-						Flag:        GetCountryFlag(NormalizeCountryCode(candidate.Country)),
+						Name:        fmt.Sprintf("Seed-%s-%s-%s", country, region, city),
+						Flag:        GetCountryFlag(cCode),
 						OutboundTag: candidate.Tag,
 					})
 					seedIndex++
-					if seedIndex > 120 {
+					if seedIndex > 150 {
 						break
 					}
 				}

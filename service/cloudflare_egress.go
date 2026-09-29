@@ -836,6 +836,9 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 		}
 
 		cityKey := fmt.Sprintf("%s-%s", locLower, cityName)
+		if cityCounts[cityKey] >= 3 {
+			continue
+		}
 		cityCounts[cityKey]++
 		idx := cityCounts[cityKey]
 

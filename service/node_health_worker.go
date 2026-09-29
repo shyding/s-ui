@@ -204,7 +204,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	status := &model.NodeHealthStatus{
 		Node:        nodeKey,
 		OriginalURI: uri, // 存完整 URI 供订阅直接发布
-		Provider:    proto,
+		Provider:    determineStandardProvider(uri),
 		Status:      "unavailable",
 	}
 	status.SetCheckedAtNow()
@@ -318,57 +318,29 @@ func enrichGeo(s *model.NodeHealthStatus, host, proto string) {
 	country := strField(r, "country")
 	region := strField(r, "regionName")
 	city := strField(r, "city")
-	isp := strField(r, "isp")
-	asn := strField(r, "as")
-	isProxy, _ := r["proxy"].(bool)
-	isHosting, _ := r["hosting"].(bool)
-
-	// Determine provider tag
-	provider := classifyProvider(isp, asn, isProxy, isHosting, proto)
 
 	// Map country to Chinese
 	countryCN := countryToChinese(strField(r, "countryCode"), country)
 	regionCN := regionToChinese(region)
 	cityCN := cityToChinese(city)
 
-	s.Provider = provider
 	s.Country = countryCN
 	s.Region = regionCN
 	s.City = cityCN
 }
 
-func classifyProvider(isp, asn string, isProxy, isHosting bool, proto string) string {
-	lower := strings.ToLower(isp + " " + asn)
-	switch {
-	case strings.Contains(lower, "cloudflare"):
-		return "CF"
-	case strings.Contains(lower, "amazon") || strings.Contains(lower, "aws"):
-		return "AWS"
-	case strings.Contains(lower, "google"):
-		return "GCP"
-	case strings.Contains(lower, "microsoft") || strings.Contains(lower, "azure"):
-		return "Azure"
-	case strings.Contains(lower, "alibaba") || strings.Contains(lower, "aliyun"):
-		return "Ali"
-	case strings.Contains(lower, "tencent"):
-		return "Tencent"
-	case strings.Contains(lower, "digitalocean"):
-		return "DO"
-	case strings.Contains(lower, "vultr"):
-		return "Vultr"
-	case strings.Contains(lower, "linode") || strings.Contains(lower, "akamai"):
-		return "Akamai"
-	case strings.Contains(lower, "ovh"):
-		return "OVH"
-	case strings.Contains(lower, "hetzner"):
-		return "Hetzner"
-	case isHosting:
-		return "IDC"
-	case isProxy:
-		return "Proxy"
-	default:
-		return "Res" // Residential/Commercial
+func determineStandardProvider(uri string) string {
+	lower := strings.ToLower(uri)
+	if strings.Contains(lower, "cloudflare") || strings.Contains(lower, "warp") {
+		return "Cloudflare"
 	}
+	if strings.Contains(lower, "hproxy") || strings.Contains(lower, "proxyscrape") {
+		return "HProxy"
+	}
+	if strings.Contains(lower, "s-ui") || strings.Contains(lower, "dash.icta.top") {
+		return "SUI"
+	}
+	return "Seed"
 }
 
 // countryToChinese 将国家代码映射到中文
