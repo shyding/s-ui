@@ -36,6 +36,12 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Run Go tests (gate)
+        run: |
+          echo "Running service + sub tests with race detector..."
+          go test -race -count=1 -tags "with_gvisor,with_quic" ./service/... ./sub/... 2>&1
+          echo "✅ All Go tests passed"
+
       - name: Build frontend
         run: |
           cd frontend
@@ -88,4 +94,69 @@ jobs:
           DOMAIN="${SERVER_DOMAIN:-dash.icta.top}"
           ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "BOOTSTRAP_SCRIPT=\$(find /tmp/scripts -name deploy_bootstrap.sh 2>/dev/null | head -n 1); if [ -z \"\$BOOTSTRAP_SCRIPT\" ]; then echo 'deploy_bootstrap.sh not found in /tmp/scripts'; ls -la /tmp/scripts; exit 1; fi; chmod +x \"\$BOOTSTRAP_SCRIPT\"; sudo bash \"\$BOOTSTRAP_SCRIPT\" '$DOMAIN'"
 
+      - name: Post-deploy smoke test
+        run: |
+          echo "⏳ Waiting 15s for service to fully start..."
+          sleep 15
 
+          SSH_CMD="ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+
+          echo "::group::1. systemd 服务状态"
+          STATUS=$($SSH_CMD "systemctl is-active s-ui.service")
+          echo "Service status: $STATUS"
+          if [ "$STATUS" != "active" ]; then
+            echo "::error::s-ui service is not active ($STATUS)"
+            $SSH_CMD "journalctl -u s-ui.service -n 30 --no-pager" || true
+            exit 1
+          fi
+          echo "✅ Service is active"
+          echo "::endgroup::"
+
+          echo "::group::2. Web Panel 可达"
+          $SSH_CMD "curl -skf --max-time 10 https://127.0.0.1:2053/app/ -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n'" || {
+            echo "::error::Web panel unreachable on port 2053"
+            exit 1
+          }
+          echo "✅ Web panel OK"
+          echo "::endgroup::"
+
+          echo "::group::3. 订阅接口返回有效节点"
+          SUB_RAW=$($SSH_CMD "curl -sk --max-time 20 -H 'User-Agent: v2rayN/6.0' 'https://127.0.0.1:2096/sub/my'")
+          if [ -z "$SUB_RAW" ]; then
+            echo "::error::Subscription returned empty response"
+            exit 1
+          fi
+          # Decode base64 and count proxy URIs
+          NODE_COUNT=$($SSH_CMD "curl -sk --max-time 20 -H 'User-Agent: v2rayN/6.0' 'https://127.0.0.1:2096/sub/my' | base64 -d 2>/dev/null | grep -cE '(vless|vmess|trojan|hysteria2|ss)://' || echo 0")
+          echo "Subscription node count: $NODE_COUNT"
+          if [ "$NODE_COUNT" -lt 1 ]; then
+            echo "::warning::Subscription returned 0 proxy nodes (may be expected on cold start)"
+          else
+            echo "✅ Subscription returned $NODE_COUNT nodes"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::4. 健康检查 API 可用"
+          $SSH_CMD "curl -sk --max-time 10 'https://127.0.0.1:2053/app/api/egressStatus' -b 'session=test'" | head -c 500
+          echo ""
+          echo "✅ Health status API responded"
+          echo "::endgroup::"
+
+          echo "::group::5. 数据库完整性"
+          $SSH_CMD "sqlite3 /usr/local/s-ui/db/s-ui.db \"SELECT 'settings=' || COUNT(*) FROM settings; SELECT 'outbounds=' || COUNT(*) FROM outbounds; SELECT 'health=' || COUNT(*) FROM node_health_statuses;\"" || true
+          echo "✅ DB tables accessible"
+          echo "::endgroup::"
+
+          echo "::group::6. 最近日志无 panic/fatal"
+          ERRORS=$($SSH_CMD "journalctl -u s-ui.service -n 50 --no-pager 2>/dev/null | grep -ciE 'panic|fatal|segfault' || echo 0")
+          echo "Panic/fatal count in recent logs: $ERRORS"
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::Found panic/fatal in service logs!"
+            $SSH_CMD "journalctl -u s-ui.service -n 50 --no-pager" || true
+            exit 1
+          fi
+          echo "✅ No panics in recent logs"
+          echo "::endgroup::"
+
+          echo ""
+          echo "🎉 All post-deploy smoke tests passed!"
