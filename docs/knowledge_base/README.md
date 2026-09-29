@@ -22,8 +22,12 @@
   - 阐述单端口 (2096) 多凭证确定性派生分发、ProtonVPN WireGuard 用户态节点与 URLTest 自动竞速容灾池架构。
 - [09. 自动收割: ProtonVPN 模拟浏览器全自动节点收割器与免人工干预入站出口编排系统](09_protonvpn_automated_browser_harvester.md)
   - 阐述彻底舍弃手动输入 Token/Cookie 后，基于 Playwright 的模拟浏览器自动化收割、纯 Go SQLite 全平台驱动、本地目录秒级导入与单用户流量记账闭环。
+- [10. 全系统状态快照与灾难恢复手册](10_system_state_and_disaster_recovery.md)
+  - VPS 基础设施、数据库关键表快照、种子节点、证书信息、灾难恢复 SQL、攻坚任务清单。VPS 崩溃时凭此文档 30 分钟完整恢复。
+- [11. 订阅节点品质与数量刚性铁律](../SUI_QUALITY_AND_QUANTITY_RULES.md)
+  - 100% 连通零 -1、<= 650ms 延迟门、备注全中文零英文零未知、SUI >= 20 协议组合、总数 >= 1000 节点、端到端闭环自测。
 
----
+
 
 ## 源码模块配套技术文档 (Source-Adjacent Module Guides)
 
