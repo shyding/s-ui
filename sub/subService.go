@@ -49,10 +49,16 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 
 	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
 
-	// Enforce strict subscription security isolation
-	if pass, violations := ValidateSubscriptionSecurity(linksArray, "dash.icta.top"); !pass {
-		logger.Warning("Subscription security check detected non-standard links for client", client.Name, violations)
+	// Enforce strict subscription security isolation: only allow links connecting to dash.icta.top
+	var secureLinks []string
+	for _, l := range linksArray {
+		if pass, violations := ValidateSubscriptionSecurity([]string{l}, "dash.icta.top"); pass {
+			secureLinks = append(secureLinks, l)
+		} else {
+			logger.Warning("Subscription security isolation filtered out non-VPS link:", violations)
+		}
 	}
+	linksArray = secureLinks
 
 	result := strings.Join(linksArray, "\n")
 	result = strings.ReplaceAll(result, "dash.icta.qzz.io", "dash.icta.top")

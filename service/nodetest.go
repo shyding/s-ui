@@ -99,6 +99,11 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		}
 		conn.Close()
 		result.Latency = time.Since(start).Milliseconds()
+		if result.Latency <= 0 || result.Latency > 650 {
+			result.Available = false
+			result.Error = "latency exceeds 650ms threshold or invalid"
+			return result, nil
+		}
 		result.Available = true
 		return result, nil
 	}
@@ -117,13 +122,13 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 			if outboundManager != nil {
 				if outbound_adapter, loaded := outboundManager.Outbound(tag); loaded {
 					latency, err := s.measureProxyLatency(ctx, outbound_adapter)
-					if err != nil || latency < 0 {
+					if err != nil || latency <= 0 || latency > 650 {
 						result.Available = false
-						result.Latency = -1
+						result.Latency = latency
 						if err != nil {
 							result.Error = s.simplifyError(err.Error())
 						} else {
-							result.Error = "proxy connection test failed"
+							result.Error = "proxy latency exceeds 650ms threshold or invalid"
 						}
 						return result, nil
 					}
@@ -233,6 +238,11 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		if result.LandingIP != "" {
 			s.getIPTypeAndScore(dialCtx, outbound_adapter, result)
 		}
+	}
+
+	if result.RealLatency > 650 || (result.RealLatency <= 0 && result.Latency > 650) {
+		result.Available = false
+		result.Error = "latency exceeds 650ms threshold"
 	}
 
 	return result, nil
