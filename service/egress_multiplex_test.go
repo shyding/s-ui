@@ -199,7 +199,7 @@ func TestSingBoxConfig_FullValidation(t *testing.T) {
 				{"tag": "remote", "address": "udp://8.8.8.8"},
 			},
 		},
-		"inbounds": []json.RawMessage{inboundRaw},
+		"inbounds":  []json.RawMessage{inboundRaw},
 		"endpoints": []json.RawMessage{ep9, ep53, ep3},
 		"outbounds": []interface{}{
 			outPool,
@@ -238,7 +238,7 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 		t.Fatalf("Failed to open test in-memory sqlite: %v", err)
 	}
 
-	err = db.AutoMigrate(&model.Client{}, &model.CloudflareEndpoint{}, &model.Outbound{}, &model.Endpoint{})
+	err = db.AutoMigrate(&model.Client{}, &model.CloudflareEndpoint{}, &model.Outbound{}, &model.Endpoint{}, &model.Subscription{})
 	if err != nil {
 		t.Fatalf("Failed to auto migrate: %v", err)
 	}
@@ -246,6 +246,9 @@ func TestInboundFetchUsersAndExpansion(t *testing.T) {
 	_ = db.Create(&model.Outbound{Tag: "us-pool", Type: "urltest"}).Error
 	_ = db.Create(&model.Outbound{Tag: "jp-pool", Type: "urltest"}).Error
 	_ = db.Create(&model.Outbound{Tag: "nl-pool", Type: "urltest"}).Error
+	_ = db.Create(&model.Outbound{Tag: "out-proton-us-free-1", Type: "direct", Country: "US"}).Error
+	_ = db.Create(&model.Outbound{Tag: "out-proton-jp-free-1", Type: "direct", Country: "JP"}).Error
+	_ = db.Create(&model.Outbound{Tag: "out-proton-nl-free-1", Type: "direct", Country: "NL"}).Error
 
 	client := model.Client{
 		Id:       1,
@@ -342,4 +345,3 @@ func TestGetAllConfig_SkipBrokenQuicInbounds(t *testing.T) {
 		t.Errorf("Expected surviving inbound to be 'vless-54142', got %v", m["tag"])
 	}
 }
-

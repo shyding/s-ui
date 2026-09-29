@@ -220,8 +220,13 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	}()
-	for _, tag := range []string{"us-pool", "jp-pool", "nl-pool"} {
-		db.Create(&model.Outbound{Tag: tag, Type: "urltest", Available: true, LastTestTime: time.Now().Unix()})
+	measuredPools := []model.Outbound{
+		{Tag: "us-pool", Type: "urltest", Available: true, LastTestTime: time.Now().Unix(), LandingIP: "203.0.113.10", Country: "US", Region: "California", City: "Los Angeles"},
+		{Tag: "jp-pool", Type: "urltest", Available: true, LastTestTime: time.Now().Unix(), LandingIP: "203.0.113.11", Country: "JP", Region: "Tokyo", City: "Tokyo"},
+		{Tag: "nl-pool", Type: "urltest", Available: true, LastTestTime: time.Now().Unix(), LandingIP: "203.0.113.12", Country: "NL", Region: "Provincie Noord-Holland", City: "Amsterdam"},
+	}
+	for _, pool := range measuredPools {
+		db.Create(&pool)
 	}
 
 	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"

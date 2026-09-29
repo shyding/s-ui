@@ -69,11 +69,11 @@ func TestVerifiedProtonUsesMeasuredLandingLocation(t *testing.T) {
 			break
 		}
 	}
-	if matched.Name != "Proton-墨西哥-Mexico City-Mexico City" {
+	if matched.Name != "Proton-墨西哥-墨西哥城-墨西哥城" {
 		t.Fatalf("Proton region must use measured landing location, got %q", matched.Name)
 	}
 	provider, country, region, city := ResolveEgressComponents(matched.Code, matched.Name)
-	if provider != "Proton" || country != "墨西哥" || region != "Mexico City" || city != "Mexico City" {
+	if provider != "Proton" || country != "墨西哥" || region != "墨西哥城" || city != "墨西哥城" {
 		t.Fatalf("unexpected Proton remark components: %s/%s/%s/%s", provider, country, region, city)
 	}
 }
@@ -81,6 +81,11 @@ func TestVerifiedProtonUsesMeasuredLandingLocation(t *testing.T) {
 func TestCityLevelEgressAndProtonKeyExtraction(t *testing.T) {
 	db := setupCFTestDB(t)
 	_ = SeedInitialCloudflareEndpoints(db)
+
+	// Seed Proton outbound records so GetProtonEgressRegions returns US, JP, NL
+	_ = db.Create(&model.Outbound{Tag: "out-proton-us-free-1", Type: "direct", Country: "US"}).Error
+	_ = db.Create(&model.Outbound{Tag: "out-proton-jp-free-1", Type: "direct", Country: "JP"}).Error
+	_ = db.Create(&model.Outbound{Tag: "out-proton-nl-free-1", Type: "direct", Country: "NL"}).Error
 
 	// 1. Verify city-level Cloudflare regions
 	cfRegions := GetActiveCloudflareRegions(db)

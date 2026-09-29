@@ -612,17 +612,21 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 		if err := db.Where("tag LIKE ? AND available = ? AND country != '' AND city != ''", "hproxy-%", true).Find(&hproxyCandidates).Error; err == nil {
 			seenPools := make(map[string]bool)
 			for _, candidate := range hproxyCandidates {
+				if !hasLocalizedEgressLocation(candidate.Country, candidate.City, candidate.City) {
+					continue
+				}
 				poolTag := hproxyPoolTag(candidate.Country, candidate.City)
 				if seenPools[poolTag] {
 					continue
 				}
 				seenPools[poolTag] = true
+				country, _, city := LocalizeEgressLocation(candidate.Country, candidate.City, candidate.City)
 				code := strings.TrimSuffix(poolTag, "-pool")
 				if seenCodes[code] {
 					continue
 				}
 				active = append(active, EgressRegion{
-					Code: code, Name: fmt.Sprintf("%s-%s-HProxy", GetCountryName(candidate.Country), candidate.City),
+					Code: code, Name: fmt.Sprintf("%s-%s-HProxy", country, city),
 					Flag: GetCountryFlag(candidate.Country), OutboundTag: poolTag,
 				})
 				seenCodes[code] = true
@@ -637,6 +641,7 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 					if !hasLocalizedEgressLocation(candidate.Country, candidate.Region, candidate.City) {
 						continue
 					}
+					country, region, city := LocalizeEgressLocation(candidate.Country, candidate.Region, candidate.City)
 					poolTag := seedPoolTag(candidate.Country, candidate.Region, candidate.City)
 					if seenPools[poolTag] {
 						continue
@@ -644,7 +649,7 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 					seenPools[poolTag] = true
 					active = append(active, EgressRegion{
 						Code:        strings.TrimSuffix(poolTag, "-pool"),
-						Name:        fmt.Sprintf("Seed-%s-%s-%s", GetCountryName(NormalizeCountryCode(candidate.Country)), candidate.Region, candidate.City),
+						Name:        fmt.Sprintf("Seed-%s-%s-%s", country, region, city),
 						Flag:        GetCountryFlag(NormalizeCountryCode(candidate.Country)),
 						OutboundTag: poolTag,
 					})
@@ -733,10 +738,11 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 
 func measuredEgressRegion(provider string, region EgressRegion, outbound model.Outbound) (EgressRegion, bool) {
 	countryCode := NormalizeCountryCode(outbound.Country)
-	if outbound.LandingIP == "" || len(countryCode) != 2 || strings.TrimSpace(outbound.Region) == "" || strings.TrimSpace(outbound.City) == "" {
+	if outbound.LandingIP == "" || len(countryCode) != 2 || !hasLocalizedEgressLocation(countryCode, outbound.Region, outbound.City) {
 		return EgressRegion{}, false
 	}
-	region.Name = fmt.Sprintf("%s-%s-%s-%s", provider, GetCountryName(countryCode), strings.TrimSpace(outbound.Region), strings.TrimSpace(outbound.City))
+	country, province, city := LocalizeEgressLocation(countryCode, outbound.Region, outbound.City)
+	region.Name = fmt.Sprintf("%s-%s-%s-%s", provider, country, province, city)
 	return region, true
 }
 

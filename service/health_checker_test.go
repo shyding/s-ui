@@ -97,7 +97,7 @@ func TestResolveEgressComponents(t *testing.T) {
 		t.Errorf("NRT mismatch: prov=%s, c=%s, r=%s, ct=%s", prov, c, r, ct)
 	}
 
-	prov, c, r, ct = ResolveEgressComponents("us", "美国-ProtonVPN-智能优选")
+	prov, c, r, ct = ResolveEgressComponents("us", "Proton-美国-加州-洛杉矶")
 	if prov != "Proton" || c != "美国" || r != "加州" || ct != "洛杉矶" {
 		t.Errorf("Proton US mismatch: prov=%s, c=%s, r=%s, ct=%s", prov, c, r, ct)
 	}

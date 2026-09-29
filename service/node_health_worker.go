@@ -372,7 +372,7 @@ func regionToChinese(region string) string {
 	}
 	m := map[string]string{
 		"California": "加州", "New York": "纽约州", "Texas": "德克萨斯",
-		"Virginia": "弗吉尼亚", "Washington": "华盛顿", "Illinois": "伊利诺伊",
+		"Virginia": "弗吉尼亚州", "Washington": "华盛顿", "Illinois": "伊利诺伊",
 		"Oregon": "俄勒冈", "Georgia": "佐治亚", "Florida": "佛罗里达",
 		"Ohio": "俄亥俄", "Colorado": "科罗拉多", "Arizona": "亚利桑那",
 		"Tokyo": "关东", "Osaka": "近畿", "Aichi": "中部",
@@ -383,7 +383,7 @@ func regionToChinese(region string) string {
 		"Mexico City": "墨西哥城",
 		"Ontario":     "安大略", "Quebec": "魁北克", "British Columbia": "不列颠哥伦比亚",
 		"New South Wales": "新南威尔士", "Victoria": "维多利亚",
-		"Virginia": "弗吉尼亚州", "District of Columbia": "哥伦比亚特区", "Telangana": "特伦甘纳邦",
+		"District of Columbia": "哥伦比亚特区", "Telangana": "特伦甘纳邦",
 		"Gangwon-do": "江原道", "Taipei City": "台北市",
 		"England": "英格兰", "Sai Kung District": "西贡区", "Provincie Noord-Holland": "北荷兰",
 		"Moscow": "莫斯科", "Saint Petersburg": "圣彼得堡",
