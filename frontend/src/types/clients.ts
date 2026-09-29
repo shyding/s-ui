@@ -132,7 +132,7 @@ export function randomConfigs(user: string): Config {
     vless: {
       name: user,
       uuid: uuid,
-      flow: "xtls-rprx-vision",
+      flow: "",
     },
     anytls: {
       name: user,

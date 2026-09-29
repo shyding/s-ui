@@ -164,6 +164,15 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 		if err != nil {
 			return candidates
 		}
+		if proto == "vless" {
+			// Strip flow parameter (e.g. xtls-rprx-vision) to ensure universal compatibility
+			// across all proxy clients (v2rayN, v2rayNG, Clash, Sing-box, Shadowrocket)
+			q := u.Query()
+			if q.Get("flow") != "" {
+				q.Del("flow")
+				u.RawQuery = q.Encode()
+			}
+		}
 		origUser := u.User.Username()
 		origPass, hasPass := u.User.Password()
 
