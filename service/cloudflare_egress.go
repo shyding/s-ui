@@ -835,14 +835,23 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 		cityCounts[cityKey]++
 		idx := cityCounts[cityKey]
 
-		code := fmt.Sprintf("cf-%s-%s-%02d", locLower, coloLower, idx)
-		poolTag := fmt.Sprintf("cf-%s-%s-%02d-pool", locLower, coloLower, idx)
+		var code, poolTag, displayName string
+		if idx == 1 {
+			code = fmt.Sprintf("cf-%s-%s", locLower, coloLower)
+			poolTag = fmt.Sprintf("cf-%s-%s-pool", locLower, coloLower)
+			displayName = fmt.Sprintf("%s·%s-Cloudflare洁净出口", cName, cityName)
+			if cityName == "" || cityName == cName {
+				displayName = fmt.Sprintf("%s-Cloudflare洁净出口", cName)
+			}
+		} else {
+			code = fmt.Sprintf("cf-%s-%s-%02d", locLower, coloLower, idx)
+			poolTag = fmt.Sprintf("cf-%s-%s-%02d-pool", locLower, coloLower, idx)
+			displayName = fmt.Sprintf("%s·%s%02d-Cloudflare洁净出口", cName, cityName, idx)
+		}
 		if seenTags[code] {
 			continue
 		}
 		seenTags[code] = true
-
-		displayName := fmt.Sprintf("%s·%s%02d-Cloudflare洁净出口", cName, cityName, idx)
 
 		reg := EgressRegion{
 			Code:        code,
@@ -865,7 +874,6 @@ func syncCloudflarePoolRecords(db *gorm.DB, regions []EgressRegion) {
 		return
 	}
 	activeTags := make([]string, 0, len(regions))
-	now := time.Now().Unix()
 	for _, region := range regions {
 		if region.OutboundTag == "" {
 			continue
@@ -874,16 +882,9 @@ func syncCloudflarePoolRecords(db *gorm.DB, regions []EgressRegion) {
 		var existing model.Outbound
 		if err := db.Where("tag = ?", region.OutboundTag).First(&existing).Error; err == gorm.ErrRecordNotFound {
 			_ = db.Create(&model.Outbound{
-				Tag:          region.OutboundTag,
-				Type:         "urltest",
-				Options:      json.RawMessage(`{}`),
-				Available:    true,
-				LastTestTime: now,
-			}).Error
-		} else if !existing.Available || existing.LastTestTime == 0 {
-			_ = db.Model(&existing).Updates(map[string]interface{}{
-				"available":      true,
-				"last_test_time": now,
+				Tag:     region.OutboundTag,
+				Type:    "urltest",
+				Options: json.RawMessage(`{}`),
 			}).Error
 		}
 	}
