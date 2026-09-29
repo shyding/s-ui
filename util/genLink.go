@@ -438,7 +438,7 @@ func vlessLink(
 		copy(params, baseParams)
 		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls["enabled"].(bool) {
 			getTlsParams(&params, tls, "allowInsecure")
-			if flow, ok := userConfig["flow"].(string); ok {
+			if flow, ok := userConfig["flow"].(string); ok && flow != "" {
 				params = append(params, LinkParam{"flow", flow})
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -802,53 +803,46 @@ func GetActiveCloudflareRegions(db *gorm.DB) []EgressRegion {
 		return nil
 	}
 
-	type RegionRow struct {
-		Loc         string
-		Colo        string
-		City        string
-		CountryName string
-		Flag        string
-	}
-	var rows []RegionRow
-	_ = db.Model(&model.CloudflareEndpoint{}).
-		Select("DISTINCT loc, colo, city, country_name, flag").
-		Where("status = ? AND loc != '' AND port IN (2408, 51820)", "online").
-		Order("loc ASC, colo ASC").
-		Scan(&rows).Error
+	var endpoints []model.CloudflareEndpoint
+	_ = db.Where("status = ? AND loc != '' AND port IN (2408, 443, 51820)", "online").
+		Order("latency_ms ASC, id ASC").
+		Find(&endpoints).Error
 
 	var regions []EgressRegion
 	seenTags := make(map[string]bool)
+	cityCounts := make(map[string]int)
 
-	for _, r := range rows {
-		locLower := strings.ToLower(r.Loc)
-		coloLower := strings.ToLower(r.Colo)
+	for _, ep := range endpoints {
+		locLower := strings.ToLower(ep.Loc)
+		coloLower := strings.ToLower(ep.Colo)
 		if coloLower == "" {
 			coloLower = locLower
 		}
-		cName := r.CountryName
+		cName := ep.CountryName
 		if cName == "" {
-			cName = GetCountryName(r.Loc)
+			cName = GetCountryName(ep.Loc)
 		}
-		cityName := r.City
+		cityName := ep.City
 		if cityName == "" {
-			cityName = GetCityName(r.Colo)
+			cityName = GetCityName(ep.Colo)
 		}
-		flag := r.Flag
+		flag := ep.Flag
 		if flag == "" {
-			flag = GetCountryFlag(r.Loc)
+			flag = GetCountryFlag(ep.Loc)
 		}
 
-		code := fmt.Sprintf("cf-%s-%s", locLower, coloLower)
-		poolTag := fmt.Sprintf("cf-%s-%s-pool", locLower, coloLower)
+		cityKey := fmt.Sprintf("%s-%s", locLower, cityName)
+		cityCounts[cityKey]++
+		idx := cityCounts[cityKey]
+
+		code := fmt.Sprintf("cf-%s-%s-%02d", locLower, coloLower, idx)
+		poolTag := fmt.Sprintf("cf-%s-%s-%02d-pool", locLower, coloLower, idx)
 		if seenTags[code] {
 			continue
 		}
 		seenTags[code] = true
 
-		displayName := fmt.Sprintf("%s·%s-Cloudflare洁净出口", cName, cityName)
-		if cityName == "" || cityName == cName {
-			displayName = fmt.Sprintf("%s-Cloudflare洁净出口", cName)
-		}
+		displayName := fmt.Sprintf("%s·%s%02d-Cloudflare洁净出口", cName, cityName, idx)
 
 		reg := EgressRegion{
 			Code:        code,
@@ -871,6 +865,7 @@ func syncCloudflarePoolRecords(db *gorm.DB, regions []EgressRegion) {
 		return
 	}
 	activeTags := make([]string, 0, len(regions))
+	now := time.Now().Unix()
 	for _, region := range regions {
 		if region.OutboundTag == "" {
 			continue
@@ -879,9 +874,16 @@ func syncCloudflarePoolRecords(db *gorm.DB, regions []EgressRegion) {
 		var existing model.Outbound
 		if err := db.Where("tag = ?", region.OutboundTag).First(&existing).Error; err == gorm.ErrRecordNotFound {
 			_ = db.Create(&model.Outbound{
-				Tag:     region.OutboundTag,
-				Type:    "urltest",
-				Options: json.RawMessage(`{}`),
+				Tag:          region.OutboundTag,
+				Type:         "urltest",
+				Options:      json.RawMessage(`{}`),
+				Available:    true,
+				LastTestTime: now,
+			}).Error
+		} else if !existing.Available || existing.LastTestTime == 0 {
+			_ = db.Model(&existing).Updates(map[string]interface{}{
+				"available":      true,
+				"last_test_time": now,
 			}).Error
 		}
 	}
@@ -1066,6 +1068,12 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		if len(parts) > 1 {
 			coloUpper = strings.ToUpper(parts[1])
 		}
+		endpointIdx := 0
+		if len(parts) > 2 {
+			if n, err := strconv.Atoi(parts[2]); err == nil && n > 0 {
+				endpointIdx = n - 1
+			}
+		}
 
 		var memberTags []string
 
@@ -1080,10 +1088,10 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 		var cfDbEndpoints []model.CloudflareEndpoint
 		if coloUpper != "" {
-			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Find(&cfDbEndpoints).Error
+			_ = db.Where("status = ? AND colo = ?", "online", coloUpper).Order("latency_ms ASC, id ASC").Find(&cfDbEndpoints).Error
 		}
 		if len(cfDbEndpoints) == 0 && locUpper != "" {
-			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Find(&cfDbEndpoints).Error
+			_ = db.Where("status = ? AND loc = ?", "online", locUpper).Order("latency_ms ASC, id ASC").Find(&cfDbEndpoints).Error
 		}
 
 		// 1. For non-Singapore regional pools, prioritize real physical servers located in the target city / country
@@ -1148,14 +1156,12 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 
 		// 2. For Singapore pools or if no physical servers exist, use verified Cloudflare endpoints
 		if locUpper == "SG" {
-			for _, cfEp := range cfDbEndpoints {
-				if len(memberTags) >= 1 {
-					break
-				}
-				cleanIP := strings.ReplaceAll(cfEp.IP, ".", "-")
-				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, cfEp.Port)
+			if len(cfDbEndpoints) > 0 {
+				targetEp := cfDbEndpoints[endpointIdx%len(cfDbEndpoints)]
+				cleanIP := strings.ReplaceAll(targetEp.IP, ".", "-")
+				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, targetEp.Port)
 				if !existingEpTags[cfTag] {
-					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
+					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, targetEp.IP, targetEp.Port, baseWarpMap)
 					if err == nil {
 						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
 						existingEpTags[cfTag] = true
@@ -1172,11 +1178,12 @@ func EnsureCloudflarePoolsInOutbounds(singboxConfig *SingBoxConfig, db *gorm.DB)
 		// endpoints from being silently discarded. The resulting pool still goes
 		// through the normal VPS-side health check before publication.
 		if len(memberTags) == 0 {
-			for _, cfEp := range cfDbEndpoints {
-				cleanIP := strings.ReplaceAll(cfEp.IP, ".", "-")
-				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, cfEp.Port)
+			if len(cfDbEndpoints) > 0 {
+				targetEp := cfDbEndpoints[endpointIdx%len(cfDbEndpoints)]
+				cleanIP := strings.ReplaceAll(targetEp.IP, ".", "-")
+				cfTag := fmt.Sprintf("ep-cf-%s-%d", cleanIP, targetEp.Port)
 				if !existingEpTags[cfTag] {
-					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, cfEp.IP, cfEp.Port, baseWarpMap)
+					cfEpJson, err := BuildCloudflareWireGuardEndpointJson(cfTag, targetEp.IP, targetEp.Port, baseWarpMap)
 					if err == nil {
 						singboxConfig.Endpoints = append(singboxConfig.Endpoints, cfEpJson)
 						existingEpTags[cfTag] = true
