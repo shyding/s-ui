@@ -62,17 +62,13 @@ func nextScheduledRun() (time.Duration, string) {
 }
 
 // StartEgressHealthWorker 启动出口健康检查 Worker：
-//   - 启动后等 5 分钟（让 sing-box core 稳定）跑第一次
-//   - 之后每天在用户配置的时间（默认 03:30）跑一次
+//   - 仅在每天配置时间（默认 03:30）运行，启动时不做检测（避免 CPU 过载）
+//   - 用户可通过前端手动触发
 func StartEgressHealthWorker(reload ...func() error) {
 	egressReloadFns = reload
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
-			// 等 5 分钟让 sing-box core 稳定后跑启动检测
-			time.Sleep(5 * time.Minute)
-			safeRunEgressHealthCheck()
-
-			// 每天在配置时间定时运行
+			// 仅在配置的定时时间运行，不在启动时自动跑
 			for {
 				d, t := nextScheduledRun()
 				logger.Infof("EgressHealthWorker: 下次运行时间 %v 后 (%s)", d.Round(time.Minute), t)

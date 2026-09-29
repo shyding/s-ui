@@ -76,14 +76,8 @@ func (w *NodeHealthWorker) run() {
 	w.running = true
 	w.mu.Unlock()
 
-	// 首次：等5分钟让 sing-box core 稳定再开始
-	time.Sleep(5 * time.Minute)
-	if isNodeCheckRunning.CompareAndSwap(false, true) {
-		w.runOnce()
-		isNodeCheckRunning.Store(false)
-	}
-
-	// 每天在用户配置的时间运行（从 DB settings 读取，默认 03:30）
+	// 仅在配置的定时时间运行，不在启动时自动跑（避免 CPU 过载导致 VPS 崩溃）
+	// 用户可通过前端手动触发
 	for {
 		d, t := nextScheduledRun()
 		logger.Infof("NodeHealthWorker: 下次运行时间 %v 后 (%s)", d.Round(time.Minute), t)
