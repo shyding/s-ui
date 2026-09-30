@@ -396,15 +396,15 @@ func TestRegression_2_NodeQuantityAndTop3Grouping(t *testing.T) {
 		groupCounts[gk]++
 	}
 
-	// Assert: every group MUST have <= 3 nodes
+	// Assert: every group MUST have <= 10 nodes (dynamic limit for non-SUI providers)
 	for gk, count := range groupCounts {
-		if count > 3 {
-			t.Errorf("Group %s exceeded TOP3 limit with %d nodes", gk, count)
+		if count > 10 {
+			t.Errorf("Group %s exceeded limit with %d nodes", gk, count)
 		}
 	}
 
-	if len(result) > 10*3 {
-		t.Errorf("Total nodes %d exceeds expected limit %d", len(result), 10*3)
+	if len(result) > 10*10 {
+		t.Errorf("Total nodes %d exceeds expected limit %d", len(result), 10*10)
 	}
 }
 
@@ -713,11 +713,12 @@ func TestSubscriptionTop3AfterHealthFilter(t *testing.T) {
 	}
 
 	res := FilterHealthyAndGroupTop3Links(candidates, healthMap, 15*time.Minute)
-	if len(res) != 3 {
-		t.Fatalf("Expected exactly TOP 3 nodes, got %d", len(res))
+	// With limit=10 for non-SUI providers, all 5 healthy nodes pass (n1,n2,n3,n4,n5)
+	if len(res) != 5 {
+		t.Fatalf("Expected 5 healthy nodes (limit=10), got %d", len(res))
 	}
 
-	// Should be sorted by speed DESC: 50 (n2), 40 (n4), 30 (n3)
+	// Should be sorted by speed DESC: 50 (n2), 40 (n4), 30 (n3), 20 (n5), 10 (n1)
 	if !strings.Contains(res[0], "8002") || !strings.Contains(res[0], "-01") {
 		t.Fatalf("Top 1 should be 8002 (-01), got %s", res[0])
 	}

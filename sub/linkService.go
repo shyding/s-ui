@@ -353,7 +353,13 @@ func FilterHealthyAndGroupTop3Links(
 			return groupItems[i].Uri < groupItems[j].Uri
 		})
 
-		limit := 3
+		// Dynamic limit per provider:
+		// - SUI: up to 30 (multi-protocol combinations on same VPS)
+		// - Others (Seed, Cloudflare, HProxy): up to 10 per city group
+		limit := 10
+		if len(groupItems) > 0 && groupItems[0].Provider == "SUI" {
+			limit = 30
+		}
 		if len(groupItems) < limit {
 			limit = len(groupItems)
 		}
@@ -432,7 +438,10 @@ func FormatTop3Links(candidates []CandidateNode) []string {
 			return groupItems[i].Protocol < groupItems[j].Protocol
 		})
 
-		limit := 3
+		limit := 10
+		if len(groupItems) > 0 && groupItems[0].Provider == "SUI" {
+			limit = 30
+		}
 		if len(groupItems) < limit {
 			limit = len(groupItems)
 		}
@@ -578,15 +587,15 @@ func buildVerifiedRemark(s *model.NodeHealthStatus) string {
 	}
 	country := s.Country
 	if country == "" {
-		country = "未知"
+		country = "全球"
 	}
 	region := s.Region
 	if region == "" {
-		region = "未知"
+		region = country
 	}
 	city := s.City
 	if city == "" {
-		city = "未知"
+		city = region
 	}
 	return fmt.Sprintf("%s-%s-%s-%s", provider, country, region, city)
 }

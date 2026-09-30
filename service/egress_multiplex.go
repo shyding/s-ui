@@ -645,7 +645,7 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 					country, region, city := LocalizeEgressLocation(candidate.Country, candidate.Region, candidate.City)
 					cCode := strings.ToLower(NormalizeCountryCode(candidate.Country))
 					cityKey := fmt.Sprintf("%s-%s", cCode, city)
-					if seedCityCounts[cityKey] >= 3 {
+					if seedCityCounts[cityKey] >= 50 {
 						continue
 					}
 					seedCityCounts[cityKey]++
@@ -657,7 +657,7 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 						OutboundTag: candidate.Tag,
 					})
 					seedIndex++
-					if seedIndex > 150 {
+					if seedIndex > 500 {
 						break
 					}
 				}
