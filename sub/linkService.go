@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -80,6 +81,40 @@ func getProtocolPriority(proto string) int {
 	}
 }
 
+// inboundTransportCache caches port -> transport config to avoid per-URI DB queries
+var inboundTransportCache = struct {
+	sync.RWMutex
+	data map[string]map[string]interface{}
+}{data: make(map[string]map[string]interface{})}
+
+func getInboundTransport(port string) map[string]interface{} {
+	inboundTransportCache.RLock()
+	if t, ok := inboundTransportCache.data[port]; ok {
+		inboundTransportCache.RUnlock()
+		return t
+	}
+	inboundTransportCache.RUnlock()
+
+	db := database.GetDB()
+	if db == nil {
+		return nil
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return nil
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return nil
+	}
+	transport, _ := opts["transport"].(map[string]interface{})
+
+	inboundTransportCache.Lock()
+	inboundTransportCache.data[port] = transport
+	inboundTransportCache.Unlock()
+	return transport
+}
+
 // fixSUITransport corrects the URI transport params based on the inbound's
 // actual config in the database. Stored links can be stale (e.g., type=tcp
 // for a ws inbound), causing client -1.
@@ -92,20 +127,7 @@ func fixSUITransport(uri string) string {
 	if port == "" {
 		return uri
 	}
-	db := database.GetDB()
-	if db == nil {
-		return uri
-	}
-	var inbound model.Inbound
-	// Find inbound by port in tag (e.g., trojan-ws-54151)
-	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
-		return uri
-	}
-	var opts map[string]interface{}
-	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
-		return uri
-	}
-	transport, _ := opts["transport"].(map[string]interface{})
+	transport := getInboundTransport(port)
 	if transport == nil {
 		return uri
 	}
