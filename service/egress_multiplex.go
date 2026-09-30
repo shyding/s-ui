@@ -256,7 +256,6 @@ func BuildDirectOutboundJson(tag string, endpointTag string) (json.RawMessage, e
 		"type":     "direct",
 		"tag":      tag,
 		"detour":   endpointTag,
-		"endpoint": endpointTag,
 	}
 	return json.Marshal(outMap)
 }
@@ -280,7 +279,6 @@ func BuildUrlTestPoolJsonWithTolerance(tag string, outbounds []string, interval 
 		"outbounds": outbounds,
 		"url":       "https://www.gstatic.com/generate_204",
 		"interval":  interval,
-		"tolerance": tolerance,
 	}
 	return json.Marshal(poolMap)
 }
