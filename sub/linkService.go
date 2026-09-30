@@ -356,10 +356,17 @@ func FilterHealthyAndGroupTop3Links(
 		var rec *model.NodeHealthStatus
 		if c.Uri != "" && healthMap[c.Uri] != nil {
 			rec = healthMap[c.Uri]
-		} else if c.NodeKey != "" && healthMap[c.NodeKey] != nil {
-			rec = healthMap[c.NodeKey]
-		} else if healthMap[c.GroupKey()] != nil {
-			rec = healthMap[c.GroupKey()]
+		} else {
+			nodeKey := c.NodeKey
+			if nodeKey == "" && c.Uri != "" {
+				// Fallback: extract host:port from URI (SUI candidates may not have NodeKey set)
+				nodeKey = extractNodeKey(c.Uri)
+			}
+			if nodeKey != "" && healthMap[nodeKey] != nil {
+				rec = healthMap[nodeKey]
+			} else if healthMap[c.GroupKey()] != nil {
+				rec = healthMap[c.GroupKey()]
+			}
 		}
 
 		if c.Provider == "SUI" && rec == nil {
@@ -660,6 +667,7 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 						Region:   "中央区",
 						City:     "新加坡城-Unknown",
 						Priority: 10,
+						NodeKey:  extractNodeKey(finalLink),
 					}}
 				}
 				allCandidates = append(allCandidates, candidates...)
