@@ -192,6 +192,23 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			Priority: priority,
 		})
 
+		// 1b. 443 variant for vless-ws (iptables redirects 443 -> 54143)
+		// This bypasses GFW blocking of high ports
+		if proto == "vless" && origU.Port() == "54143" {
+			u443 := *u
+			u443.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity+"-443", 1)
+			u443.Host = "dash.icta.top:443"
+			candidates = append(candidates, CandidateNode{
+				Uri:      u443.String(),
+				Protocol: proto,
+				Provider: "SUI",
+				Country:  "新加坡",
+				Region:   "中央区",
+				City:     suiCity + "-443",
+				Priority: priority,
+			})
+		}
+
 		// 2. Regional nodes
 		for _, reg := range activeRegions {
 			prov, c, r, ct := service.ResolveEgressComponents(reg.Code, reg.Name)
