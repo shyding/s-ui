@@ -173,8 +173,14 @@ func runEgressHealthCheck(reload ...func() error) {
 			Order("last_test_time ASC").Limit(200).Pluck("tag", &seedTags)
 	}
 
-	// 设置总进度
-	total := int32(len(tags) + len(protonTags) + len(seedTags))
+	// 设置总进度（包含 HProxy）
+	hproxyCutoff := time.Now().Add(-15 * time.Minute).Unix()
+	var hproxyTags []string
+	db.Model(&model.Outbound{}).
+		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", hproxyCutoff, false).
+		Order("last_test_time ASC").Limit(300).Pluck("tag", &hproxyTags)
+
+	total := int32(len(tags) + len(protonTags) + len(seedTags) + len(hproxyTags))
 	ResetEgressProgress(total)
 	logger.Infof("EgressHealthWorker: 开始检测 %d 个出口节点", total)
 
@@ -230,15 +236,13 @@ func runEgressHealthCheck(reload ...func() error) {
 
 	// HProxy候选：每天测一遍，低并发(10)，每次300个
 	// （曾用 50 并发/1500 上限导致 VPS 资源耗尽卡死，现降低）
-	var candidateTags []string
-	cutoff := time.Now().Add(-15 * time.Minute).Unix()
-	db.Model(&model.Outbound{}).
-		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
-		Order("last_test_time ASC").Limit(300).Pluck("tag", &candidateTags)
+	// 标签已在进度设置时收集
+	candidateTags := hproxyTags
 	if len(candidateTags) == 0 {
 		return
 	}
 	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 10)
+	egressProgressDone.Add(int32(len(candidateTags)))
 	if err != nil {
 		logger.Warning("public-proxy candidate health check failed:", err)
 		return
