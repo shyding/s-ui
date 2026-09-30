@@ -278,7 +278,7 @@ func BuildUrlTestPoolJsonWithTolerance(tag string, outbounds []string, interval 
 		"type":      "urltest",
 		"tag":       tag,
 		"outbounds": outbounds,
-		"url":       "http://www.gstatic.com/generate_204",
+		"url":       "https://www.gstatic.com/generate_204",
 		"interval":  interval,
 		"tolerance": tolerance,
 	}
