@@ -62,14 +62,17 @@ func nextScheduledRun() (time.Duration, string) {
 }
 
 // StartEgressHealthWorker 启动出口健康检查 Worker：
-//   - 仅在每天配置时间（默认 03:30）运行，启动时不做检测（避免 CPU 过载）
+//   - 启动后延迟 5 分钟再跑第一轮（避免启动时 CPU 过载导致 VPS 卡死）
+//   - 之后每 30 分钟跑一次
 //   - 用户可通过前端手动触发
 func StartEgressHealthWorker(reload ...func() error) {
 	egressReloadFns = reload
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
-			// 仅在配置的定时时间运行，不在启动时自动跑
-			// Run once on startup
+			// 启动后延迟 5 分钟再跑第一轮，让系统先稳定下来
+			// （直接启动就跑曾导致 VPS CPU/内存耗尽卡死）
+			logger.Info("EgressHealthWorker: first run in 5 minutes (delayed to avoid startup overload)")
+			time.Sleep(5 * time.Minute)
 			safeRunEgressHealthCheck()
 			for {
 				d := 30 * time.Minute
@@ -185,16 +188,17 @@ func runEgressHealthCheck(reload ...func() error) {
 	}
 
 
-	// HProxy候选：每天测一遍，低并发(5)，每次300个
+	// HProxy候选：每天测一遍，低并发(10)，每次300个
+	// （曾用 50 并发/1500 上限导致 VPS 资源耗尽卡死，现降低）
 	var candidateTags []string
 	cutoff := time.Now().Add(-15 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
-		Order("last_test_time ASC").Limit(1500).Pluck("tag", &candidateTags)
+		Order("last_test_time ASC").Limit(300).Pluck("tag", &candidateTags)
 	if len(candidateTags) == 0 {
 		return
 	}
-	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 50)
+	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 10)
 	if err != nil {
 		logger.Warning("public-proxy candidate health check failed:", err)
 		return
