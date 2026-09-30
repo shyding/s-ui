@@ -256,9 +256,23 @@ func FilterHealthyAndGroupTop3Links(
 				if rec.Node != "" {
 					healthMap[rec.Node] = rec
 				}
+				// Register by raw GroupKey
 				gKey := rec.GroupKey()
 				if gKey != "" {
-					healthMap[gKey] = rec
+					// Keep the best (available) record per group key
+					if existing, ok := healthMap[gKey]; !ok || (rec.Status == "available" && existing.Status != "available") {
+						healthMap[gKey] = rec
+					}
+				}
+				// Also register by localized GroupKey (Chinese) to match candidate keys
+				// that go through LocalizeEgressLocation
+				prov := service.NormalizeProvider(rec.Provider)
+				c, r, ct := service.LocalizeEgressLocation(rec.Country, rec.Region, rec.City)
+				localizedKey := fmt.Sprintf("%s-%s-%s-%s", prov, c, r, ct)
+				if localizedKey != gKey && localizedKey != "" {
+					if existing, ok := healthMap[localizedKey]; !ok || (rec.Status == "available" && existing.Status != "available") {
+						healthMap[localizedKey] = rec
+					}
 				}
 			}
 		}
