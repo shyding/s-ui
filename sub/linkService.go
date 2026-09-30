@@ -80,6 +80,74 @@ func getProtocolPriority(proto string) int {
 	}
 }
 
+// fixSUITransport corrects the URI transport params based on the inbound's
+// actual config in the database. Stored links can be stale (e.g., type=tcp
+// for a ws inbound), causing client -1.
+func fixSUITransport(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	port := u.Port()
+	if port == "" {
+		return uri
+	}
+	db := database.GetDB()
+	if db == nil {
+		return uri
+	}
+	var inbound model.Inbound
+	// Find inbound by port in tag (e.g., trojan-ws-54151)
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return uri
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return uri
+	}
+	transport, _ := opts["transport"].(map[string]interface{})
+	if transport == nil {
+		return uri
+	}
+	transportType, _ := transport["type"].(string)
+	if transportType == "" || transportType == "tcp" {
+		return uri // already correct or tcp (default)
+	}
+	// Fix the transport type in URI
+	q := u.Query()
+	currentType := q.Get("type")
+	if currentType == transportType {
+		return uri // already correct
+	}
+	q.Set("type", transportType)
+	// Add transport-specific params
+	switch transportType {
+	case "ws":
+		if path, ok := transport["path"].(string); ok && path != "" {
+			q.Set("path", path)
+		}
+		if headers, ok := transport["headers"].(map[string]interface{}); ok {
+			if host, ok := headers["Host"].(string); ok && host != "" {
+				q.Set("host", host)
+			}
+		}
+	case "grpc":
+		if sn, ok := transport["service_name"].(string); ok && sn != "" {
+			q.Set("serviceName", sn)
+		}
+	case "httpupgrade":
+		if path, ok := transport["path"].(string); ok && path != "" {
+			q.Set("path", path)
+		}
+		if host, ok := transport["host"].(string); ok && host != "" {
+			q.Set("host", host)
+		}
+	}
+	u.RawQuery = q.Encode()
+	logger.Infof("Fixed SUI transport for port %s: %s -> %s", port, currentType, transportType)
+	return u.String()
+}
+
 // ExpandEgressCandidates expands a single inbound link into candidate nodes across active regions
 func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service.EgressRegion) []CandidateNode {
 	if len(activeRegions) == 0 {
@@ -98,6 +166,10 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			Priority: 10,
 		}}
 	}
+
+	// Fix stale transport params from outdated stored links (causes client -1)
+	uri = fixSUITransport(uri)
+	protocol = strings.Split(uri, "://")
 
 	proto := strings.ToLower(protocol[0])
 	priority := getProtocolPriority(proto)
