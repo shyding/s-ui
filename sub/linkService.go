@@ -206,6 +206,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 				Region:   "中央区",
 				City:     suiCity + "-443",
 				Priority: priority,
+				// Reuse the original node's health record (same backend, just different entry port)
+				NodeKey: "dash.icta.top:54143",
 			})
 		}
 
