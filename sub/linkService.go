@@ -192,16 +192,17 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			Priority: priority,
 		})
 
-		// 1b. 443 variant for vless-ws (iptables redirects 443 -> 54143)
-		// This bypasses GFW blocking of high ports
-		if proto == "vless" && origU.Port() == "54143" {
+		// 1b. 443 variant for vless-tcp (iptables redirects 443 -> 54142)
+		// TCP works through GFW, WS/gRPC are blocked. This bypasses port-based throttling.
+		if proto == "vless" && origU.Port() == "54142" {
 			u443 := *u
 			u443.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity+"-443", 1)
 			u443.Host = "dash.icta.top:443"
-			// Fix transport type: 54143 is actually WS, not TCP
+			// Ensure TCP transport (not WS)
 			q443 := u443.Query()
-			q443.Set("type", "ws")
-			q443.Set("path", "/ws")
+			q443.Set("type", "tcp")
+			q443.Del("path")
+			q443.Del("host")
 			u443.RawQuery = q443.Encode()
 			candidates = append(candidates, CandidateNode{
 				Uri:      u443.String(),
@@ -212,7 +213,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 				City:     suiCity + "-443",
 				Priority: priority,
 				// Reuse the original node's health record (same backend, just different entry port)
-				NodeKey: "dash.icta.top:54143",
+				NodeKey: "dash.icta.top:54142",
 			})
 		}
 
