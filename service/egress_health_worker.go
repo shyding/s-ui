@@ -70,8 +70,8 @@ func StartEgressHealthWorker(reload ...func() error) {
 		go func() {
 			// 仅在配置的定时时间运行，不在启动时自动跑
 			for {
-				d, t := nextScheduledRun()
-				logger.Infof("EgressHealthWorker: 下次运行时间 %v 后 (%s)", d.Round(time.Minute), t)
+				d := 10 * time.Minute
+				logger.Infof("EgressHealthWorker: Next run in 10 minutes")", d.Round(time.Minute), t)
 				time.Sleep(d)
 				safeRunEgressHealthCheck()
 			}
@@ -185,7 +185,7 @@ func runEgressHealthCheck(reload ...func() error) {
 
 	// HProxy候选：每天测一遍，低并发(5)，每次300个
 	var candidateTags []string
-	cutoff := time.Now().Add(-25 * time.Hour).Unix()
+	cutoff := time.Now().Add(-15 * time.Minute).Unix()
 	db.Model(&model.Outbound{}).
 		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", cutoff, false).
 		Order("last_test_time ASC").Limit(300).Pluck("tag", &candidateTags)
