@@ -248,6 +248,11 @@ func (s *SubscriptionService) Refresh(id uint) (*RefreshResult, error) {
 				}
 			}
 
+			if strings.HasPrefix(outbound.Tag, "hproxy-") {
+				outbound.Available = true
+				outbound.LastTestTime = time.Now().Unix()
+			}
+
 			if err := tx.Create(outbound).Error; err != nil {
 				return fmt.Errorf("failed to create outbound %q: %w", outbound.Tag, err)
 			}

@@ -106,7 +106,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 		for k, v := range vmessJson {
 			origMap[k] = v
 		}
-		origMap["ps"] = service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", 1)
+		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
+		origMap["ps"] = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
 		origMap["add"] = "dash.icta.top"
 		if raw, err := json.MarshalIndent(origMap, "", "  "); err == nil {
 			candidates = append(candidates, CandidateNode{
@@ -115,7 +116,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 				Provider: "SUI",
 				Country:  "新加坡",
 				Region:   "中央区",
-				City:     "新加坡城",
+				City:     suiCity,
 				Priority: priority,
 			})
 		}
@@ -164,7 +165,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 
 		// 1. Native Singapore Direct
 		origU := *u
-		origU.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", 1)
+		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
+		origU.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
 		origU.Host = "dash.icta.top:" + origU.Port()
 		candidates = append(candidates, CandidateNode{
 			Uri:      origU.String(),
@@ -172,7 +174,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			Provider: "SUI",
 			Country:  "新加坡",
 			Region:   "中央区",
-			City:     "新加坡城",
+			City:     suiCity,
 			Priority: priority,
 		})
 
@@ -203,6 +205,51 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 					derivedPass := service.DerivePassword(origUser, reg.Code)
 					newU.User = url.User(derivedPass)
 				}
+			}
+			candidates = append(candidates, CandidateNode{
+				Uri:      newU.String(),
+				Protocol: proto,
+				Provider: prov,
+				Country:  c,
+				Region:   r,
+				City:     ct,
+				Priority: priority,
+				NodeKey:  reg.OutboundTag,
+			})
+		}
+	default:
+		u, err := url.Parse(uri)
+		if err != nil {
+			return candidates
+		}
+		
+		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
+		origU := *u
+		origU.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
+		if origU.Port() != "" {
+			origU.Host = "dash.icta.top:" + origU.Port()
+		} else {
+			origU.Host = "dash.icta.top"
+		}
+		candidates = append(candidates, CandidateNode{
+			Uri:      origU.String(),
+			Protocol: proto,
+			Provider: "SUI",
+			Country:  "新加坡",
+			Region:   "中央区",
+			City:     suiCity,
+			Priority: priority,
+		})
+		
+		// 2. Regional nodes
+		for _, reg := range activeRegions {
+			prov, c, r, ct := service.ResolveEgressComponents(reg.Code, reg.Name)
+			newU := *u
+			newU.Fragment = service.FormatStandardRemark(prov, c, r, ct, 1)
+			if newU.Port() != "" {
+				newU.Host = "dash.icta.top:" + newU.Port()
+			} else {
+				newU.Host = "dash.icta.top"
 			}
 			candidates = append(candidates, CandidateNode{
 				Uri:      newU.String(),
@@ -300,7 +347,7 @@ func FilterHealthyAndGroupTop3Links(
 				Provider:      "SUI",
 				Country:       "新加坡",
 				Region:        "中央区",
-				City:          "新加坡城",
+				City:          c.City,
 				Status:        "available",
 				TCPCheck:      true,
 				TLSCheck:      true,
@@ -358,14 +405,19 @@ func FilterHealthyAndGroupTop3Links(
 
 	var groupKeys []string
 	for k := range groups {
-		if k != "SUI-新加坡-中央区-新加坡城" {
-			groupKeys = append(groupKeys, k)
-		}
+		groupKeys = append(groupKeys, k)
 	}
 	sort.Strings(groupKeys)
-	if _, ok := groups["SUI-新加坡-中央区-新加坡城"]; ok {
-		groupKeys = append([]string{"SUI-新加坡-中央区-新加坡城"}, groupKeys...)
+	var suiKeys []string
+	var otherKeys []string
+	for _, k := range groupKeys {
+		if strings.HasPrefix(k, "SUI-") {
+			suiKeys = append(suiKeys, k)
+		} else {
+			otherKeys = append(otherKeys, k)
+		}
 	}
+	groupKeys = append(suiKeys, otherKeys...)
 
 	var result []string
 	seenUris := make(map[string]bool)
@@ -450,14 +502,19 @@ func FormatTop3Links(candidates []CandidateNode) []string {
 
 	var groupKeys []string
 	for k := range groups {
-		if k != "SUI-新加坡-中央区-新加坡城" {
-			groupKeys = append(groupKeys, k)
-		}
+		groupKeys = append(groupKeys, k)
 	}
 	sort.Strings(groupKeys)
-	if _, ok := groups["SUI-新加坡-中央区-新加坡城"]; ok {
-		groupKeys = append([]string{"SUI-新加坡-中央区-新加坡城"}, groupKeys...)
+	var suiKeys []string
+	var otherKeys []string
+	for _, k := range groupKeys {
+		if strings.HasPrefix(k, "SUI-") {
+			suiKeys = append(suiKeys, k)
+		} else {
+			otherKeys = append(otherKeys, k)
+		}
 	}
+	groupKeys = append(suiKeys, otherKeys...)
 
 	var result []string
 	seenUris := make(map[string]bool)
@@ -513,6 +570,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 		activeRegions = service.StandardEgressRegions
 	}
 
+	var allCandidates []CandidateNode
+
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
 		if strings.HasPrefix(link.Uri, "http2://") {
@@ -531,16 +590,29 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				egressLinks := []string{setRemarkOnUri(finalLink, strings.SplitN(finalLink, "://", 2)[0], service.FormatStandardRemark("SUI", "新加坡", "中央区", "新加坡城", 1))}
-				if len(activeRegions) > 0 {
-					egressLinks = s.ExpandEgressLinks(finalLink, activeRegions)
+				candidates := s.ExpandEgressCandidates(finalLink, activeRegions)
+				if len(candidates) == 0 {
+					candidates = []CandidateNode{{
+						Uri:      finalLink,
+						Protocol: strings.SplitN(finalLink, "://", 2)[0],
+						Provider: "SUI",
+						Country:  "新加坡",
+						Region:   "中央区",
+						City:     "新加坡城-Unknown",
+						Priority: 10,
+					}}
 				}
-				for _, egressLink := range egressLinks {
-					if !seen[egressLink] {
-						seen[egressLink] = true
-						result = append(result, egressLink)
-					}
-				}
+				allCandidates = append(allCandidates, candidates...)
+			}
+		}
+	}
+
+	if len(allCandidates) > 0 {
+		egressLinks := FilterHealthyAndGroupTop3Links(allCandidates, nil, model.DefaultHealthTTL)
+		for _, egressLink := range egressLinks {
+			if !seen[egressLink] {
+				seen[egressLink] = true
+				result = append(result, egressLink)
 			}
 		}
 	}
@@ -643,7 +715,7 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		allowedHost = "dash.icta.top"
 	}
 	var violations []string
-	remarkRegex := regexp.MustCompile(`^(Seed|Cloudflare|HProxy|SUI|Proton)-[^\r\n-]+-[^\r\n-]+-[^\r\n-]+-\d{2}$`)
+	remarkRegex := regexp.MustCompile(`^(Seed|Cloudflare|HProxy|SUI|Proton)-[^\r\n-]+-[^\r\n-]+-.+-\d{2}$`)
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	bannedTokens := []string{
 		"原生直连", "默认出口", "智能优选", "洁净出口",
@@ -785,4 +857,62 @@ func (s *LinkService) getExternalSub(url string) []string {
 	links := util.StrOrBase64Encoded(string(body))
 	return strings.Split(links, "\n")
 
+}
+
+func getProtocolDetails(uri, proto string) string {
+	origProto := strings.ToLower(proto)
+	if origProto == "hysteria2" || origProto == "hy2" {
+		return "Hysteria2"
+	}
+	if origProto == "tuic" {
+		return "TUIC"
+	}
+	if origProto == "trojan" {
+		u, err := url.Parse(uri)
+		if err == nil {
+			net := u.Query().Get("type")
+			if net == "" || net == "tcp" {
+				return "Trojan-TCP"
+			}
+			return "Trojan-" + strings.ToUpper(net)
+		}
+		return "Trojan"
+	}
+	if origProto == "ss" || origProto == "shadowsocks" {
+		return "SS"
+	}
+	if origProto == "mixed" {
+		return "Mixed"
+	}
+
+	if origProto == "vmess" {
+		parts := strings.Split(uri, "://")
+		if len(parts) == 2 {
+			if config, err := util.B64StrToByte(parts[1]); err == nil {
+				var vmessJson map[string]interface{}
+				if err := json.Unmarshal(config, &vmessJson); err == nil {
+					net, _ := vmessJson["net"].(string)
+					if net == "tcp" || net == "" {
+						return "VMess-TCP"
+					}
+					return "VMess-" + strings.ToUpper(net)
+				}
+			}
+		}
+		return "VMess"
+	}
+
+	if origProto == "vless" {
+		u, err := url.Parse(uri)
+		if err == nil {
+			net := u.Query().Get("type")
+			if net == "tcp" || net == "" {
+				return "VLESS原版"
+			}
+			return "VLESS-" + strings.ToUpper(net)
+		}
+		return "VLESS"
+	}
+
+	return strings.ToUpper(proto)
 }

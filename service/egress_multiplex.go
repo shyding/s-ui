@@ -711,11 +711,11 @@ func GetVerifiedEgressRegions(db *gorm.DB, ttl time.Duration) []EgressRegion {
 			if err := db.Where("tag = ? AND available = ? AND last_test_time >= ?", region.OutboundTag, true, cutoff).First(&outbound).Error; err != nil {
 				continue
 			}
-			measured, ok := measuredEgressRegion("Cloudflare", region, outbound)
-			if !ok {
-				continue
+			if measured, ok := measuredEgressRegion("Cloudflare", region, outbound); ok {
+				verified = append(verified, measured)
+			} else {
+				verified = append(verified, region)
 			}
-			verified = append(verified, measured)
 			continue
 		}
 		if strings.HasPrefix(region.Code, "seed-") {
