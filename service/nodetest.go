@@ -1322,7 +1322,7 @@ func (s *NodeTestService) simplifyError(errStr string) string {
 
 // measureProxyLatency attempts to connect to gstatic.com through the proxy adapter
 func (s *NodeTestService) measureProxyLatency(ctx context.Context, outbound_adapter adapter.Outbound) (int64, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	rlStart := time.Now()
@@ -1334,8 +1334,7 @@ func (s *NodeTestService) measureProxyLatency(ctx context.Context, outbound_adap
 	defer rlConn.Close()
 
 	tlsConn := tls.Client(rlConn, &tls.Config{
-		ServerName:         "www.gstatic.com",
-		InsecureSkipVerify: true,
+		ServerName: "www.gstatic.com",
 	})
 	if err := tlsConn.HandshakeContext(dialCtx); err != nil {
 		return -1, err
