@@ -893,9 +893,10 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	bannedTokens := []string{
 		"原生直连", "默认出口", "智能优选", "洁净出口",
-		"vmess-", "vless-", "trojan-", "tuic-", "hysteria2-",
 		"未知", "unknown", "unknow", "Unknown", "Unknow", "null", "NULL", "none", "None", "Undefined", "undefined",
 	}
+	// SUI 本地 inbound 的 tag（如 vless-54142）是合法的，不应被过滤
+	suiTagPrefixes := []string{"vless-", "vmess-", "trojan-", "tuic-", "hysteria2-", "ss-", "mixed-", "socks-"}
 	bannedDomains := []string{
 		"workers.dev", "globals-download.com", "guardora.pro", "cloudflare.com",
 	}
@@ -936,12 +937,22 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 				violations = append(violations, fmt.Sprintf("VMess add '%s' != allowedHost '%s'", add, allowedHost))
 			}
 			ps, _ := vObj["ps"].(string)
-			if !remarkRegex.MatchString(ps) {
-				violations = append(violations, fmt.Sprintf("VMess remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", ps))
+			// SUI 本地 inbound 跳过备注格式检查
+			isSuiTag := false
+			for _, prefix := range suiTagPrefixes {
+				if strings.HasPrefix(ps, prefix) {
+					isSuiTag = true
+					break
+				}
 			}
-			for _, banned := range bannedTokens {
-				if strings.Contains(ps, banned) {
-					violations = append(violations, fmt.Sprintf("VMess remark '%s' contains banned token '%s'", ps, banned))
+			if !isSuiTag {
+				if !remarkRegex.MatchString(ps) {
+					violations = append(violations, fmt.Sprintf("VMess remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", ps))
+				}
+				for _, banned := range bannedTokens {
+					if strings.Contains(ps, banned) {
+						violations = append(violations, fmt.Sprintf("VMess remark '%s' contains banned token '%s'", ps, banned))
+					}
 				}
 			}
 		} else {
@@ -954,12 +965,22 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 				violations = append(violations, fmt.Sprintf("Host '%s' != allowedHost '%s'", u.Hostname(), allowedHost))
 			}
 			remark := u.Fragment
-			if !remarkRegex.MatchString(remark) {
-				violations = append(violations, fmt.Sprintf("Remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", remark))
+			// SUI 本地 inbound（如 vless-54142）跳过备注格式检查
+			isSuiTag := false
+			for _, prefix := range suiTagPrefixes {
+				if strings.HasPrefix(remark, prefix) {
+					isSuiTag = true
+					break
+				}
 			}
-			for _, banned := range bannedTokens {
-				if strings.Contains(remark, banned) {
-					violations = append(violations, fmt.Sprintf("Remark '%s' contains banned token '%s'", remark, banned))
+			if !isSuiTag {
+				if !remarkRegex.MatchString(remark) {
+					violations = append(violations, fmt.Sprintf("Remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", remark))
+				}
+				for _, banned := range bannedTokens {
+					if strings.Contains(remark, banned) {
+						violations = append(violations, fmt.Sprintf("Remark '%s' contains banned token '%s'", remark, banned))
+					}
 				}
 			}
 		}
