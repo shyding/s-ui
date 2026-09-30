@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -664,6 +665,22 @@ func GetActiveEgressRegions(db *gorm.DB) []EgressRegion {
 			}
 		}
 	}
+
+	// Debug: log active region counts by type
+	cfCount, hpCount, seedCount, otherCount := 0, 0, 0, 0
+	for _, r := range active {
+		switch {
+		case strings.HasPrefix(r.Code, "cf-"):
+			cfCount++
+		case strings.HasPrefix(r.Code, "hproxy-"):
+			hpCount++
+		case strings.HasPrefix(r.Code, "seed-"):
+			seedCount++
+		default:
+			otherCount++
+		}
+	}
+	log.Printf("GetActiveEgressRegions: total=%d cf=%d hproxy=%d seed=%d other=%d", len(active), cfCount, hpCount, seedCount, otherCount)
 
 	if len(active) == 0 {
 		return StandardEgressRegions
