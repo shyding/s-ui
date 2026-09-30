@@ -119,7 +119,9 @@ func (w *NodeHealthWorker) runOnce() {
 		Uri    string `json:"uri"`
 	}
 
-	// 收集所有 external 节点 URI
+	// 收集所有 external 和 local 节点 URI
+	// - external: 外部订阅节点
+	// - local: VPS 自身 inbound（SUI 节点），必须检测否则订阅 FAIL-CLOSED 无法发布
 	var allURIs []string
 	for _, c := range clients {
 		if len(c.Links) == 0 {
@@ -130,7 +132,7 @@ func (w *NodeHealthWorker) runOnce() {
 			continue
 		}
 		for _, l := range links {
-			if l.Type == "external" && l.Uri != "" {
+			if (l.Type == "external" || l.Type == "local") && l.Uri != "" {
 				allURIs = append(allURIs, l.Uri)
 			}
 		}
