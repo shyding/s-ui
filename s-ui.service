@@ -10,6 +10,11 @@ ExecStart=/usr/local/s-ui/sui
 Restart=on-failure
 RestartSec=10s
 LimitNOFILE=65535
+# Seed nodes file for "Local v2rayN Seed Nodes" subscription (optional).
+# Set to a file containing 300+ seed node URIs (one per line, vless://, trojan://, etc.)
+# to enable the Seed provider in subscriptions. If unset or empty, Seed is disabled.
+# Example: Environment=SUI_SEED_NODES_FILE=/usr/local/s-ui/seed/nodes.txt
+#Environment=SUI_SEED_NODES_FILE=/usr/local/s-ui/seed/nodes.txt
 
 [Install]
 WantedBy=multi-user.target

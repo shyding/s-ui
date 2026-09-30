@@ -28,6 +28,20 @@ type Link struct {
 type LinkService struct {
 }
 
+// Per-group node caps for subscription generation.
+// A group is one (provider, country, region, city) combination.
+// - SUI (VPS direct egress): up to MaxNodesPerCityGroupSUI (multi-protocol inbounds on one VPS)
+// - Seed: up to MaxNodesPerCityGroupSeed
+// - HProxy / Cloudflare / others: up to MaxNodesPerCityGroup (default)
+// The default was raised from 10 to 18 so a typical ~95-group subscription
+// stays above 1500 nodes (95*18=1710 theoretical max) while the health gate
+// (FAIL-CLOSED, 650ms latency cap, -1 on failure) still filters every node.
+const (
+	MaxNodesPerCityGroup     = 18
+	MaxNodesPerCityGroupSUI  = 30
+	MaxNodesPerCityGroupSeed = 50
+)
+
 type CandidateNode struct {
 	Uri      string
 	Protocol string
@@ -222,7 +236,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 		if err != nil {
 			return candidates
 		}
-		
+
 		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
 		origU := *u
 		origU.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
@@ -240,7 +254,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			City:     suiCity,
 			Priority: priority,
 		})
-		
+
 		// 2. Regional nodes
 		for _, reg := range activeRegions {
 			prov, c, r, ct := service.ResolveEgressComponents(reg.Code, reg.Name)
@@ -268,14 +282,15 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 }
 
 // FilterHealthyAndGroupTop3Links enforces strict FAIL-CLOSED verification:
-// 1. Every candidate MUST match an active, unexpired NodeHealthStatus in healthMap or DB.
-// 2. Missing health check -> UNVERIFIED -> DISCARD (FAIL-CLOSED).
-// 3. Status != "available", tcp_check != true, tls_check != true, proxy_check != true -> DISCARD.
-// 4. speed <= 0 or latency <= 0 -> DISCARD.
-// 5. LastCheckTime older than ttl -> STALE -> DISCARD.
-// 6. Group remaining healthy nodes by (provider, country, region, city).
-// 7. Sort within group by speed DESC, latency ASC, priority DESC, uri ASC (tie-breaker).
-// 8. Retain at most TOP 3 per group and format standard remark: {来源}-{国家}-{区域}-{城市}-{编号}.
+//  1. Every candidate MUST match an active, unexpired NodeHealthStatus in healthMap or DB.
+//  2. Missing health check -> UNVERIFIED -> DISCARD (FAIL-CLOSED).
+//  3. Status != "available", tcp_check != true, tls_check != true, proxy_check != true -> DISCARD.
+//  4. speed <= 0 or latency <= 0 -> DISCARD.
+//  5. LastCheckTime older than ttl -> STALE -> DISCARD.
+//  6. Group remaining healthy nodes by (provider, country, region, city).
+//  7. Sort within group by speed DESC, latency ASC, priority DESC, uri ASC (tie-breaker).
+//  8. Retain at most the per-provider cap per group (SUI 30, Seed 50, others 18)
+//     and format standard remark: {来源}-{国家}-{区域}-{城市}-{编号}.
 func FilterHealthyAndGroupTop3Links(
 	candidates []CandidateNode,
 	healthMap map[string]*model.NodeHealthStatus,
@@ -292,7 +307,8 @@ func FilterHealthyAndGroupTop3Links(
 	if healthMap == nil {
 		db := database.GetDB()
 		if db == nil {
-			// In standalone unit-test environment without DB, format top 3 directly
+			// In standalone unit-test environment without DB, format top 3 directly.
+			// Production MUST have DB; this path is test-only.
 			return FormatTop3Links(candidates)
 		}
 		healthMap = make(map[string]*model.NodeHealthStatus)
@@ -324,8 +340,12 @@ func FilterHealthyAndGroupTop3Links(
 			}
 		}
 		if len(records) == 0 {
-			// When health table is completely unpopulated, fallback to format top 3
-			return FormatTop3Links(candidates)
+			// STRICT FAIL-CLOSED: health table is completely unpopulated
+			// (fresh deploy or health checker not yet run).
+			// DO NOT publish unverified nodes. Return empty; the subscription
+			// will populate once the health checker completes its first run.
+			// See: docs/SUI_QUALITY_AND_QUANTITY_RULES.md (strict FAIL-CLOSED).
+			return nil
 		}
 	}
 
@@ -439,14 +459,15 @@ func FilterHealthyAndGroupTop3Links(
 		})
 
 		// Dynamic limit per provider:
-		// - SUI: up to 30 (multi-protocol combinations on same VPS)
-		// - Others (Seed, Cloudflare, HProxy): up to 10 per city group
-		limit := 10
+		// - SUI: up to MaxNodesPerCityGroupSUI (multi-protocol combinations on same VPS)
+		// - Seed: up to MaxNodesPerCityGroupSeed
+		// - Others (HProxy, Cloudflare): up to MaxNodesPerCityGroup per city group
+		limit := MaxNodesPerCityGroup
 		if len(groupItems) > 0 {
 			if groupItems[0].Provider == "SUI" {
-				limit = 30
+				limit = MaxNodesPerCityGroupSUI
 			} else if groupItems[0].Provider == "Seed" {
-				limit = 50
+				limit = MaxNodesPerCityGroupSeed
 			}
 		}
 		if len(groupItems) < limit {
@@ -469,7 +490,8 @@ func FilterHealthyAndGroupTop3Links(
 }
 
 // GroupAndFilterTop3Links groups candidate nodes by (provider, country, region, city),
-// applies FAIL-CLOSED health filtering, retains at most TOP 3, and assigns -01, -02, -03 remarks.
+// applies FAIL-CLOSED health filtering, retains at most the per-provider cap,
+// and assigns -01, -02, ... remarks.
 func GroupAndFilterTop3Links(candidates []CandidateNode) []string {
 	return FilterHealthyAndGroupTop3Links(candidates, nil, model.DefaultHealthTTL)
 }

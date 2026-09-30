@@ -7,6 +7,13 @@ services:
     volumes:
       - "./db:/app/db"
       - "./cert:/app/cert"
+      # Seed nodes file (optional): mount a file with 300+ seed node URIs (one per line)
+      # to enable the "Local v2rayN Seed Nodes" subscription. Example:
+      # - "./seed/nodes.txt:/app/seed/nodes.txt:ro"
+    environment:
+      # Set to /app/seed/nodes.txt (matching the volume mount above) to enable Seed.
+      # If unset or empty, the Seed provider is disabled.
+      # - SUI_SEED_NODES_FILE=/app/seed/nodes.txt
     tty: true
     restart: unless-stopped
     ports:

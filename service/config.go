@@ -122,8 +122,21 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 		errMsg := err.Error()
 		logger.Error("start sing-box err:", errMsg)
 
-		// Self-healing: if an inbound failed initialization or port bind, isolate it and retry
+		// Self-healing: if an inbound failed initialization or port bind, isolate it and retry.
+		// NOTE: "address already in use" means inbounds are already running (e.g., from a
+		// previous core instance that didn't clean up, or CheckCoreJob racing with startup).
+		// In that case, SKIP all inbounds at once (don't re-bind) rather than removing them
+		// one-by-one across 5 retry attempts. The health checker only needs outbounds.
 		if strings.Contains(errMsg, "inbound") {
+			if strings.Contains(errMsg, "address already in use") {
+				// Ports already bound: inbounds are running. Start core with outbounds only
+				// for health checking; do not destructively retry.
+				if len(singboxConfig.Inbounds) > 0 {
+					logger.Warningf("Inbound ports already in use (%d inbounds), starting core with outbounds only for health checking", len(singboxConfig.Inbounds))
+					singboxConfig.Inbounds = nil
+					continue
+				}
+			}
 			removed := false
 			for i, inRaw := range singboxConfig.Inbounds {
 				var inMap map[string]interface{}

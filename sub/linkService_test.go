@@ -396,15 +396,15 @@ func TestRegression_2_NodeQuantityAndTop3Grouping(t *testing.T) {
 		groupCounts[gk]++
 	}
 
-	// Assert: every group MUST have <= 10 nodes (dynamic limit for non-SUI providers)
+	// Assert: every group MUST have <= MaxNodesPerCityGroup nodes (dynamic limit for non-SUI providers)
 	for gk, count := range groupCounts {
-		if count > 10 {
+		if count > MaxNodesPerCityGroup {
 			t.Errorf("Group %s exceeded limit with %d nodes", gk, count)
 		}
 	}
 
-	if len(result) > 10*10 {
-		t.Errorf("Total nodes %d exceeds expected limit %d", len(result), 10*10)
+	if len(result) > MaxNodesPerCityGroup*10 {
+		t.Errorf("Total nodes %d exceeds expected limit %d", len(result), MaxNodesPerCityGroup*10)
 	}
 }
 
@@ -713,9 +713,9 @@ func TestSubscriptionTop3AfterHealthFilter(t *testing.T) {
 	}
 
 	res := FilterHealthyAndGroupTop3Links(candidates, healthMap, 15*time.Minute)
-	// With limit=10 for non-SUI providers, all 5 healthy nodes pass (n1,n2,n3,n4,n5)
+	// With limit=MaxNodesPerCityGroup for non-SUI providers, all 5 healthy nodes pass (n1,n2,n3,n4,n5)
 	if len(res) != 5 {
-		t.Fatalf("Expected 5 healthy nodes (limit=10), got %d", len(res))
+		t.Fatalf("Expected 5 healthy nodes (limit=%d), got %d", MaxNodesPerCityGroup, len(res))
 	}
 
 	// Should be sorted by speed DESC: 50 (n2), 40 (n4), 30 (n3), 20 (n5), 10 (n1)

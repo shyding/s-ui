@@ -248,7 +248,7 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 					}
 				}
 			}
-			
+
 			// Also check if TLS is embedded in Options
 			if !hasValidTLS && len(inbound.Options) > 0 {
 				var optsMap map[string]interface{}
@@ -276,6 +276,26 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		inboundJson, err := inbound.MarshalJSON()
 		if err != nil {
 			return nil, err
+		}
+		// Normalize Shadowsocks 2022 password: sing-box expects base64 WITHOUT padding
+		// (RawStdEncoding). Strip trailing '=' to avoid "illegal base64 data" on startup.
+		// This is a persistent fix; the DB may contain padded passwords from UI input.
+		if inbound.Type == "shadowsocks" {
+			var inMap map[string]interface{}
+			if json.Unmarshal(inboundJson, &inMap) == nil {
+				if method, _ := inMap["method"].(string); strings.HasPrefix(method, "2022") {
+					if pwd, _ := inMap["password"].(string); pwd != "" {
+						normalized := strings.TrimRight(pwd, "=")
+						if normalized != pwd {
+							logger.Warningf("Normalized Shadowsocks 2022 password for inbound '%s' (stripped base64 padding)", inbound.Tag)
+							inMap["password"] = normalized
+							if fixed, err := json.Marshal(inMap); err == nil {
+								inboundJson = fixed
+							}
+						}
+					}
+				}
+			}
 		}
 		inboundJson, err = s.addUsers(db, inboundJson, inbound.Id, inbound.Type)
 		if err != nil {
