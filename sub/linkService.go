@@ -33,13 +33,13 @@ type LinkService struct {
 // - SUI (VPS direct egress): up to MaxNodesPerCityGroupSUI (multi-protocol inbounds on one VPS)
 // - Seed: up to MaxNodesPerCityGroupSeed
 // - HProxy / Cloudflare / others: up to MaxNodesPerCityGroup (default)
-// The default was raised from 10 to 18 so a typical ~95-group subscription
-// stays above 1500 nodes (95*18=1710 theoretical max) while the health gate
-// (FAIL-CLOSED, 650ms latency cap, -1 on failure) still filters every node.
+// Total subscription is hard-capped at MaxTotalNodes (1300) regardless of
+// per-group caps. Priority when trimming: SUI > Seed > others (by health score).
 const (
 	MaxNodesPerCityGroup     = 18
 	MaxNodesPerCityGroupSUI  = 30
 	MaxNodesPerCityGroupSeed = 50
+	MaxTotalNodes            = 1300
 )
 
 type CandidateNode struct {
@@ -363,39 +363,20 @@ func FilterHealthyAndGroupTop3Links(
 		}
 
 		if c.Provider == "SUI" && rec == nil {
-			rec = &model.NodeHealthStatus{
-				Provider:      "SUI",
-				Country:       "新加坡",
-				Region:        "中央区",
-				City:          c.City,
-				Status:        "available",
-				TCPCheck:      true,
-				TLSCheck:      true,
-				ProxyCheck:    true,
-				Latency:       100,
-				Speed:         100.0,
-				LastCheckTime: time.Now().UTC().Format(time.RFC3339),
-			}
+			// STRICT FAIL-CLOSED: SUI nodes MUST have real health records.
+			// Do NOT create virtual records. If a SUI node has no health data,
+			// it is UNVERIFIED and must be discarded. SUI inbounds are local;
+			// a missing/failed health check indicates a VPS problem, not a
+			// node problem. Log critical for operator attention.
+			logger.Errorf("CRITICAL: SUI node %s has no health record (VPS health checker not running?)", c.Uri)
+			continue
 		}
 
-		// HProxy and Cloudflare egress nodes are verified by sing-box urltest pools (5-min interval).
-		// Their GroupKey format between health records and candidates may not match due to
-		// English vs Chinese geo normalization differences. Bypass FAIL-CLOSED for these providers.
-		if (c.Provider == "HProxy" || c.Provider == "Cloudflare") && rec == nil {
-			rec = &model.NodeHealthStatus{
-				Provider:      c.Provider,
-				Country:       c.Country,
-				Region:        c.Region,
-				City:          c.City,
-				Status:        "available",
-				TCPCheck:      true,
-				TLSCheck:      true,
-				ProxyCheck:    true,
-				Latency:       200,
-				Speed:         50.0,
-				LastCheckTime: time.Now().UTC().Format(time.RFC3339),
-			}
-		}
+		// HProxy and Cloudflare: STRICT FAIL-CLOSED. Do NOT create virtual records.
+		// If GroupKey format mismatches cause missing records, fix the key
+		// normalization instead of bypassing verification. Unverified nodes
+		// must not be published.
+		// (Virtual record creation removed per strict FAIL-CLOSED requirement.)
 
 		// FAIL-CLOSED: No record = UNVERIFIED -> discard
 		if rec == nil {
@@ -404,6 +385,13 @@ func FilterHealthyAndGroupTop3Links(
 
 		// Enforce all health checks and freshness
 		if !rec.IsHealthyWithTTL(ttl) {
+			// SUI nodes must NEVER be -1 in the subscription. If a SUI health
+			// check fails, it indicates a VPS problem (inbound down, sing-box
+			// crashed). Log critical for immediate operator attention.
+			if c.Provider == "SUI" {
+				logger.Errorf("CRITICAL: SUI node failed health check (status=%s, latency=%d): %s — VPS inbound may be down!",
+					rec.Status, rec.Latency, c.Uri)
+			}
 			continue
 		}
 
@@ -486,7 +474,49 @@ func FilterHealthyAndGroupTop3Links(
 		}
 	}
 
+	// Hard cap: total subscription must not exceed MaxTotalNodes (1300).
+	// Priority when trimming: SUI > Seed > others. Within each tier, the
+	// per-group sorting (speed DESC, latency ASC) is already applied, so we
+	// trim from the end (lowest priority / worst health score first).
+	if len(result) > MaxTotalNodes {
+		result = trimToMaxTotal(result)
+	}
+
 	return result
+}
+
+// trimToMaxTotal enforces the MaxTotalNodes hard cap with provider priority:
+// SUI first (never drop), then Seed, then others. Within each tier, nodes are
+// already sorted by health score (speed DESC, latency ASC), so we keep the head.
+func trimToMaxTotal(links []string) []string {
+	if len(links) <= MaxTotalNodes {
+		return links
+	}
+	var sui, seed, other []string
+	for _, l := range links {
+		// Remark format: {来源}-{国家}-... is in the URI fragment (after #)
+		provider := ""
+		if idx := strings.LastIndex(l, "#"); idx >= 0 {
+			frag := l[idx+1:]
+			if dash := strings.Index(frag, "-"); dash > 0 {
+				provider = frag[:dash]
+			}
+		}
+		switch provider {
+		case "SUI":
+			sui = append(sui, l)
+		case "Seed":
+			seed = append(seed, l)
+		default:
+			other = append(other, l)
+		}
+	}
+	// Rebuild with priority: SUI > Seed > other, then trim to cap
+	prioritized := append(append(sui, seed...), other...)
+	if len(prioritized) > MaxTotalNodes {
+		prioritized = prioritized[:MaxTotalNodes]
+	}
+	return prioritized
 }
 
 // GroupAndFilterTop3Links groups candidate nodes by (provider, country, region, city),

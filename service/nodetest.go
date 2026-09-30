@@ -100,9 +100,11 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		}
 		conn.Close()
 		result.Latency = time.Since(start).Milliseconds()
-		if result.Latency <= 0 || result.Latency > 650 {
+		// Stage 1 (TCP connect): only check for success, no 650ms cap.
+		// The 650ms latency limit applies ONLY to Stage 3 (real landing latency).
+		if result.Latency <= 0 {
 			result.Available = false
-			result.Error = "latency exceeds 650ms threshold or invalid"
+			result.Error = "invalid latency"
 			return result, nil
 		}
 		result.Available = true
@@ -123,13 +125,15 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 			if outboundManager != nil {
 				if outbound_adapter, loaded := outboundManager.Outbound(tag); loaded {
 					latency, err := s.measureProxyLatency(ctx, outbound_adapter)
-					if err != nil || latency <= 0 || latency > 650 {
+					// Stage 2 (proxy handshake): only check for success, no 650ms cap.
+					// The 650ms latency limit applies ONLY to Stage 3 (real landing latency).
+					if err != nil || latency <= 0 {
 						result.Available = false
 						result.Latency = latency
 						if err != nil {
 							result.Error = s.simplifyError(err.Error())
 						} else {
-							result.Error = "proxy latency exceeds 650ms threshold or invalid"
+							result.Error = "invalid proxy latency"
 						}
 						return result, nil
 					}
@@ -262,9 +266,11 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		}
 	}
 
-	if result.RealLatency > 650 || (result.RealLatency <= 0 && result.Latency > 650) {
+	// Stage 3 ONLY: 650ms latency cap applies exclusively to real landing latency.
+	// Stages 1 and 2 have no latency cap (only success/failure matters).
+	if result.RealLatency > 650 {
 		result.Available = false
-		result.Error = "latency exceeds 650ms threshold"
+		result.Error = "stage 3 latency exceeds 650ms threshold"
 	}
 
 	return result, nil
