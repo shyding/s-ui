@@ -4,12 +4,22 @@
       <v-card-title class="d-flex align-center">
         <span>{{ $t('nodeTest.title') || 'Node Test' }}</span>
         <v-spacer></v-spacer>
+        <v-chip v-if="!testing && total > 0" color="info" variant="tonal" class="mr-2">
+          {{ tags && tags.length > 0 ? ($t('nodeTest.willTestSelected') || 'Will test selected') : ($t('nodeTest.willTestAll') || 'Will test all') }}: {{ total }}
+        </v-chip>
         <v-chip v-if="testing" color="primary" variant="tonal" class="mr-2">
           {{ tags && tags.length > 0 ? ($t('nodeTest.testingSelected') || 'Testing Selected...') : ($t('nodeTest.testing') || 'Testing...') }} {{ progress }}/{{ total }}
         </v-chip>
       </v-card-title>
       <v-divider></v-divider>
       <v-card-text style="max-height: 600px; overflow-y: auto;">
+        <!-- Testing progress bar -->
+        <v-progress-linear
+          v-if="testing"
+          indeterminate
+          color="primary"
+          class="mb-4"
+        ></v-progress-linear>
         <v-container>
           <!-- Controls -->
           <v-row class="mb-4">
@@ -141,6 +151,9 @@
             </template>
           </v-data-table>
 
+          <v-alert v-else-if="!testing && results.length === 0 && total === 0" type="warning" variant="tonal">
+            {{ $t('nodeTest.noNodes') || 'No nodes to test. Please select nodes or ensure outbounds exist.' }}
+          </v-alert>
           <v-alert v-else-if="!testing && results.length === 0" type="info" variant="tonal">
             {{ $t('nodeTest.clickStart') || 'Click "Start Test" to begin testing all nodes.' }}
           </v-alert>
@@ -177,6 +190,7 @@
           color="primary"
           variant="tonal"
           :loading="testing"
+          :disabled="testing || total === 0"
           @click="startTest"
         >
           {{ queryIP ? ($t('nodeTest.testWithIP') || 'Test with IP') : ($t('nodeTest.startTest') || 'Start Test') }}
@@ -208,7 +222,7 @@ interface TestResult {
 }
 
 export default {
-  props: ['visible', 'tags', 'initialNodes'],
+  props: ['visible', 'tags', 'initialNodes', 'totalNodes'],
   emits: ['close', 'update-results'],
   data() {
     return {
@@ -434,6 +448,15 @@ export default {
   watch: {
     visible(newValue) {
       if (newValue) {
+        // Set expected total: selected tags count, or total nodes for "test all"
+        if (this.tags && this.tags.length > 0) {
+          this.total = this.tags.length
+        } else if (this.totalNodes > 0) {
+          this.total = this.totalNodes
+        } else {
+          this.total = 0
+        }
+        this.progress = 0
         if (this.initialNodes && this.initialNodes.length > 0) {
           this.results = this.initialNodes.map((n: any) => ({
             tag: n.tag,
@@ -451,12 +474,8 @@ export default {
             ipType: '',
             fraudScore: undefined
           }))
-          this.total = this.results.length
-          this.progress = 0
         } else {
           this.results = []
-          this.progress = 0
-          this.total = 0
         }
       }
     }

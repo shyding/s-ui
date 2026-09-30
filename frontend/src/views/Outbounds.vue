@@ -21,6 +21,7 @@
     v-model="testModal.visible"
     :visible="testModal.visible"
     :tags="tagsForTest"
+    :total-nodes="outbounds.length"
     @close="closeTestModal"
     @update-results="onTestResults"
   />
