@@ -442,8 +442,12 @@ func FilterHealthyAndGroupTop3Links(
 		// - SUI: up to 30 (multi-protocol combinations on same VPS)
 		// - Others (Seed, Cloudflare, HProxy): up to 10 per city group
 		limit := 10
-		if len(groupItems) > 0 && groupItems[0].Provider == "SUI" {
-			limit = 30
+		if len(groupItems) > 0 {
+			if groupItems[0].Provider == "SUI" {
+				limit = 30
+			} else if groupItems[0].Provider == "Seed" {
+				limit = 50
+			}
 		}
 		if len(groupItems) < limit {
 			limit = len(groupItems)
@@ -529,8 +533,12 @@ func FormatTop3Links(candidates []CandidateNode) []string {
 		})
 
 		limit := 10
-		if len(groupItems) > 0 && groupItems[0].Provider == "SUI" {
-			limit = 30
+		if len(groupItems) > 0 {
+			if groupItems[0].Provider == "SUI" {
+				limit = 30
+			} else if groupItems[0].Provider == "Seed" {
+				limit = 50
+			}
 		}
 		if len(groupItems) < limit {
 			limit = len(groupItems)
