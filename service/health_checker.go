@@ -485,7 +485,7 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 			c, r, ct = LocalizeEgressLocation(c, r, ct)
 			return provider, c, r, ct
 		}
-		c, r, ct := LocalizeEgressLocation("全球", "亚太", "新加坡城")
+		c, r, ct := LocalizeEgressLocation("", "", "")
 		return provider, c, r, ct
 	}
 
@@ -525,7 +525,7 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 			c, r, ct := LocalizeEgressLocation(cToken, ctToken, ctToken)
 			return "Seed", c, r, ct
 		}
-		c, r, ct := LocalizeEgressLocation("全球", "亚太", "新加坡城")
+		c, r, ct := LocalizeEgressLocation("", "", "")
 		return "Seed", c, r, ct
 	}
 
@@ -596,7 +596,7 @@ func LocalizeEgressLocation(country, region, city string) (string, string, strin
 	}
 
 	// Absolute safeguard: zero English letters, zero "未知"
-	country = CleanChineseOrDigit(country, "全球")
+	country = CleanChineseOrDigit(country, "")
 	regionCN = CleanChineseOrDigit(regionCN, defGeos[0])
 	cityCN = CleanChineseOrDigit(cityCN, defGeos[1])
 
