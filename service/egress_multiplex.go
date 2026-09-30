@@ -279,6 +279,7 @@ func BuildUrlTestPoolJsonWithTolerance(tag string, outbounds []string, interval 
 		"outbounds": outbounds,
 		"url":       "https://www.gstatic.com/generate_204",
 		"interval":  interval,
+		"tolerance": tolerance,
 	}
 	return json.Marshal(poolMap)
 }

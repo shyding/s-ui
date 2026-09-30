@@ -229,6 +229,20 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 		db.Create(&pool)
 	}
 
+	// Strict FAIL-CLOSED: create real NodeHealthStatus records for the
+	// expanded candidates (SUI Singapore + Proton regions). Without these,
+	// FilterHealthyAndGroupTop3Links returns empty (no virtual records).
+	now := time.Now().UTC().Format(time.RFC3339)
+	healthRecords := []model.NodeHealthStatus{
+		{Node: "sui-sg-health", Provider: "SUI", Country: "新加坡", Region: "中央区", City: "新加坡城", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 50, Speed: 100.0, LastCheckTime: now},
+		{Node: "proton-us-health", Provider: "Proton", Country: "US", Region: "California", City: "Los Angeles", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 150, Speed: 50.0, LastCheckTime: now},
+		{Node: "proton-jp-health", Provider: "Proton", Country: "JP", Region: "Tokyo", City: "Tokyo", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 120, Speed: 60.0, LastCheckTime: now},
+		{Node: "proton-nl-health", Provider: "Proton", Country: "NL", Region: "Provincie Noord-Holland", City: "Amsterdam", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 180, Speed: 40.0, LastCheckTime: now},
+	}
+	for _, hr := range healthRecords {
+		db.Create(&hr)
+	}
+
 	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
 	linksJSON := json.RawMessage(`[
 		{"type":"local","remark":"vless-in","uri":"vless://403db7be-930b-449e-b5f4-34537cb594c7@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vless-in"},
@@ -532,6 +546,17 @@ func TestRegression_5_EndToEndUserSimulation(t *testing.T) {
 		Inbounds: json.RawMessage(`[]`),
 	}
 	db.Create(&client)
+
+	// Strict FAIL-CLOSED: create a real health record for the SUI Singapore
+	// candidate so the subscription is not empty. Without this, GetSubs
+	// correctly returns empty (no virtual records).
+	now := time.Now().UTC().Format(time.RFC3339)
+	db.Create(&model.NodeHealthStatus{
+		Node: "sui-sg-health", Provider: "SUI", Country: "新加坡", Region: "中央区", City: "新加坡城",
+		Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true,
+		Latency: 50, Speed: 100.0, LastCheckTime: now,
+	})
+
 	subService := &SubService{}
 
 	// User requests subscription
