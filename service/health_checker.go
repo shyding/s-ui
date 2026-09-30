@@ -567,7 +567,7 @@ func LocalizeEgressLocation(country, region, city string) (string, string, strin
 	} else {
 		country = countryToChinese(origCountry, origCountry)
 	}
-	country = CleanChineseOrDigit(country, "全球")
+	country = CleanChineseOrDigit(country, "")
 
 	defGeos, hasDef := CountryDefaultGeos[country]
 	if !hasDef {
