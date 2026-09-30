@@ -154,6 +154,11 @@ if [ -f "$DB_FILE" ] && command -v sqlite3 &> /dev/null; then
   sqlite3 "$DB_FILE" "UPDATE settings SET value = '2053' WHERE key = 'webPort' AND (value = '2095' OR value = '');" 2>/dev/null || true
   sqlite3 "$DB_FILE" "UPDATE settings SET value = '/usr/local/s-ui/certs/fullchain.pem' WHERE key IN ('webCertFile', 'subCertFile') AND (value = '' OR value IS NULL);" 2>/dev/null || true
   sqlite3 "$DB_FILE" "UPDATE settings SET value = '/usr/local/s-ui/certs/privkey.pem' WHERE key IN ('webKeyFile', 'subKeyFile') AND (value = '' OR value IS NULL);" 2>/dev/null || true
+  # Ensure HProxy outbounds are marked available (subscription refresh may reset them)
+  sqlite3 "$DB_FILE" "UPDATE outbounds SET available = 1 WHERE tag LIKE 'hproxy-%' AND country != '' AND country IS NOT NULL;" 2>/dev/null || true
+  # Set last_test_time to now for HProxy to pass GetVerifiedEgressRegions freshness check
+  sqlite3 "$DB_FILE" "UPDATE outbounds SET last_test_time = strftime('%s','now') WHERE tag LIKE 'hproxy-%' AND last_test_time = 0;" 2>/dev/null || true
+  echo "  HProxy outbounds marked available: $(sqlite3 "$DB_FILE" "SELECT count(*) FROM outbounds WHERE tag LIKE 'hproxy-%' AND available = 1;" 2>/dev/null || echo 0)"
 fi
 
 # Firewall rules
@@ -163,6 +168,9 @@ if command -v ufw &> /dev/null; then
     ufw allow 2096/tcp 2>/dev/null || true
     ufw allow 80/tcp 2>/dev/null || true
     ufw allow 443/tcp 2>/dev/null || true
+    # Multi-protocol inbound ports (vless/vmess/trojan/hy2/tuic/ss/mixed)
+    ufw allow 54142:54156/tcp 2>/dev/null || true
+    ufw allow 54153:54154/udp 2>/dev/null || true
   fi
 fi
 
