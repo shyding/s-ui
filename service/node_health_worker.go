@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -135,6 +137,34 @@ func (w *NodeHealthWorker) runOnce() {
 			if (l.Type == "external" || l.Type == "local") && l.Uri != "" {
 				allURIs = append(allURIs, l.Uri)
 			}
+		}
+	}
+
+	// 收集 Seed 节点 URI（来自 SUI_SEED_NODES_FILE）
+	// Seed 节点必须检测，否则订阅 FAIL-CLOSED 无法发布 Seed 节点
+	seedFile := os.Getenv("SUI_SEED_NODES_FILE")
+	if seedFile != "" {
+		if f, err := os.Open(seedFile); err == nil {
+			scanner := bufio.NewScanner(f)
+			// 增大 buffer 以支持长 URI
+			buf := make([]byte, 0, 64*1024)
+			scanner.Buffer(buf, 1024*1024)
+			seedCount := 0
+			for scanner.Scan() {
+				uri := strings.TrimSpace(scanner.Text())
+				if uri != "" && (strings.HasPrefix(uri, "vless://") || strings.HasPrefix(uri, "trojan://") ||
+					strings.HasPrefix(uri, "vmess://") || strings.HasPrefix(uri, "ss://") ||
+					strings.HasPrefix(uri, "socks5://") || strings.HasPrefix(uri, "socks://")) {
+					allURIs = append(allURIs, uri)
+					seedCount++
+				}
+			}
+			f.Close()
+			if seedCount > 0 {
+				logger.Infof("NodeHealthWorker: 从 Seed 文件加载 %d 个节点", seedCount)
+			}
+		} else {
+			logger.Warningf("NodeHealthWorker: 无法打开 Seed 文件 %s: %v", seedFile, err)
 		}
 	}
 
