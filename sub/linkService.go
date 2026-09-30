@@ -198,6 +198,11 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 			u443 := *u
 			u443.Fragment = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity+"-443", 1)
 			u443.Host = "dash.icta.top:443"
+			// Fix transport type: 54143 is actually WS, not TCP
+			q443 := u443.Query()
+			q443.Set("type", "ws")
+			q443.Set("path", "/ws")
+			u443.RawQuery = q443.Encode()
 			candidates = append(candidates, CandidateNode{
 				Uri:      u443.String(),
 				Protocol: proto,
