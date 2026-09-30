@@ -175,6 +175,9 @@ func (w *NodeHealthWorker) runOnce() {
 	logger.Infof("NodeHealthWorker: 开始检测 %d 个节点", len(allURIs))
 	start := time.Now()
 
+	// 设置节点检测进度
+	ResetNodeProgress(int32(len(allURIs)))
+
 	sem := make(chan struct{}, w.concurrency)
 	var wg sync.WaitGroup
 	var passCount, failCount int32
@@ -183,6 +186,7 @@ func (w *NodeHealthWorker) runOnce() {
 		wg.Add(1)
 		go func(rawURI string) {
 			defer wg.Done()
+			defer nodeProgressDone.Add(1)
 			sem <- struct{}{}
 			defer func() { <-sem }()
 

@@ -114,7 +114,17 @@
             >
               <v-icon :icon="statusData.egressCheckRunning ? 'mdi-loading' : 'mdi-check-circle'" size="20" />
               <div class="text-caption mt-1">出口检测</div>
-              <div class="text-body-2 font-weight-bold">{{ statusData.egressCheckRunning ? '运行中' : '空闲' }}</div>
+              <div class="text-body-2 font-weight-bold">
+                {{ statusData.egressCheckRunning ? `${egressPercent}% (${statusData.egressDone}/${statusData.egressTotal})` : '空闲' }}
+              </div>
+              <v-progress-linear
+                v-if="statusData.egressCheckRunning && statusData.egressTotal > 0"
+                :model-value="egressPercent"
+                color="warning"
+                height="4"
+                rounded
+                class="mt-1"
+              />
             </v-card>
           </v-col>
           <v-col cols="6" sm="3">
@@ -125,7 +135,17 @@
             >
               <v-icon :icon="statusData.nodeCheckRunning ? 'mdi-loading' : 'mdi-check-circle'" size="20" />
               <div class="text-caption mt-1">节点检测</div>
-              <div class="text-body-2 font-weight-bold">{{ statusData.nodeCheckRunning ? '运行中' : '空闲' }}</div>
+              <div class="text-body-2 font-weight-bold">
+                {{ statusData.nodeCheckRunning ? `${nodePercent}% (${statusData.nodeDone}/${statusData.nodeTotal})` : '空闲' }}
+              </div>
+              <v-progress-linear
+                v-if="statusData.nodeCheckRunning && statusData.nodeTotal > 0"
+                :model-value="nodePercent"
+                color="warning"
+                height="4"
+                rounded
+                class="mt-1"
+              />
             </v-card>
           </v-col>
           <v-col cols="12" sm="6">
@@ -191,6 +211,10 @@ export default {
         anyRunning: false,
         healthCheckTime: '03:30',
         nextSchedule: '每天 03:30 自动运行',
+        egressDone: 0,
+        egressTotal: 0,
+        nodeDone: 0,
+        nodeTotal: 0,
       },
       pollTimer: null as ReturnType<typeof setInterval> | null,
     }
@@ -198,6 +222,16 @@ export default {
   computed: {
     isRunning(): boolean {
       return this.statusData.anyRunning
+    },
+    egressPercent(): number {
+      const total = this.statusData.egressTotal || 0
+      if (total === 0) return 0
+      return Math.round((this.statusData.egressDone / total) * 100)
+    },
+    nodePercent(): number {
+      const total = this.statusData.nodeTotal || 0
+      if (total === 0) return 0
+      return Math.round((this.statusData.nodeDone / total) * 100)
     },
     nextRunLabel(): string {
       // 计算距下次运行的小时数（简单估算）

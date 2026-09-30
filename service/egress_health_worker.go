@@ -107,6 +107,28 @@ func IsEgressCheckRunning() bool {
 	return isEgressCheckRunning.Load()
 }
 
+// GetEgressProgress 返回出口检测进度 (done, total)
+func GetEgressProgress() (int32, int32) {
+	return egressProgressDone.Load(), egressProgressTotal.Load()
+}
+
+// GetNodeProgress 返回节点检测进度 (done, total)
+func GetNodeProgress() (int32, int32) {
+	return nodeProgressDone.Load(), nodeProgressTotal.Load()
+}
+
+// ResetEgressProgress 重置进度计数器
+func ResetEgressProgress(total int32) {
+	egressProgressDone.Store(0)
+	egressProgressTotal.Store(total)
+}
+
+// ResetNodeProgress 重置节点检测进度计数器
+func ResetNodeProgress(total int32) {
+	nodeProgressDone.Store(0)
+	nodeProgressTotal.Store(total)
+}
+
 func safeRunEgressHealthCheck() {
 	if !isEgressCheckRunning.CompareAndSwap(false, true) {
 		logger.Info("EgressHealthWorker: 上次检测仍在运行，跳过本次")
@@ -135,7 +157,29 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
+	var protonTags []string
+	protonCutoff := time.Now().Add(-25 * time.Hour).Unix()
+	// 2. Proton child nodes: daily check
+	db.Model(&model.Outbound{}).
+		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "out-proton-%", protonCutoff, false).
+		Order("last_test_time ASC").Limit(20).Pluck("tag", &protonTags)
+
+	// 3. Seed nodes: background check
+	var seedTags []string
+	var seedSubscription model.Subscription
+	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
+		db.Model(&model.Outbound{}).
+			Where("subscription_id = ? AND (last_test_time < ? OR available = ?)", seedSubscription.Id, protonCutoff, false).
+			Order("last_test_time ASC").Limit(200).Pluck("tag", &seedTags)
+	}
+
+	// 设置总进度
+	total := int32(len(tags) + len(protonTags) + len(seedTags))
+	ResetEgressProgress(total)
+	logger.Infof("EgressHealthWorker: 开始检测 %d 个出口节点", total)
+
 	results, err := (&NodeTestService{}).TestSelectedAndSave(tags, min(len(tags), 12))
+	egressProgressDone.Add(int32(len(tags)))
 	if err != nil {
 		logger.Warning("egress health check failed:", err)
 	} else {
@@ -146,14 +190,10 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-	var protonTags []string
-	protonCutoff := time.Now().Add(-25 * time.Hour).Unix()
-	// 2. Proton child nodes: daily check
-	db.Model(&model.Outbound{}).
-		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "out-proton-%", protonCutoff, false).
-		Order("last_test_time ASC").Limit(20).Pluck("tag", &protonTags)
+	// 2. Proton child nodes: daily check (tags already collected above)
 	if len(protonTags) > 0 {
 		protonResults, err := (&NodeTestService{}).TestSelectedAndSave(protonTags, 3)
+		egressProgressDone.Add(int32(len(protonTags)))
 		if err != nil {
 			logger.Warning("Proton child health check failed:", err)
 		} else {
@@ -167,17 +207,11 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-	// 3. Seed nodes: background check
-	var seedTags []string
-	var seedSubscription model.Subscription
-	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
-		db.Model(&model.Outbound{}).
-			Where("subscription_id = ? AND (last_test_time < ? OR available = ?)", seedSubscription.Id, protonCutoff, false).
-			Order("last_test_time ASC").Limit(200).Pluck("tag", &seedTags)
-	}
+	// 3. Seed nodes: background check (tags already collected above)
 	seedPassed := 0
 	if len(seedTags) > 0 {
 		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 5)
+		egressProgressDone.Add(int32(len(seedTags)))
 		if err != nil {
 			logger.Warning("seed client node health check failed:", err)
 		} else {

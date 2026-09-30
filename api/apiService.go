@@ -1235,12 +1235,18 @@ func (a *ApiService) GetEgressStatus(c *gin.Context) {
 	egressRunning := service.IsEgressCheckRunning()
 	nodeRunning := service.IsNodeCheckRunning()
 	healthCheckTime := service.GetHealthCheckTime()
+	egressDone, egressTotal := service.GetEgressProgress()
+	nodeDone, nodeTotal := service.GetNodeProgress()
 	jsonObj(c, gin.H{
 		"egressCheckRunning": egressRunning,
 		"nodeCheckRunning":   nodeRunning,
 		"anyRunning":         egressRunning || nodeRunning,
 		"healthCheckTime":    healthCheckTime,
 		"nextSchedule":       "每天 " + healthCheckTime + " 自动运行",
+		"egressDone":         egressDone,
+		"egressTotal":        egressTotal,
+		"nodeDone":           nodeDone,
+		"nodeTotal":          nodeTotal,
 	}, nil)
 }
 
