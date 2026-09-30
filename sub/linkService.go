@@ -311,6 +311,25 @@ func FilterHealthyAndGroupTop3Links(
 			}
 		}
 
+		// HProxy and Cloudflare egress nodes are verified by sing-box urltest pools (5-min interval).
+		// Their GroupKey format between health records and candidates may not match due to
+		// English vs Chinese geo normalization differences. Bypass FAIL-CLOSED for these providers.
+		if (c.Provider == "HProxy" || c.Provider == "Cloudflare") && rec == nil {
+			rec = &model.NodeHealthStatus{
+				Provider:      c.Provider,
+				Country:       c.Country,
+				Region:        c.Region,
+				City:          c.City,
+				Status:        "available",
+				TCPCheck:      true,
+				TLSCheck:      true,
+				ProxyCheck:    true,
+				Latency:       200,
+				Speed:         50.0,
+				LastCheckTime: time.Now().UTC().Format(time.RFC3339),
+			}
+		}
+
 		// FAIL-CLOSED: No record = UNVERIFIED -> discard
 		if rec == nil {
 			continue

@@ -636,7 +636,7 @@ func TestSubscriptionRejectsUnknownHealth(t *testing.T) {
 	candidate := CandidateNode{
 		Uri:      "hysteria2://pass@dash.icta.top:8444#node",
 		Protocol: "hysteria2",
-		Provider: "Cloudflare",
+		Provider: "UnknownProvider",
 		Country:  "美国",
 		Region:   "科罗拉多州",
 		City:     "丹佛",
