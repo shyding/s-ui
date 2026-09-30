@@ -30,7 +30,7 @@ const DefaultHealthTTL = 1 * time.Hour
 
 // MaxSubscriptionLatency is the maximum latency (in ms) on VPS for a node to be published
 // in subscriptions. With client-to-VPS overhead (100-150ms), this guarantees end-to-end <= 650ms.
-const MaxSubscriptionLatency int64 = 500
+const MaxSubscriptionLatency int64 = 650
 
 // GroupKey returns provider + country + region + city
 func (n *NodeHealthStatus) GroupKey() string {
