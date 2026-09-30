@@ -24,7 +24,7 @@ type HealthChecker struct {
 // NewHealthChecker creates a configured HealthChecker instance
 func NewHealthChecker() *HealthChecker {
 	return &HealthChecker{
-		DefaultTargetURL: "http://www.gstatic.com/generate_204",
+		DefaultTargetURL: "https://www.gstatic.com/generate_204",
 		Timeout:          5 * time.Second,
 	}
 }
