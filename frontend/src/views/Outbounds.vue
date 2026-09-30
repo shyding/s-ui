@@ -39,48 +39,36 @@
   />
   <v-row>
     <v-col cols="12" justify="center" align="center">
-      <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
-      <v-btn color="secondary" class="ml-2" @click="showBatchModal">{{ $t('actions.batchImport') || 'Batch Import' }}</v-btn>
-      <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
-      <v-btn color="amber-darken-3" class="ml-2" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
-      <v-btn color="teal" class="ml-2" prepend-icon="mdi-shield-check" @click="egressCheckModal.visible = true">
-        健康检测
-      </v-btn>
-      <v-btn color="info" class="ml-2" @click="showTestModal(false)">{{ $t('actions.testAll') || 'Test All' }}</v-btn>
-      <v-btn 
-        color="success" 
-        class="ml-2" 
-        @click="showTestModal(true)"
-        :disabled="selectedTags.length === 0"
-      >
-        {{ $t('nodeTest.testSelected') || 'Test Selected' }} ({{ selectedTags.length }})
-      </v-btn>
-      <v-btn 
-        color="warning" 
-        class="ml-2" 
-        @click="exportSelected"
-        :disabled="selectedTags.length === 0"
-        :loading="exporting"
-      >
-        {{ $t('actions.exportSelected') || 'Export Selected' }} ({{ selectedTags.length }})
-      </v-btn>
-      <v-btn 
-        color="error" 
-        class="ml-2" 
-        @click="deleteConfirmDialog = true"
-        :disabled="selectedTags.length === 0"
-        :loading="deleting"
-      >
-        {{ $t('actions.deleteSelected') || 'Delete Selected' }} ({{ selectedTags.length }})
-      </v-btn>
-      <v-btn 
-        color="secondary" 
-        class="ml-2" 
-        @click="selectedTags = []"
-        :disabled="selectedTags.length === 0"
-      >
-        {{ $t('actions.clearSelection') || 'Clear Selection' }}
-      </v-btn>
+      <!-- Primary actions -->
+      <div class="d-flex flex-wrap justify-center ga-2 mb-2">
+        <v-btn color="primary" @click="showModal(0)" prepend-icon="mdi-plus">{{ $t('actions.add') }}</v-btn>
+        <v-btn color="secondary" @click="showBatchModal" prepend-icon="mdi-import">{{ $t('actions.batchImport') || 'Batch Import' }}</v-btn>
+        <v-btn color="info" @click="showTestModal(false)" prepend-icon="mdi-speedometer">{{ $t('actions.testAll') || 'Test All' }}</v-btn>
+        <v-btn color="teal" prepend-icon="mdi-shield-check" @click="egressCheckModal.visible = true">
+          健康检测
+        </v-btn>
+      </div>
+      <!-- Sync actions (collapsible) -->
+      <div class="d-flex flex-wrap justify-center ga-2 mb-2">
+        <v-btn color="deep-purple-accent-3" size="small" variant="tonal" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
+        <v-btn color="amber-darken-3" size="small" variant="tonal" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
+      </div>
+      <!-- Selection actions (only when selected) -->
+      <div v-if="selectedTags.length > 0" class="d-flex flex-wrap justify-center ga-2 mb-2">
+        <v-chip color="primary" variant="tonal" class="mr-1">已选 {{ selectedTags.length }}</v-chip>
+        <v-btn color="success" size="small" @click="showTestModal(true)">
+          {{ $t('nodeTest.testSelected') || 'Test Selected' }}
+        </v-btn>
+        <v-btn color="warning" size="small" @click="exportSelected" :loading="exporting">
+          {{ $t('actions.exportSelected') || 'Export' }}
+        </v-btn>
+        <v-btn color="error" size="small" @click="deleteConfirmDialog = true" :loading="deleting">
+          {{ $t('actions.deleteSelected') || 'Delete' }}
+        </v-btn>
+        <v-btn color="secondary" size="small" variant="outlined" @click="selectedTags = []">
+          {{ $t('actions.clearSelection') || 'Clear' }}
+        </v-btn>
+      </div>
       <v-menu>
         <template v-slot:activator="{ props }">
           <v-btn color="primary" class="ml-2" v-bind="props">
