@@ -26,11 +26,17 @@ const Data = defineStore('Data', {
       if (msg.success) {
         this.onlines = msg.obj.onlines
         if (msg.obj.lastLog) {
-          push.error({
-            title: i18n.global.t('error.core'),
-            duration: 5000,
-            message: msg.obj.lastLog
-          })
+          // 只显示真正的错误日志，过滤掉 INFO 级别的正常日志
+          // 健康检测时会产生大量 INFO 日志（如 outbound connection），不应弹窗打扰用户
+          const log = String(msg.obj.lastLog)
+          const isInfoOnly = /^\s*INFO\s*-/i.test(log) && !/ERROR|FATAL|PANIC/i.test(log)
+          if (!isInfoOnly) {
+            push.error({
+              title: i18n.global.t('error.core'),
+              duration: 5000,
+              message: msg.obj.lastLog
+            })
+          }
         }
 
         if (msg.obj.config) {

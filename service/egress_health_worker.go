@@ -19,6 +19,12 @@ var lastEgressReload time.Time
 // isEgressCheckRunning 防止并发：同一时刻只允许一个 check 实例运行
 var isEgressCheckRunning atomic.Bool
 
+// 进度追踪：已完成数 / 总数
+var egressProgressDone atomic.Int32
+var egressProgressTotal atomic.Int32
+var nodeProgressDone atomic.Int32
+var nodeProgressTotal atomic.Int32
+
 // egressReloadFns 存储 reload 回调，供手动触发时使用
 var egressReloadFns []func() error
 
