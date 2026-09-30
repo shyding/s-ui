@@ -235,30 +235,12 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	s.executeIPLookups(dialCtx, result, ipLookupTasks)
 
 	if result.LandingIP == "" {
-		// If real latency was successfully measured and healthy (<= 650ms),
-		// fallback to tag-based geo inference so free IP API rate limits don't falsely discard valid nodes
-		if result.RealLatency > 0 && result.RealLatency <= 650 {
-			_, c, r, ct := ParseStandardRemarkComponents(tag)
-			result.Country = c
-			result.Region = r
-			result.City = ct
-			var opts map[string]interface{}
-			if json.Unmarshal(outbound.Options, &opts) == nil {
-				if srv, ok := opts["server"].(string); ok && srv != "" {
-					result.LandingIP = srv
-				}
-			}
-			if result.LandingIP == "" {
-				result.LandingIP = "1.1.1.1"
-			}
-			result.Available = true
-			result.Error = ""
-		} else {
-			if result.Error == "" {
-				result.Error = "all IP lookup services failed"
-			}
-			result.Available = false
+		// STRICT FAIL-CLOSED: LandingIP must be a real IP obtained through the proxy.
+		// Never fake it with server address, tag inference, or 1.1.1.1.
+		if result.Error == "" {
+			result.Error = "all IP lookup services failed"
 		}
+		result.Available = false
 	} else {
 		// After successful IP lookup, try to get fraud score if IP is available
 		if result.LandingIP != "" {

@@ -428,6 +428,17 @@ func FilterHealthyAndGroupTop3Links(
 
 		c.Speed = rec.Speed
 		c.Latency = rec.Latency
+
+		// Filter: free proxy nodes (HProxy/Seed) geolocated to China are
+		// almost certainly mislabeled (GFW blocks free proxies in China).
+		// Discard them to maintain location credibility.
+		if (c.Provider == "HProxy" || c.Provider == "Seed") &&
+			(rec.Country == "中国" || rec.Country == "CN" || rec.Country == "China") {
+			logger.Warningf("Discarding %s node with suspicious China geolocation: %s (IP=%s)",
+				c.Provider, c.Uri, rec.Node)
+			continue
+		}
+
 		healthyCandidates = append(healthyCandidates, c)
 	}
 
