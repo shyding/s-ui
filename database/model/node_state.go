@@ -25,8 +25,8 @@ type NodeHealthStatus struct {
 }
 
 // DefaultHealthTTL defines maximum allowed age for a health check before it is considered STALE.
-// Set to 30m to match frequent background checks.
-const DefaultHealthTTL = 30 * time.Minute
+// Set to 1h to match frequent background checks.
+const DefaultHealthTTL = 1 * time.Hour
 
 // MaxSubscriptionLatency is the maximum latency (in ms) on VPS for a node to be published
 // in subscriptions. With client-to-VPS overhead (100-150ms), this guarantees end-to-end <= 650ms.
