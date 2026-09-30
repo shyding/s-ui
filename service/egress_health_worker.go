@@ -194,7 +194,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	if len(candidateTags) == 0 {
 		return
 	}
-	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 5)
+	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 50)
 	if err != nil {
 		logger.Warning("public-proxy candidate health check failed:", err)
 		return
