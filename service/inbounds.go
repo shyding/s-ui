@@ -248,6 +248,25 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 					}
 				}
 			}
+			
+			// Also check if TLS is embedded in Options
+			if !hasValidTLS && len(inbound.Options) > 0 {
+				var optsMap map[string]interface{}
+				if err := json.Unmarshal(inbound.Options, &optsMap); err == nil {
+					if tlsData, ok := optsMap["tls"].(map[string]interface{}); ok {
+						enabled, ok := tlsData["enabled"].(bool)
+						if !ok || enabled {
+							certPath, _ := tlsData["certificate_path"].(string)
+							certs, _ := tlsData["certificate"].([]interface{})
+							acme, _ := tlsData["acme"].(map[string]interface{})
+							if certPath != "" || len(certs) > 0 || len(acme) > 0 {
+								hasValidTLS = true
+							}
+						}
+					}
+				}
+			}
+
 			if !hasValidTLS {
 				logger.Warningf("Skipping inbound %s (%s): missing required TLS configuration for QUIC server", inbound.Tag, inbound.Type)
 				continue
