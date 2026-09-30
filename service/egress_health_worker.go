@@ -71,7 +71,7 @@ func StartEgressHealthWorker(reload ...func() error) {
 			// 仅在配置的定时时间运行，不在启动时自动跑
 			for {
 				d := 10 * time.Minute
-				logger.Infof("EgressHealthWorker: Next run in 10 minutes")", d.Round(time.Minute), t)
+				logger.Infof("EgressHealthWorker: Next run in 10 minutes")
 				time.Sleep(d)
 				safeRunEgressHealthCheck()
 			}
