@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1325,21 +1326,29 @@ func (s *NodeTestService) measureProxyLatency(ctx context.Context, outbound_adap
 	defer cancel()
 
 	rlStart := time.Now()
-	rlDest := M.ParseSocksaddr("www.gstatic.com:80")
+	rlDest := M.ParseSocksaddr("www.gstatic.com:443")
 	rlConn, err := outbound_adapter.DialContext(dialCtx, N.NetworkTCP, rlDest)
 	if err != nil {
 		return -1, err
 	}
 	defer rlConn.Close()
 
+	tlsConn := tls.Client(rlConn, &tls.Config{
+		ServerName:         "www.gstatic.com",
+		InsecureSkipVerify: true,
+	})
+	if err := tlsConn.HandshakeContext(dialCtx); err != nil {
+		return -1, err
+	}
+
 	req := "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n"
-	_, err = rlConn.Write([]byte(req))
+	_, err = tlsConn.Write([]byte(req))
 	if err != nil {
 		return -1, err
 	}
 
 	buf := make([]byte, 1)
-	_, err = rlConn.Read(buf)
+	_, err = tlsConn.Read(buf)
 	if err != nil && err != io.EOF {
 		return -1, err
 	}
