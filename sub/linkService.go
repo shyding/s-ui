@@ -699,14 +699,15 @@ func buildVerifiedRemark(s *model.NodeHealthStatus) string {
 		provider = "EXT"
 	}
 	country := s.Country
-	if country == "" {
-		country = "全球"
-	}
 	region := s.Region
+	city := s.City
+	// Reject nodes without valid geography - no fake country names
+	if country == "" || country == "全球" {
+		return ""
+	}
 	if region == "" {
 		region = country
 	}
-	city := s.City
 	if city == "" {
 		city = region
 	}
