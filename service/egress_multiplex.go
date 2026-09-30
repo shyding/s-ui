@@ -253,9 +253,9 @@ func BuildWireGuardEndpointJson(tag string, conf *WireGuardConf) (json.RawMessag
 // BuildDirectOutboundJson creates a direct outbound tied to a specific endpoint
 func BuildDirectOutboundJson(tag string, endpointTag string) (json.RawMessage, error) {
 	outMap := map[string]interface{}{
-		"type":     "direct",
-		"tag":      tag,
-		"detour":   endpointTag,
+		"type":      "selector",
+		"tag":       tag,
+		"outbounds": []string{endpointTag},
 	}
 	return json.Marshal(outMap)
 }

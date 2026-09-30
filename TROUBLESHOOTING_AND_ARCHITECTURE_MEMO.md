@@ -171,3 +171,30 @@
 
 
 
+
+---
+
+## 六、重装系统（VPS Rebuild）灾后重建与 Sing-box v1.12 兼容性避坑准则
+
+### 1. 为什么重装系统后 GitHub Actions 部署会成功但文件没送达？
+- **指纹变化防御**: 重装服务器后，SSH Host Fingerprint 会重新生成。GitHub Actions 里的 `deploy.yml` 哪怕显示 “Completed - Success”，其实在最后一步 `ssh-keyscan` 和 `scp` 时，由于遭遇了 StrictHostKeyChecking 或者 Connection Reset by peer（中间人攻击防御），导致编译好的二进制文件根本没被送到 VPS 上的 `/tmp/sui`！
+- **修复措施**: 不要完全相信 GitHub Actions 绿色的勾，如果更新代码后 VPS 服务端仍然没反应，检查 `ls -la /usr/local/s-ui/sui` 的大小和修改时间是否和远程同步。如果是全新重装的机器，必须清理 GitHub 或本地的 `known_hosts`。
+
+### 2. Sing-box 1.12 版本的 `detour` 语法禁止项 (致命崩溃)
+- **故障现象**: `ERROR - start sing-box err: initialize outbound[1266] out-ep-cf-xxx detour is not supported in direct context`。
+- **根本原因**: `s-ui` 生成动态 Cloudflare 优选 IP 或者其他代理链路时，旧版底层会生成 `{"type": "direct", "detour": "节点标签"}`。但在 Sing-box 1.12 的严格检查中，`direct` 顾名思义是直连，**严格禁止携带 `detour` 字段**，否则进程直接崩溃（SEGV或返回错误然后死循环）。
+- **解决方案**: 将所有包装性质的 `direct + detour` 替换为合规的 `selector` 路由选择器：
+  ```json
+  {
+      "type": "selector",
+      "tag": "原标签",
+      "outbounds": ["原detour标签"]
+  }
+  ```
+  在 `service/egress_multiplex.go` 中，已彻底修复 `BuildDirectOutboundJson` 方法。
+
+### 3. `go build` 交叉编译 CGO 与 Linux Kernel OOM 冻结
+- **CGO 编译问题**: 在本地 (Windows/macOS) 编译 Linux 二进制时，如果不小心带了 `CGO_ENABLED=1` 或者 Go 工具链自动降级，会导致 `golang.org/x/net/http2.(*Transport).connPool` 这类未定义的符号链接错误。必须严格使用 `CGO_ENABLED=0` 进行纯 Go 跨平台编译。
+- **SQLite 数据结构兼容性**: `addrs`, `options`, `out_json` 等在 SQLite 中必须是 `BLOB` 或者 `[]byte`，如果在手动写 SQL（如 Python 恢复脚本）中将其存为纯 `TEXT`（字符串），Go 的 GORM (`*json.RawMessage`) 扫表时会报 `unsupported Scan, storing driver.Value type string into type *json.RawMessage` 导致服务死锁。
+- **爆发并发测速冻结 (Kernel Lockup)**: 1GB 或 2GB 内存的小型 VPS 在挂载了数百个节点后启动 sing-box，会瞬间发起几百个 TCP/TLS 握手做 `urltest` 测速。这种巨大的爆发极易直接把网卡或系统内存打出 OOM，导致 SSH 断连假死。**（切记：上传部署包时最好使用极度压缩 `tar.xz` 并缩减节点数或分批启动）**。
+
