@@ -70,30 +70,43 @@ Trojan / Hysteria2 / TUIC / Shadowsocks / SOCKS(mixed) 七种协议，
 | 获取38个ID | `service/sui_nodes.go` → `GetSUIInboundIDs(db)` |
 | 完整性校验 | `service/sui_nodes.go` → `VerifySUINodes(db)` |
 | 单元测试 | `service/sui_nodes_test.go` |
-| 查询API | `GET /api/suiNodes`（`api/apiService.go`） |
+| 查询API | `GET /api/suiNodes`（`api/apiService.go`，返回 id/tag/port/protocol） |
 | 创建API | `POST /api/ensureSUINodes`（`api/apiService.go`） |
-| 前端一键勾选 | `frontend/src/layouts/modals/Client.vue` → “添加38个SUI节点”按钮 |
+| 启动自动初始化 | `app/app.go` → `Init()` 调用 `EnsureSUINodes` |
+| 前端选择对话框 | `frontend/src/layouts/modals/Client.vue` → “选择SUI节点”按钮（支持勾选部分或全部） |
 
 ## 4. 灾难恢复（重装系统后）
+
+**应用启动时自动初始化**：`app/app.go` 的 `Init()` 在启动时调用
+`service.EnsureSUINodes(db)`，幂等创建缺失的38个节点。
+重装系统后只需 fresh clone、构建、启动，38个节点自动重建，无需手动操作。
 
 ```bash
 # 1. fresh clone 并构建
 git clone https://github.com/shyding/s-ui.git
 cd s-ui && ./build.sh
 
-# 2. 启动后，调用 API 幂等创建38个节点（需登录后的 session）
-curl -X POST https://dash.icta.top:2053/api/ensureSUINodes
+# 2. 启动（38个节点自动初始化）
+./s-ui run
+# 日志：initialized 38 SUI nodes (ports 54142-54179)
 
-# 返回示例：{"success":true,"obj":{"created":38,"missing":[],"total":38}}
+# 3. （可选）手动触发/校验
+curl -X POST https://dash.icta.top:2053/api/ensureSUINodes
+# 返回示例：{"success":true,"obj":{"created":0,"missing":[],"total":38}}
 # 重复调用 created 为 0，不会覆盖已有节点
 ```
 
-## 5. 新建用户一键关联38节点
+## 5. 新建用户选择SUI节点（部分或全部）
 
-1. 管理界面 → 用户 → 新增
-2. 在“入站标签”下方点击 **“添加38个SUI节点”** 按钮
-3. 38个 SUI inbound 会被自动勾选（与已选项合并去重）
-4. 保存后，该用户的订阅地址即包含38个 SUI 节点：
+1. 管理界面 → 用户 → 新增（或编辑）
+2. 在“入站标签”下方点击 **“选择SUI节点”** 按钮
+3. 对话框按协议分组显示38个节点（VLESS/VMess/Trojan/Hysteria2/TUIC/Shadowsocks/Mixed/SOCKS）
+   - 可勾选**部分或全部**节点
+   - 每组可单独全选/取消，顶部有全局全选/清空
+   - **每个端口都是唯一的**，任意两个节点不会共享端口
+   - 对话框打开时默认勾选该用户已选中的SUI节点
+4. 点击"确定"：勾选的合并到用户inbounds（去重），取消勾选的SUI节点从用户inbounds移除（保留非SUI的inbound）
+5. 保存后，该用户的订阅地址即包含所选的 SUI 节点：
    `https://dash.icta.top:2096/sub/<用户名>`
 
 ## 6. 闭环验证方法

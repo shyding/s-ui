@@ -1289,13 +1289,14 @@ func (a *ApiService) GetSUINodes(c *gin.Context) {
 		byTag[ib.Tag] = ib.Id
 	}
 	type suiNode struct {
-		Id   uint   `json:"id"`
-		Tag  string `json:"tag"`
-		Port int    `json:"port"`
+		Id       uint   `json:"id"`
+		Tag      string `json:"tag"`
+		Port     int    `json:"port"`
+		Protocol string `json:"protocol"`
 	}
 	nodes := make([]suiNode, 0, len(specs))
 	for _, s := range specs {
-		nodes = append(nodes, suiNode{Id: byTag[s.Tag], Tag: s.Tag, Port: s.Port})
+		nodes = append(nodes, suiNode{Id: byTag[s.Tag], Tag: s.Tag, Port: s.Port, Protocol: s.Type})
 	}
 	jsonObj(c, gin.H{"nodes": nodes, "total": len(nodes)}, nil)
 }

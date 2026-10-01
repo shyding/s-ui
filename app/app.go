@@ -63,6 +63,13 @@ func (a *APP) Init() error {
 		logger.Warning("failed to normalize outbound countries:", err)
 	}
 
+	// 自动初始化38个 SUI 节点（幂等：已存在的不覆盖，重装后自动重建）
+	if created, err := service.EnsureSUINodes(database.GetDB()); err != nil {
+		logger.Warning("failed to ensure SUI nodes:", err)
+	} else if created > 0 {
+		logger.Infof("initialized %d SUI nodes (ports 54142-54179)", created)
+	}
+
 	// Init Setting
 	a.SettingService.GetAllSetting()
 

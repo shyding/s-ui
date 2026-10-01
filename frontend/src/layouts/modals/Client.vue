@@ -92,8 +92,8 @@
               </v-row>
               <v-row>
                 <v-col cols="auto">
-                  <v-btn variant="tonal" color="primary" :loading="suiLoading" @click="setSUINodes">
-                    <v-icon icon="mdi-server-network" start />添加38个SUI节点
+                  <v-btn variant="tonal" color="primary" :loading="suiLoading" @click="openSUIDialog">
+                    <v-icon icon="mdi-server-network" start />选择SUI节点
                   </v-btn>
                 </v-col>
                 <v-col cols="auto" v-if="suiCount > 0">
@@ -201,6 +201,57 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- SUI节点选择对话框：支持勾选部分或全部38个节点（端口各不相同） -->
+  <v-dialog v-model="suiDialog" max-width="900px" scrollable>
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        <span>选择SUI节点</span>
+        <v-spacer></v-spacer>
+        <v-btn size="small" variant="text" @click="selectAllSUI">全选</v-btn>
+        <v-btn size="small" variant="text" @click="clearSUI">清空</v-btn>
+      </v-card-title>
+      <v-card-text style="max-height: 60vh">
+        <div v-if="suiNodes.length === 0" class="text-center pa-4">
+          <v-progress-circular indeterminate></v-progress-circular>
+          <div class="mt-2">加载中...</div>
+        </div>
+        <div v-for="group in suiGroups" :key="group.name">
+          <v-row class="align-center" no-gutters>
+            <v-col cols="auto">
+              <v-checkbox
+                :model-value="groupSelected(group)"
+                :indeterminate="groupIndeterminate(group)"
+                @update:model-value="toggleGroup(group, $event)"
+                :label="group.label + ' (' + group.nodes.length + ')'"
+                hide-details
+                density="compact"
+              ></v-checkbox>
+            </v-col>
+          </v-row>
+          <v-row no-gutters>
+            <v-col v-for="node in group.nodes" :key="node.id" cols="12" sm="6" md="4">
+              <v-checkbox
+                v-model="suiSelected"
+                :value="node.id"
+                :disabled="node.id === 0"
+                :label="node.tag + ' :' + node.port"
+                hide-details
+                density="compact"
+              ></v-checkbox>
+            </v-col>
+          </v-row>
+          <v-divider class="my-2"></v-divider>
+        </div>
+      </v-card-text>
+      <v-card-actions>
+        <span class="text-caption text-medium-emphasis ml-2">已选 {{ suiSelected.length }} 个</span>
+        <v-spacer></v-spacer>
+        <v-btn variant="text" @click="suiDialog = false">取消</v-btn>
+        <v-btn color="primary" variant="tonal" @click="applySUISelection">确定</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script lang="ts">
@@ -225,6 +276,9 @@ export default {
       subLinks: <Link[]>[],
       suiLoading: false,
       suiCount: 0,
+      suiDialog: false,
+      suiNodes: [] as any[],
+      suiSelected: [] as number[],
     }
   },
   methods: {
@@ -274,29 +328,82 @@ export default {
     setAllInbounds(){
       this.client.inbounds = this.inboundTags.map((i:any) => i.value).sort()
     },
-    async setSUINodes(){
-      // 一键勾选38个SUI节点（端口54142-54179）
+    async openSUIDialog(){
+      // 打开SUI节点选择对话框（支持勾选部分或全部）
+      this.suiDialog = true
       this.suiLoading = true
       try {
         const msg = await HttpUtils.get('api/suiNodes')
         if (msg.success && msg.obj?.nodes) {
-          const ids = msg.obj.nodes.filter((n:any) => n.id > 0).map((n:any) => n.id).sort((a:number,b:number) => a-b)
+          this.suiNodes = msg.obj.nodes
           this.suiCount = msg.obj.nodes.filter((n:any) => n.id > 0).length
-          if (ids.length > 0) {
-            // 合并到已选（去重）
-            const merged = Array.from(new Set([...this.client.inbounds, ...ids])).sort((a:number,b:number) => a-b)
-            this.client.inbounds = merged
-          }
+          // 默认勾选当前用户已选中的SUI节点
+          this.suiSelected = msg.obj.nodes
+            .filter((n:any) => n.id > 0 && this.client.inbounds.includes(n.id))
+            .map((n:any) => n.id)
         }
       } finally {
         this.suiLoading = false
       }
+    },
+    selectAllSUI(){
+      this.suiSelected = this.suiNodes.filter((n:any) => n.id > 0).map((n:any) => n.id)
+    },
+    clearSUI(){
+      this.suiSelected = []
+    },
+    toggleGroup(group:any, selected:boolean | null){
+      const ids = group.nodes.filter((n:any) => n.id > 0).map((n:any) => n.id)
+      if (selected) {
+        this.suiSelected = Array.from(new Set([...this.suiSelected, ...ids]))
+      } else {
+        this.suiSelected = this.suiSelected.filter((id:number) => !ids.includes(id))
+      }
+    },
+    groupSelected(group:any):boolean{
+      const ids = group.nodes.filter((n:any) => n.id > 0).map((n:any) => n.id)
+      return ids.length > 0 && ids.every((id:number) => this.suiSelected.includes(id))
+    },
+    groupIndeterminate(group:any):boolean{
+      const ids = group.nodes.filter((n:any) => n.id > 0).map((n:any) => n.id)
+      const selected = ids.filter((id:number) => this.suiSelected.includes(id))
+      return selected.length > 0 && selected.length < ids.length
+    },
+    applySUISelection(){
+      // 应用选择：将勾选的SUI节点合并到用户inbounds（去重），取消勾选的从SUI集合中移除
+      const suiIds = new Set(this.suiNodes.filter((n:any) => n.id > 0).map((n:any) => n.id))
+      const selectedSet = new Set(this.suiSelected)
+      // 保留非SUI的inbound + 勾选的SUI节点
+      const kept = this.client.inbounds.filter((id:number) => !suiIds.has(id))
+      this.client.inbounds = Array.from(new Set([...kept, ...selectedSet])).sort((a:number,b:number) => a-b)
+      this.suiDialog = false
     },
     shuffle(k?:string) {
       shuffleConfigs(this.clientConfig, k)
     }
   },
   computed: {
+    suiGroups(): any[] {
+      // 按协议分组SUI节点（每组端口各不相同）
+      const order = ['vless', 'vmess', 'trojan', 'hysteria2', 'tuic', 'shadowsocks', 'mixed', 'socks']
+      const labels: Record<string, string> = {
+        vless: 'VLESS', vmess: 'VMess', trojan: 'Trojan',
+        hysteria2: 'Hysteria2', tuic: 'TUIC',
+        shadowsocks: 'Shadowsocks', mixed: 'Mixed', socks: 'SOCKS'
+      }
+      const groups: Record<string, any[]> = {}
+      for (const n of this.suiNodes) {
+        const p = (n.protocol || 'unknown').toLowerCase()
+        if (!groups[p]) groups[p] = []
+        groups[p].push(n)
+      }
+      return Object.keys(groups)
+        .sort((a, b) => {
+          const ia = order.indexOf(a), ib = order.indexOf(b)
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
+        })
+        .map(k => ({ name: k, label: labels[k] || k.toUpperCase(), nodes: groups[k].sort((x:any, y:any) => x.port - y.port) }))
+    },
     clientInbounds: {
       get() { return this.client.inbounds.length>0 ? this.client.inbounds.sort() : [] },
       set(v:number[]) { this.client.inbounds = v.length == 0 ?  [] : v.sort() }
