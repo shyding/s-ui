@@ -114,8 +114,15 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// Only accepts connections from 127.0.0.1/::1. Used by ops scripts
 	// to trigger health checks without panel login.
 	engine.POST(base_url+"local/triggerHealthCheck", func(c *gin.Context) {
-		clientIP := c.ClientIP()
-		if clientIP != "127.0.0.1" && clientIP != "::1" {
+		// Security: check the actual TCP connection source (RemoteAddr), not
+		// headers (ClientIP trusts X-Forwarded-For which can be spoofed).
+		// Only allow true loopback connections.
+		remoteAddr := c.Request.RemoteAddr
+		host, _, err := net.SplitHostPort(remoteAddr)
+		if err != nil {
+			host = remoteAddr
+		}
+		if host != "127.0.0.1" && host != "::1" {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": "forbidden: localhost only"})
 			return
 		}
