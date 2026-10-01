@@ -115,10 +115,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// to trigger health checks without panel login.
 	engine.POST(base_url+"local/triggerHealthCheck", func(c *gin.Context) {
 		clientIP := c.ClientIP()
-		// TEMP: Allow forwarded localhost for manual trigger (revert after)
-		remoteAddr := c.Request.RemoteAddr
-		isLocal := clientIP == "127.0.0.1" || clientIP == "::1" || strings.HasPrefix(remoteAddr, "127.0.0.1:")
-		if !isLocal {
+		if clientIP != "127.0.0.1" && clientIP != "::1" {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": "forbidden: localhost only"})
 			return
 		}
