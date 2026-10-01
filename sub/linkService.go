@@ -277,35 +277,26 @@ func fixSUITransport(uri string) string {
 		return uri
 	}
 	transport := getInboundTransport(port)
-	transportType := "tcp" // nil transport means plain TCP
-	if transport != nil {
-		if t, ok := transport["type"].(string); ok && t != "" {
-			transportType = t
-		}
+	if transport == nil {
+		return uri
+	}
+	transportType, _ := transport["type"].(string)
+	if transportType == "" || transportType == "tcp" {
+		return uri // already correct or tcp (default)
 	}
 	// Fix the transport type in URI
 	q := u.Query()
 	currentType := q.Get("type")
-	// Normalize: empty type means tcp
-	if currentType == "" {
-		currentType = "tcp"
-	}
 	typeChanged := currentType != transportType
 	if typeChanged {
-		if transportType == "tcp" {
-			q.Del("type") // tcp is default, remove param
-		} else {
-			q.Set("type", transportType)
-		}
+		q.Set("type", transportType)
 	}
 	// Always sync transport-specific params (path/host/serviceName),
 	// even if type matches, because stored URIs may have stale values.
 	// This fixes client -1 caused by mismatched transport params.
-	// (Skip if transport is nil = plain TCP, no params to sync)
 	paramsSynced := false
-	if transport != nil {
-		switch transportType {
-		case "ws":
+	switch transportType {
+	case "ws":
 		if path, ok := transport["path"].(string); ok && path != "" {
 			if q.Get("path") != path {
 				q.Set("path", path)
@@ -340,8 +331,7 @@ func fixSUITransport(uri string) string {
 				paramsSynced = true
 			}
 		}
-		}
-	} // end if transport != nil
+	}
 	if !typeChanged && !paramsSynced {
 		return uri // already correct
 	}
