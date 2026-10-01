@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -123,19 +124,17 @@ func (s *ConfigService) StartCore(defaultConfig string) error {
 		logger.Error("start sing-box err:", errMsg)
 
 		// Self-healing: if an inbound failed initialization or port bind, isolate it and retry.
-		// NOTE: "address already in use" means inbounds are already running (e.g., from a
-		// previous core instance that didn't clean up, or CheckCoreJob racing with startup).
-		// In that case, SKIP all inbounds at once (don't re-bind) rather than removing them
-		// one-by-one across 5 retry attempts. The health checker only needs outbounds.
 		if strings.Contains(errMsg, "inbound") {
 			if strings.Contains(errMsg, "address already in use") {
-				// Ports already bound: inbounds are running. Start core with outbounds only
-				// for health checking; do not destructively retry.
-				if len(singboxConfig.Inbounds) > 0 {
-					logger.Warningf("Inbound ports already in use (%d inbounds), starting core with outbounds only for health checking", len(singboxConfig.Inbounds))
-					singboxConfig.Inbounds = nil
+				// Ports not yet released (e.g., old core still shutting down).
+				// WAIT and retry instead of stripping inbounds - removing all inbounds
+				// leaves the service running with zero listeners (P0 outage).
+				if attempt < 4 {
+					logger.Warningf("Inbound ports still in use, waiting 3s before retry (attempt %d/5)", attempt+1)
+					time.Sleep(3 * time.Second)
 					continue
 				}
+				return fmt.Errorf("inbound ports still in use after 5 attempts: %s", errMsg)
 			}
 			removed := false
 			for i, inRaw := range singboxConfig.Inbounds {
@@ -252,6 +251,18 @@ func (s *ConfigService) RestartCore() error {
 	if err != nil {
 		return err
 	}
+	// Wait for old core to fully release ports before starting new one.
+	// Without this, StartCore hits "address already in use" and its self-healing
+	// logic strips ALL inbounds, leaving the service running with zero listeners
+	// (all 541xx ports dead, subscription serving dead nodes).
+	for i := 0; i < 30; i++ {
+		if !corePtr.IsRunning() {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	// Extra grace period for OS to release TCP ports
+	time.Sleep(2 * time.Second)
 	return s.StartCore("")
 }
 
