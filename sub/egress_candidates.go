@@ -10,6 +10,7 @@ import (
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
+	"github.com/alireza0/s-ui/service"
 )
 
 // 38 SUI类型协议矩阵：所有已测试OK的客户端协议类型
@@ -96,6 +97,58 @@ func getEgressCandidates() []CandidateNode {
 		logger.Infof("%s: 加载 %d 个候选节点（通过质量门且协议可映射）", src.Provider, len(candidates))
 	}
 
+	// WireGuard桥接：Cloudflare WARP / Proton VPN 通过SOCKS桥接入站暴露
+	// （WireGuard不在38类型矩阵中，但可映射为SOCKS类型）
+	candidates = append(candidates, getWGBridgeCandidates(db, seen)...)
+
+	return candidates
+}
+
+// getVpsDomain 获取VPS域名（用于WireGuard桥接SOCKS节点的URI）
+func getVpsDomain() string {
+	// 从设置中获取，或使用默认值
+	// WireGuard桥接入站直接监听在VPS上，无需egress gateway重写
+	return "dash.icta.top"
+}
+
+// getWGBridgeCandidates 获取WireGuard桥接候选节点
+// Cloudflare/Proton的WireGuard出站通过VPS上的SOCKS桥接入站暴露，
+// 客户端看到的是38类型中的SOCKS节点，流量经由WireGuard出站转发。
+func getWGBridgeCandidates(db *gorm.DB, seen map[string]bool) []CandidateNode {
+	bridges := service.WGBridgeCandidates(db)
+	if len(bridges) == 0 {
+		return nil
+	}
+
+	domain := getVpsDomain()
+	var candidates []CandidateNode
+	for _, b := range bridges {
+		nodeKey := "wgbridge:" + b.OutboundTag
+		if seen[nodeKey] {
+			continue
+		}
+		seen[nodeKey] = true
+
+		// SOCKS URI: socks5://domain:port#remark (remark需URL编码)
+		uri := fmt.Sprintf("socks5://%s:%d#%s", domain, b.Port, url.PathEscape(b.Remark))
+
+		// 判断Provider
+		provider := "WireGuard"
+		if strings.HasPrefix(strings.ToLower(b.OutboundTag), "cf-") {
+			provider = "Cloudflare"
+		} else if strings.Contains(strings.ToLower(b.OutboundTag), "proton") {
+			provider = "Proton"
+		}
+
+		candidates = append(candidates, CandidateNode{
+			Uri:      uri,
+			Protocol: "socks",
+			Provider: provider,
+			Priority: getEgressPriority("socks"),
+			NodeKey:  nodeKey,
+		})
+	}
+	logger.Infof("WireGuard桥接: 加载 %d 个候选节点（SOCKS映射）", len(candidates))
 	return candidates
 }
 
