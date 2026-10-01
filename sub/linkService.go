@@ -165,6 +165,26 @@ func deriveRealityPublicKey(privB64 string) string {
 // fixSUIReality corrects the URI REALITY params (pbk, sid, sni, fp) based on the
 // inbound's actual config in the database. Stored links can be stale after key
 // rotation, causing REALITY handshake failures (client -1).
+// fixSUIRealityFlow ensures REALITY URIs have flow=xtls-rprx-vision.
+// Missing flow causes client -1 (per 3x-ui docs).
+func fixSUIRealityFlow(uri string) string {
+	if !strings.Contains(uri, "security=reality") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	q := u.Query()
+	if q.Get("flow") == "" {
+		q.Set("flow", "xtls-rprx-vision")
+		u.RawQuery = q.Encode()
+		logger.Infof("Fixed SUI reality flow for %s: added xtls-rprx-vision", u.Port())
+		return u.String()
+	}
+	return uri
+}
+
 func fixSUIReality(uri string) string {
 	// Fast path: only process vless/trojan with security=reality
 	if !strings.Contains(uri, "security=reality") {
@@ -1447,6 +1467,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSUIHysteria2(finalLink)
 				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
 				finalLink = fixSOCKSAuth(finalLink)
+				// Fix REALITY flow (missing flow=xtls-rprx-vision causes client -1)
+				finalLink = fixSUIRealityFlow(finalLink)
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
