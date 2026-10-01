@@ -109,9 +109,32 @@ func (o *OutboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Validate server_port is a valid uint16 number, not a string.
+		// Malformed Seed nodes with string ports break the entire sing-box core startup.
+		if !isValidOutboundJson(outboundJson) {
+			continue
+		}
 		outboundsJson = append(outboundsJson, outboundJson)
 	}
 	return outboundsJson, nil
+}
+
+// isValidOutboundJson checks that server_port (if present) is a valid number 1-65535.
+func isValidOutboundJson(raw json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return false
+	}
+	if portRaw, ok := m["server_port"]; ok {
+		var portNum float64
+		if err := json.Unmarshal(portRaw, &portNum); err != nil {
+			return false
+		}
+		if portNum < 1 || portNum > 65535 || portNum != float64(int(portNum)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *OutboundService) Save(tx *gorm.DB, act string, data json.RawMessage) error {
