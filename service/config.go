@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/core"
@@ -17,6 +18,10 @@ import (
 var (
 	LastUpdate int64
 	corePtr    *core.Core
+	// coreMutex serializes StartCore/StopCore/RestartCore to prevent concurrent
+	// restarts (e.g., from multiple subscription auto-updates) from racing and
+	// leaving sing-box in a half-started state with "address already in use".
+	coreMutex sync.Mutex
 )
 
 type ConfigService struct {
@@ -100,6 +105,12 @@ func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
 }
 
 func (s *ConfigService) StartCore(defaultConfig string) error {
+	coreMutex.Lock()
+	defer coreMutex.Unlock()
+	return s.startCoreLocked(defaultConfig)
+}
+
+func (s *ConfigService) startCoreLocked(defaultConfig string) error {
 	if corePtr.IsRunning() {
 		return nil
 	}
@@ -247,7 +258,13 @@ func (s *ConfigService) SanitizeOutboundDependencies(singboxConfig *SingBoxConfi
 }
 
 func (s *ConfigService) RestartCore() error {
-	err := s.StopCore()
+	coreMutex.Lock()
+	defer coreMutex.Unlock()
+	return s.restartCoreLocked()
+}
+
+func (s *ConfigService) restartCoreLocked() error {
+	err := s.stopCoreLocked()
 	if err != nil {
 		return err
 	}
@@ -263,7 +280,7 @@ func (s *ConfigService) RestartCore() error {
 	}
 	// Extra grace period for OS to release TCP ports
 	time.Sleep(2 * time.Second)
-	return s.StartCore("")
+	return s.startCoreLocked("")
 }
 
 func (s *ConfigService) restartCoreWithConfig(config json.RawMessage) error {
@@ -275,6 +292,12 @@ func (s *ConfigService) restartCoreWithConfig(config json.RawMessage) error {
 }
 
 func (s *ConfigService) StopCore() error {
+	coreMutex.Lock()
+	defer coreMutex.Unlock()
+	return s.stopCoreLocked()
+}
+
+func (s *ConfigService) stopCoreLocked() error {
 	err := corePtr.Stop()
 	if err != nil {
 		return err
