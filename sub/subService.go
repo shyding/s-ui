@@ -4,7 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -17,6 +20,160 @@ import (
 type SubService struct {
 	service.SettingService
 	LinkService
+}
+
+// VPS Seed egress port forwarding mappings.
+// Loaded from /usr/local/s-ui/seed/port_mappings.json generated from healthy Seed nodes.
+// Maps seed_host:seed_port -> VPS port (56000+). Client sees dash.icta.top:VPS_PORT,
+// VPS forwards via iptables DNAT to the real Seed address.
+type egressPortMapping struct {
+	VpsPort  int    `json:"vps_port"`
+	SeedHost string `json:"seed_host"`
+	SeedPort string `json:"seed_port"`
+}
+
+var (
+	egressPortMap     map[string]int
+	egressPortMapOnce sync.Once
+)
+
+func loadEgressPortMap() map[string]int {
+	egressPortMapOnce.Do(func() {
+		egressPortMap = make(map[string]int)
+		data, err := os.ReadFile("/usr/local/s-ui/seed/port_mappings.json")
+		if err != nil {
+			logger.Warning("Failed to load egress port mappings:", err)
+			return
+		}
+		var mappings []egressPortMapping
+		if err := json.Unmarshal(data, &mappings); err != nil {
+			logger.Warning("Failed to parse egress port mappings:", err)
+			return
+		}
+		for _, m := range mappings {
+			key := m.SeedHost + ":" + m.SeedPort
+			egressPortMap[key] = m.VpsPort
+			// Also map without brackets for IPv6
+			egressPortMap[strings.Trim(m.SeedHost, "[]")+":"+m.SeedPort] = m.VpsPort
+		}
+		logger.Info(fmt.Sprintf("Loaded %d egress port mappings", len(egressPortMap)))
+	})
+	return egressPortMap
+}
+
+// rewriteEgressURIsViaVPS rewrites Seed/Cloudflare egress URIs to use VPS port
+// forwarding. The original URI's host:port is replaced with dash.icta.top:VPS_PORT,
+// where VPS_PORT forwards via iptables DNAT to the real Seed address.
+// This hides egress real addresses from clients while preserving node count.
+func rewriteEgressURIsViaVPS(links []string) []string {
+	portMap := loadEgressPortMap()
+	if len(portMap) == 0 {
+		return links
+	}
+	var result []string
+	for _, link := range links {
+		rewritten := rewriteSingleEgressURI(link, portMap)
+		result = append(result, rewritten)
+	}
+	return result
+}
+
+func rewriteSingleEgressURI(link string, portMap map[string]int) string {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return link
+	}
+	// Skip if already dash.icta.top (SUI ingress, no rewrite needed)
+	if strings.Contains(link, "dash.icta.top") {
+		return link
+	}
+
+	var host, port string
+	var isVMess bool
+	var vmessObj map[string]interface{}
+
+	if strings.HasPrefix(link, "vmess://") {
+		isVMess = true
+		rawB64 := strings.TrimPrefix(link, "vmess://")
+		fragment := ""
+		if idx := strings.Index(rawB64, "#"); idx != -1 {
+			fragment = rawB64[idx:]
+			rawB64 = rawB64[:idx]
+		}
+		decoded, err := util.B64StrToByte(rawB64)
+		if err != nil {
+			return link
+		}
+		if err := json.Unmarshal(decoded, &vmessObj); err != nil {
+			return link
+		}
+		host, _ = vmessObj["add"].(string)
+		switch p := vmessObj["port"].(type) {
+		case float64:
+			port = fmt.Sprintf("%.0f", p)
+		case string:
+			port = p
+		case int:
+			port = fmt.Sprintf("%d", p)
+		}
+		_ = fragment
+	} else {
+		// Parse as URL: vless://, trojan://, ss://, tuic://, hysteria2://, etc.
+		u, err := url.Parse(link)
+		if err != nil {
+			return link
+		}
+		host = u.Hostname()
+		port = u.Port()
+		if port == "" {
+			// Default ports by scheme
+			switch u.Scheme {
+			case "https":
+				port = "443"
+			case "http":
+				port = "80"
+			default:
+				port = "443"
+			}
+		}
+	}
+
+	// Look up VPS port for this egress host:port
+	key := host + ":" + port
+	vpsPort, ok := portMap[key]
+	if !ok {
+		// Try without brackets (IPv6)
+		key2 := strings.Trim(host, "[]") + ":" + port
+		vpsPort, ok = portMap[key2]
+	}
+	if !ok {
+		// No mapping found, return as-is (will be filtered by security check)
+		return link
+	}
+
+	// Rewrite to dash.icta.top:VPS_PORT
+	if isVMess {
+		vmessObj["add"] = "dash.icta.top"
+		vmessObj["port"] = vpsPort
+		// Also update port as string if it was string
+		newJSON, err := json.Marshal(vmessObj)
+		if err != nil {
+			return link
+		}
+		fragment := ""
+		if idx := strings.Index(link, "#"); idx != -1 {
+			fragment = link[idx:]
+		}
+		return "vmess://" + base64.StdEncoding.EncodeToString(newJSON) + fragment
+	}
+	// For URL-based URIs, replace host:port via string replacement
+	// (preserves original URI formatting exactly)
+	oldHostPort := host + ":" + port
+	if strings.Contains(link, "["+host+"]:"+port) {
+		oldHostPort = "[" + host + "]:" + port
+	}
+	newHostPort := fmt.Sprintf("dash.icta.top:%d", vpsPort)
+	return strings.Replace(link, oldHostPort, newHostPort, 1)
 }
 
 func (s *SubService) GetSubs(subId string) (*string, []string, error) {
@@ -48,6 +205,11 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 	}
 
 	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
+
+	// Rewrite Seed/Cloudflare egress URIs to use VPS port forwarding.
+	// Client sees dash.icta.top:VPS_PORT, VPS forwards to Seed via iptables DNAT.
+	// This preserves node count while hiding egress real addresses.
+	linksArray = rewriteEgressURIsViaVPS(linksArray)
 
 	// Enforce strict subscription security isolation: only allow links connecting to dash.icta.top
 	var secureLinks []string
