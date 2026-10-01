@@ -952,6 +952,29 @@ func determineStandardProvider(uri string) string {
 	if strings.Contains(lower, "s-ui") || strings.Contains(lower, "dash.icta.top") {
 		return "SUI"
 	}
+	// VMess: Base64 JSON 中包含 add 字段，需解码检查
+	if strings.HasPrefix(uri, "vmess://") {
+		b64 := strings.TrimPrefix(uri, "vmess://")
+		// 去掉可能的 fragment
+		if idx := strings.Index(b64, "#"); idx >= 0 {
+			b64 = b64[:idx]
+		}
+		decoded, err := base64.RawStdEncoding.DecodeString(b64)
+		if err != nil {
+			decoded, err = base64.StdEncoding.DecodeString(b64)
+		}
+		if err == nil {
+			var obj map[string]interface{}
+			if json.Unmarshal(decoded, &obj) == nil {
+				if add, ok := obj["add"].(string); ok {
+					addLower := strings.ToLower(add)
+				if strings.Contains(addLower, "dash.icta.top") || strings.Contains(addLower, "s-ui") {
+					return "SUI"
+				}
+			}
+			}
+		}
+	}
 	return "Seed"
 }
 
