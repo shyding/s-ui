@@ -504,6 +504,18 @@ func FilterHealthyAndGroupTop3Links(
 
 		c.Speed = rec.Speed
 		c.Latency = rec.Latency
+		// Inherit geolocation from health record if candidate lacks it.
+		// Seed file candidates have no Country/Region/City; without this,
+		// they all group into "Seed---" and get capped at 50 per group.
+		if c.Country == "" && rec.Country != "" {
+			c.Country = rec.Country
+		}
+		if c.Region == "" && rec.Region != "" {
+			c.Region = rec.Region
+		}
+		if c.City == "" && rec.City != "" {
+			c.City = rec.City
+		}
 
 		// Filter: free proxy nodes (HProxy/Seed) geolocated to China are
 		// almost certainly mislabeled (GFW blocks free proxies in China).
