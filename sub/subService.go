@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/alireza0/s-ui/database"
@@ -22,63 +20,25 @@ type SubService struct {
 	LinkService
 }
 
-// VPS Seed egress port forwarding mappings.
-// Loaded from /usr/local/s-ui/seed/port_mappings.json generated from healthy Seed nodes.
-// Maps seed_host:seed_port -> VPS port (56000+). Client sees dash.icta.top:VPS_PORT,
-// VPS forwards via iptables DNAT to the real Seed address.
-type egressPortMapping struct {
-	VpsPort  int    `json:"vps_port"`
-	SeedHost string `json:"seed_host"`
-	SeedPort string `json:"seed_port"`
-}
-
-var (
-	egressPortMap     map[string]int
-	egressPortMapOnce sync.Once
-)
-
-func loadEgressPortMap() map[string]int {
-	egressPortMapOnce.Do(func() {
-		egressPortMap = make(map[string]int)
-		data, err := os.ReadFile("/usr/local/s-ui/seed/port_mappings.json")
-		if err != nil {
-			logger.Warning("Failed to load egress port mappings:", err)
-			return
-		}
-		var mappings []egressPortMapping
-		if err := json.Unmarshal(data, &mappings); err != nil {
-			logger.Warning("Failed to parse egress port mappings:", err)
-			return
-		}
-		for _, m := range mappings {
-			key := m.SeedHost + ":" + m.SeedPort
-			egressPortMap[key] = m.VpsPort
-			// Also map without brackets for IPv6
-			egressPortMap[strings.Trim(m.SeedHost, "[]")+":"+m.SeedPort] = m.VpsPort
-		}
-		logger.Info(fmt.Sprintf("Loaded %d egress port mappings", len(egressPortMap)))
-	})
-	return egressPortMap
-}
+// VPS Seed egress port forwarding.
+// See service/egress_gateway.go for mapping generation and iptables management.
+// Client sees dash.icta.top:VPS_PORT, VPS forwards via iptables DNAT to real Seed.
 
 // rewriteEgressURIsViaVPS rewrites Seed/Cloudflare egress URIs to use VPS port
 // forwarding. The original URI's host:port is replaced with dash.icta.top:VPS_PORT,
 // where VPS_PORT forwards via iptables DNAT to the real Seed address.
 // This hides egress real addresses from clients while preserving node count.
 func rewriteEgressURIsViaVPS(links []string) []string {
-	portMap := loadEgressPortMap()
-	if len(portMap) == 0 {
-		return links
-	}
+	// Use the egress gateway's lookup which handles hostname/IP matching
 	var result []string
 	for _, link := range links {
-		rewritten := rewriteSingleEgressURI(link, portMap)
+		rewritten := rewriteSingleEgressURI(link)
 		result = append(result, rewritten)
 	}
 	return result
 }
 
-func rewriteSingleEgressURI(link string, portMap map[string]int) string {
+func rewriteSingleEgressURI(link string) string {
 	link = strings.TrimSpace(link)
 	if link == "" {
 		return link
@@ -139,14 +99,9 @@ func rewriteSingleEgressURI(link string, portMap map[string]int) string {
 	}
 
 	// Look up VPS port for this egress host:port
-	key := host + ":" + port
-	vpsPort, ok := portMap[key]
-	if !ok {
-		// Try without brackets (IPv6)
-		key2 := strings.Trim(host, "[]") + ":" + port
-		vpsPort, ok = portMap[key2]
-	}
-	if !ok {
+	// Uses egress gateway which matches both original hostname and resolved IP
+	vpsPort := service.GetEgressVpsPort(host, port)
+	if vpsPort == 0 {
 		// No mapping found, return as-is (will be filtered by security check)
 		return link
 	}
