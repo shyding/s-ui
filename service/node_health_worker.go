@@ -483,8 +483,9 @@ func (w *wsConn) Read(b []byte) (int, error) {
 
 // httpUpgradeHandshake 执行 HTTPUpgrade 握手
 func httpUpgradeHandshake(conn net.Conn, host, path string) (net.Conn, error) {
-	// HTTPUpgrade 类似 WS，但使用不同的 Upgrade 头
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: h2c\r\nConnection: Upgrade, HTTP2-Settings\r\nHTTP2-Settings: AAMAAABkAAQAAP__\r\n\r\n",
+	// HTTPUpgrade: 发送标准 HTTP 请求，服务器将其升级为 VLESS 传输
+	// 使用 websocket Upgrade 头 (Xray HTTPUpgrade 兼容 WS 握手)
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n",
 		path, host)
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write([]byte(req)); err != nil {
@@ -666,31 +667,36 @@ func verifyRealityConfig(uri, host, port string) bool {
 	q := u.Query()
 	uriPbk := q.Get("pbk")
 	uriSid := q.Get("sid")
-	uriSni := q.Get("sni")
 	if uriPbk == "" || uriSid == "" {
 		return false
 	}
 
-	// 从数据库获取 inbound 配置
+	// 从数据库获取 inbound 配置 (直接 SQL，避免 GORM 模型问题)
 	db := database.GetDB()
 	if db == nil {
 		return false
 	}
-	var inbound model.Inbound
-	// 通过端口查找 inbound
 	portInt := 0
 	fmt.Sscanf(port, "%d", &portInt)
-	// 查询所有 inbound，匹配 listen_port
-	var inbounds []model.Inbound
-	if err := db.Find(&inbounds).Error; err != nil {
+	
+	rows, err := db.Raw("SELECT options FROM inbounds").Rows()
+	if err != nil {
 		return false
 	}
-	for _, ib := range inbounds {
+	defer rows.Close()
+	
+	found := false
+	for rows.Next() {
+		var optionsRaw []byte
+		if err := rows.Scan(&optionsRaw); err != nil {
+			continue
+		}
 		var opts map[string]interface{}
-		if err := json.Unmarshal(ib.Options, &opts); err != nil {
+		if err := json.Unmarshal(optionsRaw, &opts); err != nil {
 			continue
 		}
 		if lp, ok := opts["listen_port"].(float64); ok && int(lp) == portInt {
+			found = true
 			// 找到匹配的 inbound，验证 REALITY 配置
 			tlsCfg, _ := opts["tls"].(map[string]interface{})
 			if tlsCfg == nil {
@@ -715,13 +721,22 @@ func verifyRealityConfig(uri, host, port string) bool {
 			if !sidMatch {
 				return false
 			}
-			// 验证 handshake server 匹配 SNI
-			handshake, _ := reality["handshake"].(map[string]interface{})
-			if handshake != nil {
-				if server, ok := handshake["server"].(string); ok && server != "" {
-					if uriSni != "" && uriSni != server {
-						// SNI 不匹配，但可能是别名，宽松处理
+			// handshake server 验证已在 URI 解析时完成
+			// 验证 VLESS UUID 匹配
+			uriUuid := extractVlessUUID(uri)
+			if uriUuid != "" {
+				users, _ := opts["users"].([]interface{})
+				uuidMatch := false
+				for _, u := range users {
+					if um, ok := u.(map[string]interface{}); ok {
+						if id, ok := um["uuid"].(string); ok && strings.EqualFold(id, uriUuid) {
+							uuidMatch = true
+							break
+						}
 					}
+				}
+				if !uuidMatch {
+					return false
 				}
 			}
 			// 验证 VLESS UUID 匹配
@@ -742,11 +757,10 @@ func verifyRealityConfig(uri, host, port string) bool {
 				}
 			}
 			// 配置匹配
-			inbound = ib
 			break
 		}
 	}
-	return inbound.Id != 0
+	return found
 }
 
 // checkExternalNode 对单个外部节点执行完整检测
