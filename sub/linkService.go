@@ -221,6 +221,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
 		origMap["ps"] = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
 		origMap["add"] = "dash.icta.top"
+		logger.Infof("DEBUG vmess port: %v (%T)", origMap["port"], origMap["port"])
 		if raw, err := json.MarshalIndent(origMap, "", "  "); err == nil {
 			candidates = append(candidates, CandidateNode{
 				Uri:      "vmess://" + util.ByteToB64Str(raw),
