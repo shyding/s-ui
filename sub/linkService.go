@@ -339,6 +339,73 @@ func fixSUITransport(uri string) string {
 	return u.String()
 }
 
+// fixSUISecurity ensures the URI security parameter matches the inbound's TLS config.
+// Plain (non-TLS) inbounds need explicit security=none, otherwise clients may default to TLS.
+func fixSUISecurity(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	port := u.Port()
+	if port == "" {
+		return uri
+	}
+	// Get inbound TLS config
+	tlsEnabled := getInboundTLSEnabled(port)
+	if tlsEnabled == nil {
+		return uri // unknown, don't change
+	}
+	q := u.Query()
+	currentSecurity := q.Get("security")
+	if *tlsEnabled {
+		// TLS enabled: ensure security is tls or reality (don't override reality)
+		if currentSecurity == "" || currentSecurity == "none" {
+			// Check if it's reality
+			if strings.Contains(uri, "pbk=") {
+				q.Set("security", "reality")
+			} else {
+				q.Set("security", "tls")
+			}
+			u.RawQuery = q.Encode()
+			logger.Infof("Fixed SUI security for port %s: -> %s", port, q.Get("security"))
+			return u.String()
+		}
+	} else {
+		// TLS disabled (plain): ensure security=none
+		if currentSecurity != "none" {
+			q.Set("security", "none")
+			u.RawQuery = q.Encode()
+			logger.Infof("Fixed SUI security for port %s: -> none (plain)", port)
+			return u.String()
+		}
+	}
+	return uri
+}
+
+// getInboundTLSEnabled returns whether TLS is enabled for the inbound on the given port.
+// Returns nil if unknown.
+func getInboundTLSEnabled(port string) *bool {
+	db := database.GetDB()
+	if db == nil {
+		return nil
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return nil
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return nil
+	}
+	tlsCfg, _ := opts["tls"].(map[string]interface{})
+	if tlsCfg == nil {
+		result := false
+		return &result
+	}
+	enabled, _ := tlsCfg["enabled"].(bool)
+	return &enabled
+}
+
 // fixVMessPort ensures VMess JSON port is a number, not a string.
 // Some stored links have "port":"54146" (string) which causes clients
 // to fail parsing. This converts it to "port":54146 (number).
@@ -467,6 +534,17 @@ func fixVMessTransport(uri string) string {
 			}
 		}
 	}
+	// Sync TLS setting from inbound config
+	if tlsEnabled := getInboundTLSEnabled(portStr); tlsEnabled != nil {
+		expectedTLS := ""
+		if *tlsEnabled {
+			expectedTLS = "tls"
+		}
+		if currentTLS, _ := vmessObj["tls"].(string); currentTLS != expectedTLS {
+			vmessObj["tls"] = expectedTLS
+			changed = true
+		}
+	}
 	if !changed {
 		return uri
 	}
@@ -498,6 +576,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 
 	// Fix stale transport params from outdated stored links (causes client -1)
 	uri = fixSUITransport(uri)
+	// Fix security param (security=none for plain inbounds)
+	uri = fixSUISecurity(uri)
 	// fixSUIReality DISABLED: has duplication bug, DB links are correct.
 	// uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
@@ -1104,6 +1184,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				// Fix stale transport params from outdated stored links (causes client -1)
 				// e.g., type=tcp for a ws inbound
 				finalLink = fixSUITransport(finalLink)
+				// Fix security param (security=none for plain, security=tls/reality for TLS)
+				finalLink = fixSUISecurity(finalLink)
 				// Fix VMess string port (e.g., "port":"54146" -> "port":54146)
 				finalLink = fixVMessPort(finalLink)
 				// Fix VMess transport params (net/path/host) from inbound config
