@@ -571,7 +571,10 @@ func LocalizeEgressLocation(country, region, city string) (string, string, strin
 
 	defGeos, hasDef := CountryDefaultGeos[country]
 	if !hasDef {
-		defGeos = [2]string{"亚太", "新加坡城"}
+		// Do not fabricate geography. Unknown country gets empty defaults;
+		// the remark format validation will filter out nodes with missing
+		// location instead of publishing fake "亚太" data.
+		defGeos = [2]string{"", ""}
 	}
 
 	regionCN := regionToChinese(strings.TrimSpace(region))

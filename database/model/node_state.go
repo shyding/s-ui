@@ -52,8 +52,16 @@ func (n *NodeHealthStatus) GroupKey() string {
 		return s
 	}
 	country := clean(n.Country, "全球")
-	region := clean(n.Region, "亚太")
-	city := clean(n.City, "新加坡城")
+	region := clean(n.Region, "")
+	city := clean(n.City, "")
+	// Do not fabricate geography: if region/city unknown, fall back to broader
+	// location instead of fake "亚太"/"新加坡城".
+	if region == "" {
+		region = country
+	}
+	if city == "" {
+		city = region
+	}
 	return fmt.Sprintf("%s-%s-%s-%s", prov, country, region, city)
 }
 
