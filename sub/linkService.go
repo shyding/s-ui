@@ -89,6 +89,152 @@ var inboundTransportCache = struct {
 	data map[string]map[string]interface{}
 }{data: make(map[string]map[string]interface{})}
 
+// inboundRealityCache caches port -> reality config (pbk, sid, sni, fp) to avoid per-URI DB queries
+var inboundRealityCache = struct {
+	sync.RWMutex
+	data map[string]map[string]string
+}{data: make(map[string]map[string]string)}
+
+func getInboundReality(port string) map[string]string {
+	inboundRealityCache.RLock()
+	if r, ok := inboundRealityCache.data[port]; ok {
+		inboundRealityCache.RUnlock()
+		return r
+	}
+	inboundRealityCache.RUnlock()
+
+	db := database.GetDB()
+	if db == nil {
+		return nil
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return nil
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return nil
+	}
+	tlsCfg, _ := opts["tls"].(map[string]interface{})
+	if tlsCfg == nil {
+		return nil
+	}
+	realityCfg, _ := tlsCfg["reality"].(map[string]interface{})
+	if realityCfg == nil {
+		return nil
+	}
+	enabled, _ := realityCfg["enabled"].(bool)
+	if !enabled {
+		return nil
+	}
+	result := make(map[string]string)
+	// Derive public key from private key
+	if privKey, ok := realityCfg["private_key"].(string); ok && privKey != "" {
+		if pubKey := deriveRealityPublicKey(privKey); pubKey != "" {
+			result["pbk"] = pubKey
+		}
+	}
+	// Short ID (use first one)
+	if sids, ok := realityCfg["short_id"].([]interface{}); ok && len(sids) > 0 {
+		if sid, ok := sids[0].(string); ok {
+			result["sid"] = sid
+		}
+	}
+	// SNI/server name
+	if sni, ok := tlsCfg["server_name"].(string); ok {
+		result["sni"] = sni
+	}
+	// Fingerprint (default chrome if not specified)
+	result["fp"] = "chrome"
+	if fp, ok := tlsCfg["fingerprint"].(string); ok && fp != "" {
+		result["fp"] = fp
+	}
+
+	inboundRealityCache.Lock()
+	inboundRealityCache.data[port] = result
+	inboundRealityCache.Unlock()
+	return result
+}
+
+// deriveRealityPublicKey derives the X25519 public key from a base64url private key
+func deriveRealityPublicKey(privB64 string) string {
+	return service.DeriveRealityPublicKey(privB64)
+}
+
+// fixSUIReality corrects the URI REALITY params (pbk, sid, sni, fp) based on the
+// inbound's actual config in the database. Stored links can be stale after key
+// rotation, causing REALITY handshake failures (client -1).
+func fixSUIReality(uri string) string {
+	// Fast path: only process vless/trojan with security=reality
+	if !strings.Contains(uri, "security=reality") {
+		return uri
+	}
+	// Extract port using string manipulation (more reliable than url.Parse for custom schemes)
+	// Format: scheme://user@host:port?query#fragment
+	atIdx := strings.Index(uri, "@")
+	if atIdx == -1 {
+		return uri
+	}
+	colonIdx := strings.Index(uri[atIdx:], ":")
+	if colonIdx == -1 {
+		return uri
+	}
+	colonIdx += atIdx
+	// Port ends at ? or # or end
+	portEnd := len(uri)
+	for i, c := range uri[colonIdx+1:] {
+		if c == '?' || c == '#' || c == '/' {
+			portEnd = colonIdx + 1 + i
+			break
+		}
+	}
+	port := uri[colonIdx+1 : portEnd]
+	if port == "" {
+		return uri
+	}
+	reality := getInboundReality(port)
+	if reality == nil {
+		return uri
+	}
+	// Update query params using string replacement (preserve original encoding)
+	changed := false
+	for key, newVal := range reality {
+		// Find key= in query string
+		// Query starts after ? and ends at #
+		qStart := strings.Index(uri, "?")
+		if qStart == -1 {
+			break
+		}
+		qEnd := strings.Index(uri[qStart:], "#")
+		if qEnd == -1 {
+			qEnd = len(uri)
+		} else {
+			qEnd += qStart
+		}
+		query := uri[qStart+1 : qEnd]
+		// Replace key=oldval with key=newval
+		parts := strings.Split(query, "&")
+		for i, p := range parts {
+			if strings.HasPrefix(p, key+"=") {
+				oldVal := p[len(key)+1:]
+				if oldVal != newVal {
+					parts[i] = key + "=" + newVal
+					changed = true
+				}
+				break
+			}
+		}
+		if changed {
+			newQuery := strings.Join(parts, "&")
+			uri = uri[:qStart+1] + newQuery + uri[qEnd:]
+		}
+	}
+	if changed {
+		logger.Infof("Fixed SUI REALITY params for port %s", port)
+	}
+	return uri
+}
+
 func getInboundTransport(port string) map[string]interface{} {
 	inboundTransportCache.RLock()
 	if t, ok := inboundTransportCache.data[port]; ok {
@@ -193,6 +339,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 
 	// Fix stale transport params from outdated stored links (causes client -1)
 	uri = fixSUITransport(uri)
+	// Fix stale REALITY params after key rotation
+	uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
 
 	proto := strings.ToLower(protocol[0])
@@ -797,6 +945,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				// Fix stale transport params from outdated stored links (causes client -1)
 				// e.g., type=tcp for a ws inbound
 				finalLink = fixSUITransport(finalLink)
+				// Fix stale REALITY params (pbk/sid/sni/fp) after key rotation
+				finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
 				// regional egress variants. Expansion creates 100+ duplicates per
 				// inbound, exhausting the 1300 subscription limit.

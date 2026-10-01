@@ -259,3 +259,15 @@ func (s *ServerService) generateWireGuardKey(pk string) []string {
 	}
 	return []string{"PrivateKey: " + wgKeys.String(), "PublicKey: " + wgKeys.PublicKey().String()}
 }
+
+// DeriveRealityPublicKey derives the base64url-encoded X25519 public key
+// from a base64url-encoded private key (as stored in inbound REALITY config).
+// Returns "" on failure.
+func DeriveRealityPublicKey(privB64 string) string {
+	key, err := wgtypes.ParseKey(privB64)
+	if err != nil {
+		return ""
+	}
+	pub := key.PublicKey()
+	return base64.RawURLEncoding.EncodeToString(pub[:])
+}
