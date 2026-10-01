@@ -406,18 +406,28 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	}
 
 	// ── 协议级握手验证 ───────────────────────────────────
-	// VLESS: 执行真实 VLESS 握手验证 UUID 有效性
+	// VLESS: 对 TCP 传输执行真实 VLESS 握手验证 UUID 有效性
+	// VLESS WS/gRPC/HTTPUpgrade: 传输层握手复杂，暂时用 TCP+TLS 成功作为通过标准
 	// SUI 本地节点 (127.0.0.1): 跳过握手，TCP+TLS 成功即视为可用
 	// 其他协议: 暂时用 TCP+TLS 成功作为通过标准 (后续扩展)
 	if strings.ToLower(proto) == "vless" && checkHost != "127.0.0.1" {
-		uuidStr := extractVlessUUID(uri)
-		if uuidStr == "" {
-			status.LastError = "vless_no_uuid"
-			return status
+		// 检查传输类型，仅对 TCP 做 VLESS 握手
+		isTCP := true
+		uriLower := strings.ToLower(uri)
+		if strings.Contains(uriLower, "type=ws") || strings.Contains(uriLower, "type=grpc") ||
+			strings.Contains(uriLower, "type=httpupgrade") || strings.Contains(uriLower, "type=http") {
+			isTCP = false
 		}
-		if !vlessHandshake(conn, uuidStr) {
-			status.LastError = "vless_handshake_fail"
-			return status
+		if isTCP {
+			uuidStr := extractVlessUUID(uri)
+			if uuidStr == "" {
+				status.LastError = "vless_no_uuid"
+				return status
+			}
+			if !vlessHandshake(conn, uuidStr) {
+				status.LastError = "vless_handshake_fail"
+				return status
+			}
 		}
 		status.ProxyCheck = true
 	} else {
