@@ -517,8 +517,23 @@ func vmessLink(
 		}
 
 		obj["add"], _ = addr["server"].(string)
-		port, _ := addr["server_port"].(float64)
-		obj["port"] = fmt.Sprintf("%.0f", port)
+		// Handle server_port as float64, int, or string (defensive)
+		var portStr string
+		switch p := addr["server_port"].(type) {
+		case float64:
+			portStr = fmt.Sprintf("%.0f", p)
+		case int:
+			portStr = fmt.Sprintf("%d", p)
+		case int64:
+			portStr = fmt.Sprintf("%d", p)
+		case uint:
+			portStr = fmt.Sprintf("%d", p)
+		case string:
+			portStr = p
+		default:
+			portStr = fmt.Sprintf("%v", addr["server_port"])
+		}
+		obj["port"] = portStr
 		obj["ps"], _ = addr["remark"].(string)
 		if typ != "" {
 			obj["type"] = typ
