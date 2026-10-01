@@ -624,10 +624,14 @@ func trimToMaxTotal(links []string) []string {
 	}
 	var sui, seed, other []string
 	for _, l := range links {
-		// Remark format: {来源}-{国家}-... is in the URI fragment (after #)
+		// Remark format: [flag ]{来源}-{国家}-... is in the URI fragment (after #)
 		provider := ""
 		if idx := strings.LastIndex(l, "#"); idx >= 0 {
 			frag := l[idx+1:]
+			// Strip optional flag emoji prefix (e.g. "🇸🇬 ")
+			if sp := strings.Index(frag, " "); sp > 0 && sp < 10 {
+				frag = frag[sp+1:]
+			}
 			if dash := strings.Index(frag, "-"); dash > 0 {
 				provider = frag[:dash]
 			}
@@ -946,7 +950,8 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		allowedHost = "dash.icta.top"
 	}
 	var violations []string
-	remarkRegex := regexp.MustCompile(`^(Seed|Cloudflare|HProxy|SUI|Proton)-[^\r\n-]+-[^\r\n-]+-.+-\d{2}$`)
+	// Remark format: optional flag emoji prefix (e.g. "🇸🇬 ") + {来源}-{国家}-{区域}-{城市}-{编号}
+	remarkRegex := regexp.MustCompile(`^([\x{1F1E6}-\x{1F1FF}]{2} )?(Seed|Cloudflare|HProxy|SUI|Proton)-[^\r\n-]+-[^\r\n-]+-.+-\d{2}$`)
 	ipRegex := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 	bannedTokens := []string{
 		"原生直连", "默认出口", "智能优选", "洁净出口",

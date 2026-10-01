@@ -546,13 +546,38 @@ func ResolveEgressComponents(code, name string) (provider, country, region, city
 	return provider, country, region, city
 }
 
-// FormatStandardRemark strictly formats a remark according to: {来源}-{国家}-{区域}-{城市}-{编号}
+// CountryFlag converts a 2-letter ISO country code to its flag emoji.
+// e.g. "SG" -> "🇸🇬", "US" -> "🇺🇸". Returns "" for invalid codes.
+func CountryFlag(isoCode string) string {
+	code := strings.ToUpper(strings.TrimSpace(isoCode))
+	if len(code) != 2 {
+		return ""
+	}
+	for _, c := range code {
+		if c < 'A' || c > 'Z' {
+			return ""
+		}
+	}
+	var sb strings.Builder
+	for _, c := range code {
+		sb.WriteRune(0x1F1E6 + (c - 'A'))
+	}
+	return sb.String()
+}
+
+// FormatStandardRemark strictly formats a remark according to: {国旗} {来源}-{国家}-{区域}-{城市}-{编号}
 // Enforces 100% Chinese & digits for country, region, city. Zero English and zero "未知".
 func FormatStandardRemark(provider, country, region, city string, index int) string {
 	provider = NormalizeProvider(provider)
+	// Capture ISO code before localization for flag generation
+	isoCode := NormalizeCountryCode(strings.TrimSpace(country))
 	country, region, city = LocalizeEgressLocation(country, region, city)
 	if index <= 0 {
 		index = 1
+	}
+	flag := CountryFlag(isoCode)
+	if flag != "" {
+		return fmt.Sprintf("%s %s-%s-%s-%s-%02d", flag, provider, country, region, city, index)
 	}
 	return fmt.Sprintf("%s-%s-%s-%s-%02d", provider, country, region, city, index)
 }
