@@ -90,7 +90,7 @@ func GenerateEgressMappings() ([]EgressMapping, error) {
 		}
 
 		// Parse host:port from Node key
-		host, portStr := splitHostPort(h.Node)
+		host, portStr := splitEgressHostPort(h.Node)
 		if host == "" || portStr == "" {
 			continue
 		}
@@ -143,9 +143,9 @@ func GenerateEgressMappings() ([]EgressMapping, error) {
 	return mappings, nil
 }
 
-// splitHostPort splits "host:port" into host and port.
+// splitEgressHostPort splits "host:port" into host and port.
 // Handles IPv6 addresses with brackets.
-func splitHostPort(node string) (host, port string) {
+func splitEgressHostPort(node string) (host, port string) {
 	// Handle IPv6 with brackets: [::1]:8080
 	if strings.HasPrefix(node, "[") {
 		end := strings.Index(node, "]")
