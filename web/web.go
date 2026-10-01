@@ -110,6 +110,28 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	group_api := engine.Group(base_url + "api")
 	api.NewAPIHandler(group_api, apiv2)
 
+	// Localhost-only health check trigger (no auth, for automation).
+	// Only accepts connections from 127.0.0.1/::1. Used by ops scripts
+	// to trigger health checks without panel login.
+	engine.POST(base_url+"local/triggerHealthCheck", func(c *gin.Context) {
+		clientIP := c.ClientIP()
+		if clientIP != "127.0.0.1" && clientIP != "::1" {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": "forbidden: localhost only"})
+			return
+		}
+		if service.IsEgressCheckRunning() || service.IsNodeCheckRunning() {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "msg": "健康检查正在运行中", "running": true})
+			return
+		}
+		egressOk := service.TriggerEgressHealthCheck()
+		nodeOk := service.TriggerNodeHealthCheck()
+		if !egressOk && !nodeOk {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "msg": "健康检查正在运行中", "running": true})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "msg": "健康检查已在后台启动", "running": true})
+	})
+
 	// Serve index.html as the entry point
 	// Handle all other routes by serving index.html
 	engine.NoRoute(func(c *gin.Context) {
