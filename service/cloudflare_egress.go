@@ -274,6 +274,15 @@ var countryNameAliases = map[string]string{
 	"VIETNAM": "VN", "MALAYSIA": "MY", "PHILIPPINES": "PH", "INDONESIA": "ID", "ISRAEL": "IL", "UKRAINE": "UA",
 	"PORTUGAL": "PT", "PERU": "PE", "ECUADOR": "EC", "EGYPT": "EG", "KENYA": "KE", "GHANA": "GH",
 	"MOROCCO": "MA", "SAUDI ARABIA": "SA", "QATAR": "QA", "HUNGARY": "HU", "BULGARIA": "BG", "NIGERIA": "NG",
+	// Chinese names (for Seed nodes with Chinese country names)
+	"美国": "US", "新加坡": "SG", "日本": "JP", "香港": "HK", "中国香港": "HK", "台湾": "TW", "中国台湾": "TW",
+	"韩国": "KR", "英国": "GB", "德国": "DE", "法国": "FR", "荷兰": "NL", "加拿大": "CA", "澳大利亚": "AU",
+	"印度": "IN", "巴西": "BR", "意大利": "IT", "西班牙": "ES", "瑞士": "CH", "瑞典": "SE", "挪威": "NO",
+	"芬兰": "FI", "丹麦": "DK", "波兰": "PL", "俄罗斯": "RU", "土耳其": "TR", "阿联酋": "AE",
+	"南非": "ZA", "墨西哥": "MX", "阿根廷": "AR", "智利": "CL", "哥伦比亚": "CO", "新西兰": "NZ",
+	"爱尔兰": "IE", "比利时": "BE", "奥地利": "AT", "捷克": "CZ", "希腊": "GR", "罗马尼亚": "RO",
+	"泰国": "TH", "越南": "VN", "马来西亚": "MY", "菲律宾": "PH", "印度尼西亚": "ID", "以色列": "IL",
+	"乌克兰": "UA", "葡萄牙": "PT", "秘鲁": "PE", "厄瓜多尔": "EC", "埃及": "EG", "肯尼亚": "KE",
 }
 
 // ColoToCityMap maps Cloudflare 3-letter IATA codes to localized city names
