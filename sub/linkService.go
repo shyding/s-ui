@@ -413,16 +413,15 @@ func getInboundTLSEnabled(port string) *bool {
 }
 
 // fixVMessPort ensures VMess JSON port is a number, not a string.
-// fixSSMethod syncs the SS method from the inbound config.
-// Some stored SS links advertise "2022-blake3-aes-128-gcm" but the
-// actual inbound uses aes-256-gcm/aes-128-gcm. The client tries the
-// wrong cipher and fails. This replaces the method in the URI.
+
+// fixSSMethod syncs the SS method and password from the inbound config.
+// Some stored SS links advertise "2022-blake3-aes-128-gcm" with a wrong
+// password, but the actual inbound uses aes-256-gcm/aes-128-gcm with a
+// different password. The client tries the wrong cipher/password and fails.
 func fixSSMethod(uri string) string {
 	if !strings.HasPrefix(uri, "ss://") {
 		return uri
 	}
-	// Parse port from URI to look up the inbound
-	// ss://base64@host:port#remark
 	hashIdx := strings.LastIndex(uri, "#")
 	uriNoFrag := uri
 	if hashIdx > 0 {
@@ -438,11 +437,13 @@ func fixSSMethod(uri string) string {
 		return uri
 	}
 	port := hostPort[colonIdx+1:]
-	method := getInboundSSMethod(port)
-	if method == "" {
+	if qIdx := strings.Index(port, "?"); qIdx > 0 {
+		port = port[:qIdx]
+	}
+	method, password := getInboundSSCredentials(port)
+	if method == "" || password == "" {
 		return uri
 	}
-	// Parse the ss:// URI: ss://base64(method:password)@host:port#remark
 	parts := strings.SplitN(uri, "://", 2)
 	if len(parts) != 2 {
 		return uri
@@ -454,7 +455,6 @@ func fixSSMethod(uri string) string {
 	}
 	b64part := rest[:atIdx2]
 	hostPart := rest[atIdx2:]
-	// Decode the base64 method:password
 	decoded, err := base64.URLEncoding.DecodeString(b64part)
 	if err != nil {
 		decoded, err = base64.StdEncoding.DecodeString(b64part)
@@ -468,37 +468,34 @@ func fixSSMethod(uri string) string {
 		return uri
 	}
 	currentMethod := decodedStr[:colonIdx2]
-	if currentMethod == method {
+	currentPassword := decodedStr[colonIdx2+1:]
+	if currentMethod == method && currentPassword == password {
 		return uri
 	}
-	password := decodedStr[colonIdx2+1:]
 	newDecoded := method + ":" + password
 	newB64 := base64.URLEncoding.EncodeToString([]byte(newDecoded))
 	newB64 = strings.TrimRight(newB64, "=")
+	logger.Info("fixSSMethod: port " + port + " fixed")
 	return "ss://" + newB64 + hostPart
 }
 
-// getInboundSSMethod returns the SS cipher method for the given port.
-func getInboundSSMethod(port string) string {
+// getInboundSSCredentials returns the SS method and password for the given port.
+func getInboundSSCredentials(port string) (string, string) {
 	db := database.GetDB()
 	if db == nil {
-		logger.Error("fixSSMethod: database is nil")
-		return ""
+		return "", ""
 	}
 	var inbound model.Inbound
 	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
-		logger.Error("fixSSMethod: inbound not found for port " + port + ": " + err.Error())
-		return ""
+		return "", ""
 	}
 	var opts map[string]interface{}
 	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
-		return ""
+		return "", ""
 	}
 	method, _ := opts["method"].(string)
-	if method != "" {
-		logger.Info("fixSSMethod: port " + port + " method=" + method)
-	}
-	return method
+	pwd, _ := opts["password"].(string)
+	return method, pwd
 }
 
 // Some stored links have "port":"54146" (string) which causes clients
