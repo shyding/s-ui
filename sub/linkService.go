@@ -1397,6 +1397,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixVMessTransport(finalLink)
 				// Fix SS method (e.g., 2022-blake3-aes-128-gcm -> aes-256-gcm)
 				finalLink = fixSSMethod(finalLink)
+				// Fix HY2 sni param (missing sni causes client -1)
+				finalLink = fixSUIHysteria2(finalLink)
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
