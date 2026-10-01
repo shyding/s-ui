@@ -165,6 +165,36 @@ func deriveRealityPublicKey(privB64 string) string {
 // fixSUIReality corrects the URI REALITY params (pbk, sid, sni, fp) based on the
 // inbound's actual config in the database. Stored links can be stale after key
 // rotation, causing REALITY handshake failures (client -1).
+// fixSUIRealityToTLS converts REALITY URIs to standard TLS URIs.
+// The server-side has been migrated from REALITY to TLS (see migrateRealityToTLS),
+// so the published URI must reflect security=tls instead of security=reality.
+func fixSUIRealityToTLS(uri string) string {
+	if !strings.Contains(uri, "security=reality") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	// Only convert the 4 migrated ports
+	port := u.Port()
+	if port != "54161" && port != "54162" && port != "54163" && port != "54164" {
+		return uri
+	}
+	q := u.Query()
+	q.Set("security", "tls")
+	q.Set("sni", "dash.icta.top")
+	// Remove REALITY-specific params
+	q.Del("pbk")
+	q.Del("sid")
+	q.Del("fp")
+	q.Del("spx")
+	q.Del("flow")
+	u.RawQuery = q.Encode()
+	logger.Infof("Converted SUI REALITY URI to TLS for port %s", port)
+	return u.String()
+}
+
 // fixSUIRealityFlow ensures REALITY URIs do NOT have flow=xtls-rprx-vision.
 // Sing-box server may not support XTLS-Vision; the flow param breaks the handshake.
 func fixSUIRealityFlow(uri string) string {
@@ -1467,7 +1497,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSUIHysteria2(finalLink)
 				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
 				finalLink = fixSOCKSAuth(finalLink)
-				// Fix REALITY flow (missing flow=xtls-rprx-vision causes client -1)
+				// Fix REALITY flow (remove flow param for sing-box compat, or convert to TLS)
+				finalLink = fixSUIRealityToTLS(finalLink)
 				finalLink = fixSUIRealityFlow(finalLink)
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)

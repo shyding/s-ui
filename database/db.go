@@ -120,7 +120,61 @@ func InitDB(dbPath string) error {
 		return err
 	}
 
+	// Migrate broken REALITY inbounds to standard TLS
+	// REALITY handshake fails persistently between sing-box server and Xray clients
+	migrateRealityToTLS()
+
 	return nil
+}
+
+// migrateRealityToTLS converts the 4 REALITY inbounds (54161-54164) to standard
+// VLESS+TLS. The REALITY protocol has a persistent incompatibility between the
+// sing-box server and Xray clients ("processed invalid connection"), making
+// the nodes unusable. Converting to TLS restores availability.
+func migrateRealityToTLS() {
+	realityPorts := map[int]bool{54161: true, 54162: true, 54163: true, 54164: true}
+
+	var inbounds []model.Inbound
+	if err := db.Find(&inbounds).Error; err != nil {
+		return
+	}
+
+	for _, ib := range inbounds {
+		var opts map[string]interface{}
+		if err := json.Unmarshal(ib.Options, &opts); err != nil {
+			continue
+		}
+		lp, ok := opts["listen_port"].(float64)
+		if !ok || !realityPorts[int(lp)] {
+			continue
+		}
+
+		tlsCfg, ok := opts["tls"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasReality := tlsCfg["reality"]; !hasReality {
+			continue // Already converted
+		}
+
+		// Convert REALITY to standard TLS
+		delete(tlsCfg, "reality")
+		tlsCfg["server_name"] = "dash.icta.top"
+		tlsCfg["alpn"] = []string{"h2", "http/1.1"}
+		tlsCfg["certificate_path"] = "/usr/local/s-ui/certs/fullchain.pem"
+		tlsCfg["key_path"] = "/usr/local/s-ui/certs/privkey.pem"
+		opts["tls"] = tlsCfg
+
+		newOpts, err := json.Marshal(opts)
+		if err != nil {
+			continue
+		}
+
+		ib.Options = newOpts
+		if err := db.Save(&ib).Error; err != nil {
+			continue
+		}
+	}
 }
 
 func GetDB() *gorm.DB {
