@@ -768,19 +768,20 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				candidates := s.ExpandEgressCandidates(finalLink, activeRegions)
-				if len(candidates) == 0 {
-					candidates = []CandidateNode{{
-						Uri:      finalLink,
-						Protocol: strings.SplitN(finalLink, "://", 2)[0],
-						Provider: "SUI",
-						Country:  "新加坡",
-						Region:   "中央区",
-						City:     "新加坡城-Unknown",
-						Priority: 10,
-						NodeKey:  extractNodeKey(finalLink),
-					}}
-				}
+				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
+				// regional egress variants. Expansion creates 100+ duplicates per
+				// inbound, exhausting the 1300 subscription limit.
+				proto := strings.SplitN(finalLink, "://", 2)[0]
+				candidates := []CandidateNode{{
+					Uri:      finalLink,
+					Protocol: proto,
+					Provider: "SUI",
+					Country:  "新加坡",
+					Region:   "中央区",
+					City:     "新加坡城-" + getProtocolDetails(finalLink, proto),
+					Priority: getProtocolPriority(proto),
+					NodeKey:  extractNodeKey(finalLink),
+				}}
 				allCandidates = append(allCandidates, candidates...)
 			}
 		}
