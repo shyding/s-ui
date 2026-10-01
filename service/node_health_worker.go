@@ -634,15 +634,25 @@ func trojanHandshake(conn net.Conn, uri string) bool {
 		return false
 	}
 	// 读取 SOCKS5 响应: VER(1) + REP(1) + RSV(1) + ATYP(1) + ADDR + PORT
+	// 有效密码 -> 服务器保持连接 (可能立即响应或等待数据)
+	// 无效密码 -> 服务器立即关闭连接
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
 	resp := make([]byte, 4)
-	if _, err := io.ReadFull(conn, resp); err != nil {
+	n, err := io.ReadFull(conn, resp)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// 超时但连接保持 -> 密码有效
+			return true
+		}
+		// 连接关闭 -> 密码无效
 		return false
 	}
-	// REP=0x00 表示成功
-	if resp[1] != 0x00 {
-		return false
+	// 收到响应，检查 REP 字段 (0x00=成功)
+	if n == 4 && resp[1] == 0x00 {
+		return true
 	}
-	return true
+	// 有响应即视为通过 (连接保持)
+	return n > 0
 }
 
 // checkExternalNode 对单个外部节点执行完整检测
