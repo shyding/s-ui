@@ -780,6 +780,9 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 					continue
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
+				// Fix stale transport params from outdated stored links (causes client -1)
+				// e.g., type=tcp for a ws inbound
+				finalLink = fixSUITransport(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
 				// regional egress variants. Expansion creates 100+ duplicates per
 				// inbound, exhausting the 1300 subscription limit.
