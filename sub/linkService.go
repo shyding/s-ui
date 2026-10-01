@@ -40,7 +40,7 @@ type LinkService struct {
 // per-group caps. Priority when trimming: SUI > Seed > others (by health score).
 const (
 	MaxNodesPerCityGroup     = 18
-	MaxNodesPerCityGroupSUI  = 30
+	MaxNodesPerCityGroupSUI  = 50
 	MaxNodesPerCityGroupSeed = 50
 	MaxTotalNodes            = 1300
 )
@@ -221,7 +221,6 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 		suiCity := "新加坡城-" + getProtocolDetails(uri, proto)
 		origMap["ps"] = service.FormatStandardRemark("SUI", "新加坡", "中央区", suiCity, 1)
 		origMap["add"] = "dash.icta.top"
-		logger.Infof("DEBUG vmess port: %v (%T)", origMap["port"], origMap["port"])
 		if raw, err := json.MarshalIndent(origMap, "", "  "); err == nil {
 			candidates = append(candidates, CandidateNode{
 				Uri:      "vmess://" + util.ByteToB64Str(raw),
@@ -517,10 +516,6 @@ func FilterHealthyAndGroupTop3Links(
 		}
 
 		healthyCandidates = append(healthyCandidates, c)
-		// DEBUG: log SUI vmess that pass health check
-		if c.Provider == "SUI" && strings.HasPrefix(c.Uri, "vmess://") {
-			logger.Infof("DEBUG SUI vmess PASSED health: NodeKey=%s, GroupKey=%s", c.NodeKey, c.GroupKey())
-		}
 	}
 
 	if len(healthyCandidates) == 0 {
@@ -774,10 +769,6 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
 				candidates := s.ExpandEgressCandidates(finalLink, activeRegions)
-				// DEBUG: log vmess candidate count
-				if strings.HasPrefix(finalLink, "vmess://") {
-					logger.Infof("DEBUG vmess %s: ExpandEgressCandidates returned %d candidates", link.Remark, len(candidates))
-				}
 				if len(candidates) == 0 {
 					candidates = []CandidateNode{{
 						Uri:      finalLink,
