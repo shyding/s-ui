@@ -42,7 +42,23 @@ type EgressMapping struct {
 
 var (
 	egressGatewayMu sync.Mutex
+	cachedMappings  []EgressMapping
+	cachedOnce      sync.Once
 )
+
+// getCachedMappings returns cached mappings, loading once.
+func getCachedMappings() []EgressMapping {
+	cachedOnce.Do(func() {
+		m, err := LoadEgressMappings()
+		if err != nil {
+			logger.Warning("Failed to load egress mappings:", err)
+			return
+		}
+		cachedMappings = m
+		logger.Info(fmt.Sprintf("Egress gateway: cached %d mappings", len(m)))
+	})
+	return cachedMappings
+}
 
 // GenerateEgressMappings creates VPS port mappings from healthy egress nodes.
 // Reads from node health records, assigns ports 56000+, resolves hostnames to IPs.
@@ -236,11 +252,7 @@ func ApplyEgressIPTables() error {
 // GetEgressVpsPort returns the VPS port for a given seed host:port, or 0 if not mapped.
 // Checks both original hostname and resolved IP.
 func GetEgressVpsPort(seedHost, seedPort string) int {
-	mappings, err := LoadEgressMappings()
-	if err != nil {
-		return 0
-	}
-	// Build lookup maps
+	mappings := getCachedMappings()
 	for _, m := range mappings {
 		if (m.SeedHost == seedHost || m.SeedIP == seedHost) && m.SeedPort == seedPort {
 			return m.VpsPort
