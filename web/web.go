@@ -122,6 +122,9 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		if err != nil {
 			host = remoteAddr
 		}
+		// DEBUG: log the actual remote addr (remove after verification)
+		c.Header("X-Debug-RemoteAddr", remoteAddr)
+		c.Header("X-Debug-Host", host)
 		if host != "127.0.0.1" && host != "::1" {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": "forbidden: localhost only"})
 			return
