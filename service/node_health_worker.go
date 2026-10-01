@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
+	"github.com/google/uuid"
 )
 
 // NodeHealthWorker 负责后台定期健康检查：
@@ -228,6 +230,69 @@ func (w *NodeHealthWorker) runOnce() {
 		len(allURIs), passCount, failCount, elapsed.Round(time.Second))
 }
 
+// vlessHandshake performs a minimal VLESS protocol handshake to verify the UUID.
+// It sends a VLESS request header for a test target and expects a valid VLESS response.
+// Returns true if the server responds with a valid VLESS header (UUID accepted).
+func vlessHandshake(conn net.Conn, uuidStr string) bool {
+	uid, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return false
+	}
+
+	// Build VLESS request: Version(1) + UUID(16) + Addons(1+0) + Command(1) + Port(2) + Address
+	// Use 1.1.1.1:80 as test target (we only need the handshake, not actual proxying)
+	buf := make([]byte, 0, 64)
+	buf = append(buf, 0x00) // Version
+	uuidBytes, _ := uid.MarshalBinary()
+	buf = append(buf, uuidBytes...)
+	buf = append(buf, 0x00) // Addon length = 0
+	buf = append(buf, 0x01) // Command = TCP
+	portBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(portBytes, 80)
+	buf = append(buf, portBytes...)
+	buf = append(buf, 0x01) // Address type = IPv4
+	buf = append(buf, 1, 1, 1, 1) // 1.1.1.1
+
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Write(buf); err != nil {
+		return false
+	}
+
+	// Read VLESS response: Version(1) + AddonLen(1) + AddonData
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return false
+	}
+	// Valid VLESS response starts with version 0x00
+	if resp[0] != 0x00 {
+		return false
+	}
+	// Read addon data if present
+	if resp[1] > 0 {
+		addon := make([]byte, resp[1])
+		if _, err := io.ReadFull(conn, addon); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// extractVlessUUID extracts the UUID from a vless:// URI
+func extractVlessUUID(uri string) string {
+	if !strings.HasPrefix(uri, "vless://") {
+		return ""
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return ""
+	}
+	// UUID is in the userinfo (before @)
+	if u.User != nil {
+		return u.User.Username()
+	}
+	return ""
+}
+
 // checkExternalNode 对单个外部节点执行完整检测
 // 返回 nil 表示解析失败，非 nil 的 status.Status 表示可用性
 func checkExternalNode(uri string) *model.NodeHealthStatus {
@@ -302,6 +367,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	status.Latency = tcpMs
 
 	// ── TLS 检测 ─────────────────────────────────────────
+	var conn net.Conn = rawConn
 	if useTLS {
 		tlsCfg := &tls.Config{ServerName: sni, InsecureSkipVerify: true}
 		if tlsCfg.ServerName == "" {
@@ -314,15 +380,30 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 			return status
 		}
 		status.TLSCheck = true
+		conn = tlsConn
 	} else {
 		status.TLSCheck = true
 	}
 
-	// ── HTTP CONNECT 可达性 ───────────────────────────────
-	// 快速 HTTP check: 对节点地址直接 GET，不走代理，验证服务端有应答
-	// 完整代理测试需要 sing-box 客户端，此处用 TCP+TLS 成功作为 ProxyCheck 通过标准
-	// 真实用户场景下，TCP+TLS 成功的节点 v2rayN 不会显示 -1
-	status.ProxyCheck = true
+	// ── 协议级握手验证 ───────────────────────────────────
+	// VLESS: 执行真实 VLESS 握手验证 UUID 有效性
+	// 其他协议: 暂时用 TCP+TLS 成功作为通过标准 (后续扩展)
+	if strings.ToLower(proto) == "vless" {
+		uuidStr := extractVlessUUID(uri)
+		if uuidStr == "" {
+			status.LastError = "vless_no_uuid"
+			return status
+		}
+		if !vlessHandshake(conn, uuidStr) {
+			status.LastError = "vless_handshake_fail"
+			return status
+		}
+		status.ProxyCheck = true
+	} else {
+		// 非 VLESS 协议: 保持原有 TCP+TLS 通过标准
+		// TODO: 为 Trojan/VMess/SS 添加协议级握手
+		status.ProxyCheck = true
+	}
 	status.Speed = float64(10000) / float64(max64(status.Latency, 1))
 	if status.Speed > 100 {
 		status.Speed = 100
