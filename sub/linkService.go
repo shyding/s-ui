@@ -482,55 +482,58 @@ func fixVMessTransport(uri string) string {
 		return uri
 	}
 	transport := getInboundTransport(portStr)
-	if transport == nil {
-		return uri
-	}
-	transportType, _ := transport["type"].(string)
-	if transportType == "" {
-		transportType = "tcp"
+	transportType := "tcp"
+	if transport != nil {
+		if t, ok := transport["type"].(string); ok && t != "" {
+			transportType = t
+		}
 	}
 	changed := false
-	// Sync net type
-	if currentNet, _ := vmessObj["net"].(string); currentNet != transportType {
-		vmessObj["net"] = transportType
-		changed = true
-	}
-	// Sync transport-specific params
-	switch transportType {
-	case "ws":
-		if path, ok := transport["path"].(string); ok && path != "" {
-			if vmessObj["path"] != path {
-				vmessObj["path"] = path
-				changed = true
-			}
+	// Sync net type (only if transport available)
+	if transport != nil {
+		if currentNet, _ := vmessObj["net"].(string); currentNet != transportType {
+			vmessObj["net"] = transportType
+			changed = true
 		}
-		if headers, ok := transport["headers"].(map[string]interface{}); ok {
-			if host, ok := headers["Host"].(string); ok && host != "" {
+	}
+	// Sync transport-specific params (only if transport available)
+	if transport != nil {
+		switch transportType {
+		case "ws":
+			if path, ok := transport["path"].(string); ok && path != "" {
+				if vmessObj["path"] != path {
+					vmessObj["path"] = path
+					changed = true
+				}
+			}
+			if headers, ok := transport["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok && host != "" {
+					if vmessObj["host"] != host {
+						vmessObj["host"] = host
+						changed = true
+					}
+				}
+			}
+		case "grpc":
+			if sn, ok := transport["service_name"].(string); ok && sn != "" {
+				// VMess gRPC uses "path" for serviceName in some clients, or "serviceName"
+				if vmessObj["path"] != sn {
+					vmessObj["path"] = sn
+					changed = true
+				}
+			}
+		case "httpupgrade":
+			if path, ok := transport["path"].(string); ok && path != "" {
+				if vmessObj["path"] != path {
+					vmessObj["path"] = path
+					changed = true
+				}
+			}
+			if host, ok := transport["host"].(string); ok && host != "" {
 				if vmessObj["host"] != host {
 					vmessObj["host"] = host
 					changed = true
 				}
-			}
-		}
-	case "grpc":
-		if sn, ok := transport["service_name"].(string); ok && sn != "" {
-			// VMess gRPC uses "path" for serviceName in some clients, or "serviceName"
-			if vmessObj["path"] != sn {
-				vmessObj["path"] = sn
-				changed = true
-			}
-		}
-	case "httpupgrade":
-		if path, ok := transport["path"].(string); ok && path != "" {
-			if vmessObj["path"] != path {
-				vmessObj["path"] = path
-				changed = true
-			}
-		}
-		if host, ok := transport["host"].(string); ok && host != "" {
-			if vmessObj["host"] != host {
-				vmessObj["host"] = host
-				changed = true
 			}
 		}
 	}
