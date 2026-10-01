@@ -286,35 +286,56 @@ func fixSUITransport(uri string) string {
 	// Fix the transport type in URI
 	q := u.Query()
 	currentType := q.Get("type")
-	if currentType == transportType {
-		return uri // already correct
+	typeChanged := currentType != transportType
+	if typeChanged {
+		q.Set("type", transportType)
 	}
-	q.Set("type", transportType)
-	// Add transport-specific params
+	// Always sync transport-specific params (path/host/serviceName),
+	// even if type matches, because stored URIs may have stale values.
+	// This fixes client -1 caused by mismatched transport params.
+	paramsSynced := false
 	switch transportType {
 	case "ws":
 		if path, ok := transport["path"].(string); ok && path != "" {
-			q.Set("path", path)
+			if q.Get("path") != path {
+				q.Set("path", path)
+				paramsSynced = true
+			}
 		}
 		if headers, ok := transport["headers"].(map[string]interface{}); ok {
 			if host, ok := headers["Host"].(string); ok && host != "" {
-				q.Set("host", host)
+				if q.Get("host") != host {
+					q.Set("host", host)
+					paramsSynced = true
+				}
 			}
 		}
 	case "grpc":
 		if sn, ok := transport["service_name"].(string); ok && sn != "" {
-			q.Set("serviceName", sn)
+			if q.Get("serviceName") != sn {
+				q.Set("serviceName", sn)
+				paramsSynced = true
+			}
 		}
 	case "httpupgrade":
 		if path, ok := transport["path"].(string); ok && path != "" {
-			q.Set("path", path)
+			if q.Get("path") != path {
+				q.Set("path", path)
+				paramsSynced = true
+			}
 		}
 		if host, ok := transport["host"].(string); ok && host != "" {
-			q.Set("host", host)
+			if q.Get("host") != host {
+				q.Set("host", host)
+				paramsSynced = true
+			}
 		}
 	}
+	if !typeChanged && !paramsSynced {
+		return uri // already correct
+	}
 	u.RawQuery = q.Encode()
-	logger.Infof("Fixed SUI transport for port %s: %s -> %s", port, currentType, transportType)
+	logger.Infof("Fixed SUI transport for port %s: type %s -> %s, params synced: %v", port, currentType, transportType, paramsSynced)
 	return u.String()
 }
 
