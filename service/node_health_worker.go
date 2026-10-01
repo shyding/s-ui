@@ -544,7 +544,13 @@ func parseURIComponents(uri string) (host, port string, useTLS bool, sni, proto 
 	case "hysteria2", "hysteria", "tuic":
 		// UDP-based protocols
 	case "vless", "trojan", "ss":
-		useTLS = strings.Contains(uri, "security=tls") || strings.Contains(uri, "tls") || proto == "trojan"
+		// Trojan: only use TLS if explicitly indicated (security=tls, tls param, or 443 port).
+		// Plain TCP trojan (e.g. trojan-tcp-plain) must NOT try TLS.
+		if strings.ToLower(proto) == "trojan" {
+			useTLS = strings.Contains(uri, "security=tls") || strings.Contains(strings.ToLower(uri), "tls=")
+		} else {
+			useTLS = strings.Contains(uri, "security=tls") || strings.Contains(uri, "tls")
+		}
 	}
 
 	u, err := url.Parse(uri)
