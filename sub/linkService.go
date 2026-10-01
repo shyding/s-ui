@@ -277,26 +277,35 @@ func fixSUITransport(uri string) string {
 		return uri
 	}
 	transport := getInboundTransport(port)
-	if transport == nil {
-		return uri
-	}
-	transportType, _ := transport["type"].(string)
-	if transportType == "" || transportType == "tcp" {
-		return uri // already correct or tcp (default)
+	transportType := "tcp" // nil transport means plain TCP
+	if transport != nil {
+		if t, ok := transport["type"].(string); ok && t != "" {
+			transportType = t
+		}
 	}
 	// Fix the transport type in URI
 	q := u.Query()
 	currentType := q.Get("type")
+	// Normalize: empty type means tcp
+	if currentType == "" {
+		currentType = "tcp"
+	}
 	typeChanged := currentType != transportType
 	if typeChanged {
-		q.Set("type", transportType)
+		if transportType == "tcp" {
+			q.Del("type") // tcp is default, remove param
+		} else {
+			q.Set("type", transportType)
+		}
 	}
 	// Always sync transport-specific params (path/host/serviceName),
 	// even if type matches, because stored URIs may have stale values.
 	// This fixes client -1 caused by mismatched transport params.
+	// (Skip if transport is nil = plain TCP, no params to sync)
 	paramsSynced := false
-	switch transportType {
-	case "ws":
+	if transport != nil {
+		switch transportType {
+		case "ws":
 		if path, ok := transport["path"].(string); ok && path != "" {
 			if q.Get("path") != path {
 				q.Set("path", path)
@@ -331,7 +340,8 @@ func fixSUITransport(uri string) string {
 				paramsSynced = true
 			}
 		}
-	}
+		}
+	} // end if transport != nil
 	if !typeChanged && !paramsSynced {
 		return uri // already correct
 	}
@@ -642,12 +652,10 @@ func fixVMessTransport(uri string) string {
 		}
 	}
 	changed := false
-	// Sync net type (only if transport available)
-	if transport != nil {
-		if currentNet, _ := vmessObj["net"].(string); currentNet != transportType {
-			vmessObj["net"] = transportType
-			changed = true
-		}
+	// Sync net type (nil transport means plain TCP, still need to sync)
+	if currentNet, _ := vmessObj["net"].(string); currentNet != transportType {
+		vmessObj["net"] = transportType
+		changed = true
 	}
 	// Sync transport-specific params (only if transport available)
 	if transport != nil {
