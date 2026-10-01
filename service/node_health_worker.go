@@ -722,23 +722,7 @@ func verifyRealityConfig(uri, host, port string) bool {
 				return false
 			}
 			// handshake server 验证已在 URI 解析时完成
-			// 验证 VLESS UUID 匹配
-			uriUuid := extractVlessUUID(uri)
-			if uriUuid != "" {
-				users, _ := opts["users"].([]interface{})
-				uuidMatch := false
-				for _, u := range users {
-					if um, ok := u.(map[string]interface{}); ok {
-						if id, ok := um["uuid"].(string); ok && strings.EqualFold(id, uriUuid) {
-							uuidMatch = true
-							break
-						}
-					}
-				}
-				if !uuidMatch {
-					return false
-				}
-			}
+			// VLESS UUID 来自 clients.links (订阅源)，无需再验证
 			// 配置匹配
 			break
 		}
