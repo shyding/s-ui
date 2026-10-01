@@ -407,6 +407,89 @@ func getInboundTLSEnabled(port string) *bool {
 }
 
 // fixVMessPort ensures VMess JSON port is a number, not a string.
+// fixSSMethod syncs the SS method from the inbound config.
+// Some stored SS links advertise "2022-blake3-aes-128-gcm" but the
+// actual inbound uses aes-256-gcm/aes-128-gcm. The client tries the
+// wrong cipher and fails. This replaces the method in the URI.
+func fixSSMethod(uri string) string {
+	if !strings.HasPrefix(uri, "ss://") {
+		return uri
+	}
+	// Parse port from URI to look up the inbound
+	// ss://base64@host:port#remark
+	hashIdx := strings.LastIndex(uri, "#")
+	uriNoFrag := uri
+	if hashIdx > 0 {
+		uriNoFrag = uri[:hashIdx]
+	}
+	atIdx := strings.LastIndex(uriNoFrag, "@")
+	if atIdx < 0 {
+		return uri
+	}
+	hostPort := uriNoFrag[atIdx+1:]
+	colonIdx := strings.LastIndex(hostPort, ":")
+	if colonIdx < 0 {
+		return uri
+	}
+	port := hostPort[colonIdx+1:]
+	method := getInboundSSMethod(port)
+	if method == "" {
+		return uri
+	}
+	// Parse the ss:// URI: ss://base64(method:password)@host:port#remark
+	parts := strings.SplitN(uri, "://", 2)
+	if len(parts) != 2 {
+		return uri
+	}
+	rest := parts[1]
+	atIdx2 := strings.LastIndex(rest, "@")
+	if atIdx2 < 0 {
+		return uri
+	}
+	b64part := rest[:atIdx2]
+	hostPart := rest[atIdx2:]
+	// Decode the base64 method:password
+	decoded, err := base64.URLEncoding.DecodeString(b64part)
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(b64part)
+		if err != nil {
+			return uri
+		}
+	}
+	decodedStr := string(decoded)
+	colonIdx2 := strings.Index(decodedStr, ":")
+	if colonIdx2 < 0 {
+		return uri
+	}
+	currentMethod := decodedStr[:colonIdx2]
+	if currentMethod == method {
+		return uri
+	}
+	password := decodedStr[colonIdx2+1:]
+	newDecoded := method + ":" + password
+	newB64 := base64.URLEncoding.EncodeToString([]byte(newDecoded))
+	newB64 = strings.TrimRight(newB64, "=")
+	return "ss://" + newB64 + hostPart
+}
+
+// getInboundSSMethod returns the SS cipher method for the given port.
+func getInboundSSMethod(port string) string {
+	db := database.GetDB()
+	if db == nil {
+		return ""
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return ""
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return ""
+	}
+	method, _ := opts["method"].(string)
+	return method
+}
+
 // Some stored links have "port":"54146" (string) which causes clients
 // to fail parsing. This converts it to "port":54146 (number).
 func fixVMessPort(uri string) string {
@@ -1193,6 +1276,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixVMessPort(finalLink)
 				// Fix VMess transport params (net/path/host) from inbound config
 				finalLink = fixVMessTransport(finalLink)
+				// Fix SS method (e.g., 2022-blake3-aes-128-gcm -> aes-256-gcm)
+				finalLink = fixSSMethod(finalLink)
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
