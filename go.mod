@@ -124,7 +124,7 @@ require (
 	github.com/sagernet/sing-shadowsocks v0.2.8 // indirect
 	github.com/sagernet/sing-shadowsocks2 v0.2.1 // indirect
 	github.com/sagernet/sing-shadowtls v0.2.1-0.20250503051639-fcd445d33c11 // indirect
-	github.com/sagernet/sing-tun v0.7.3 // indirect
+	github.com/sagernet/sing-tun v0.7.13 // indirect
 	github.com/sagernet/sing-vmess v0.2.7 // indirect
 	github.com/sagernet/smux v1.5.34-mod.2 // indirect
 	github.com/sagernet/tailscale v1.80.3-sing-box-1.12-mod.2 // indirect
