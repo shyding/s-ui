@@ -962,28 +962,11 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 			continue
 		}
 
-		// 1. IP check: No raw IP addresses allowed, EXCEPT for verified Seed/Cloudflare/HProxy/Proton
-		// external nodes (they legitimately use IPs and have passed health checks).
-		// Extract remark to determine if this is a verified external node.
-		// Be lenient: allow Seed-/Cloudflare-/HProxy-/Proton- prefix even if geography fields are incomplete,
-		// because the health check has already verified the node works.
-		isVerifiedExternal := false
-		if idx := strings.LastIndex(link, "#"); idx != -1 {
-			remark := link[idx+1:]
-			// URL decode the remark
-			if decoded, err := url.QueryUnescape(remark); err == nil {
-				remark = decoded
-			}
-			// Lenient check: just the provider prefix, don't require full geography format
-			if strings.HasPrefix(remark, "Seed-") || strings.HasPrefix(remark, "Cloudflare-") ||
-				strings.HasPrefix(remark, "HProxy-") || strings.HasPrefix(remark, "Proton-") {
-				isVerifiedExternal = true
-			}
-		}
-		if !isVerifiedExternal {
-			if match := ipRegex.FindString(link); match != "" {
-				violations = append(violations, fmt.Sprintf("Exposed raw IP '%s' in link: %s", match, link))
-			}
+		// 1. IP check: No raw IP addresses allowed in client subscription.
+		// Egress nodes (Seed/Cloudflare/HProxy/Proton) must go through the SUI
+		// ingress and must never be exposed directly to clients.
+		if match := ipRegex.FindString(link); match != "" {
+			violations = append(violations, fmt.Sprintf("Exposed raw IP '%s' in link: %s", match, link))
 		}
 
 		// 2. Forbidden upstream domains
@@ -1011,7 +994,9 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 				continue
 			}
 			add, _ := vObj["add"].(string)
-			if !isVerifiedExternal && add != allowedHost {
+			// Client subscription only allows SUI ingress (dash.icta.top).
+			// Egress nodes must never be exposed directly to clients.
+			if add != allowedHost {
 				violations = append(violations, fmt.Sprintf("VMess add '%s' != allowedHost '%s'", add, allowedHost))
 			}
 			ps, _ := vObj["ps"].(string)
@@ -1023,19 +1008,12 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 					break
 				}
 			}
-			// For vmess, check if ps indicates verified external (Seed etc.)
-			isVmessExternal := strings.HasPrefix(ps, "Seed-") || strings.HasPrefix(ps, "Cloudflare-") ||
-				strings.HasPrefix(ps, "HProxy-") || strings.HasPrefix(ps, "Proton-")
-			if !isSuiTag && !isVmessExternal {
+			// Non-SUI remarks must match the strict {来源}-{国家}-{区域}-{城市}-{编号} format.
+			// Seed/Cloudflare/HProxy/Proton are egress-only and must not appear here.
+			if !isSuiTag {
 				if !remarkRegex.MatchString(ps) {
 					violations = append(violations, fmt.Sprintf("VMess remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", ps))
 				}
-				for _, banned := range bannedTokens {
-					if strings.Contains(ps, banned) {
-						violations = append(violations, fmt.Sprintf("VMess remark '%s' contains banned token '%s'", ps, banned))
-					}
-				}
-			} else if !isSuiTag && isVmessExternal {
 				for _, banned := range bannedTokens {
 					if strings.Contains(ps, banned) {
 						violations = append(violations, fmt.Sprintf("VMess remark '%s' contains banned token '%s'", ps, banned))
@@ -1048,7 +1026,9 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 				violations = append(violations, fmt.Sprintf("Failed to parse link URL: %v", err))
 				continue
 			}
-			if !isVerifiedExternal && u.Hostname() != allowedHost {
+			// Client subscription only allows SUI ingress (dash.icta.top).
+			// Egress nodes must never be exposed directly to clients.
+			if u.Hostname() != allowedHost {
 				violations = append(violations, fmt.Sprintf("Host '%s' != allowedHost '%s'", u.Hostname(), allowedHost))
 			}
 			remark := u.Fragment
@@ -1060,17 +1040,12 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 					break
 				}
 			}
-			if !isSuiTag && !isVerifiedExternal {
+			// Non-SUI remarks must match the strict {来源}-{国家}-{区域}-{城市}-{编号} format.
+			// Seed/Cloudflare/HProxy/Proton are egress-only and must not appear here.
+			if !isSuiTag {
 				if !remarkRegex.MatchString(remark) {
 					violations = append(violations, fmt.Sprintf("Remark '%s' does not match {来源}-{国家}-{区域}-{城市}-{编号}", remark))
 				}
-				for _, banned := range bannedTokens {
-					if strings.Contains(remark, banned) {
-						violations = append(violations, fmt.Sprintf("Remark '%s' contains banned token '%s'", remark, banned))
-					}
-				}
-			} else if !isSuiTag && isVerifiedExternal {
-				// For verified external nodes, still check banned tokens but skip strict format
 				for _, banned := range bannedTokens {
 					if strings.Contains(remark, banned) {
 						violations = append(violations, fmt.Sprintf("Remark '%s' contains banned token '%s'", remark, banned))
