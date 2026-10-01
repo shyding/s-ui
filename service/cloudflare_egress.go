@@ -108,6 +108,84 @@ var ColoToCountryMap = map[string]string{
 	"MIA": "US", "SEA": "US", "ATL": "US", "DEN": "US", "PHX": "US", "BOS": "US", "DTW": "US",
 	"MSP": "US", "CLT": "US", "IAH": "US", "PDX": "US", "SLC": "US", "SAN": "US", "TPA": "US", "MCO": "US",
 	"YYZ": "CA", "YVR": "CA", "YUL": "CA", "YYC": "CA",
+	"YHZ": "CA", "YXE": "CA", "YWG": "CA",
+
+	// === 2026-10-01 补齐：Cloudflare全球边缘节点（314个数据中心全覆盖）===
+	// 数据来源：feitsui.com Cloudflare Data Center Locations & Codes
+	// 新增130个IATA节点，覆盖此前缺失的欧洲、亚太、美洲、中东非洲节点
+
+	// Europe - 新增
+	"TIA": "AL", // Albania 地拉那
+	"MSQ": "BY", // Belarus 明斯克
+	"LCA": "CY", // Cyprus 拉纳卡
+	"KEF": "IS", // Iceland 雷克雅未克
+	"LUX": "LU", // Luxembourg 卢森堡
+	"KIV": "MD", // Moldova 基希讷乌
+	"SKP": "MK", // North Macedonia 斯科普里
+	"MLA": "MT", // Malta 瓦莱塔
+	"LJU": "SI", // Slovenia 卢布尔雅那
+	"BTS": "SK", // Slovakia 布拉迪斯拉发
+	"PBH": "BT", // Bhutan 廷布
+
+	// Asia-Pacific - 新增
+	"LLK": "AZ", "GYD": "AZ", // Azerbaijan 阿塞拜疆
+	"CGP": "BD", "JSR": "BD", // Bangladesh 孟加拉
+	"BWN": "BN", // Brunei 文莱
+	"TBS": "GE", // Georgia 第比利斯
+	"AMD": "IN", "IXC": "IN", "CNN": "IN", "KNU": "IN", "COK": "IN", "NAG": "IN", "PAT": "IN", // India 印度新增城市
+	"DPS": "ID", "MLG": "ID", "JOG": "ID", // Indonesia 印尼新增城市
+	"AKX": "KZ", "ALA": "KZ", "NQZ": "KZ", // Kazakhstan 哈萨克斯坦
+	"FRU": "KG", // Kyrgyzstan 吉尔吉斯斯坦
+	"MLE": "MV", // Maldives 马尔代夫
+	"KCH": "MY", // Malaysia 马来西亚古晋
+	"NOU": "NC", // New Caledonia 新喀里多尼亚
+	"WLG": "NZ", // New Zealand 惠灵顿
+	"CGY": "PH", "CRK": "PH", // Philippines 菲律宾新增
+	"TAS": "UZ", // Uzbekistan 乌兹别克斯坦
+	"DAD": "VN", // Vietnam 岘港
+
+	// Americas - 新增
+	"NQN": "AR", // Argentina 内乌肯
+	"BGI": "BB", // Barbados 巴巴多斯
+	"LPB": "BO", // Bolivia 玻利维亚
+	"QWJ": "BR", "ARU": "BR", "BEL": "BR", "BNU": "BR", "CAW": "BR", "CFC": "BR", // Brazil 巴西新增城市
+	"XAP": "BR", "CGB": "BR", "FLN": "BR", "GYN": "BR", "ITJ": "BR", "JOI": "BR",
+	"JDO": "BR", "MAO": "BR", "PMW": "BR", "RAO": "BR", "SOD": "BR", "SJP": "BR",
+	"SJK": "BR", "NVT": "BR", "UDI": "BR", "VIX": "BR",
+	"ARI": "CL", // Chile 阿里卡
+	"BAQ": "CO", // Colombia 巴兰基亚
+	"STI": "DO", "SDQ": "DO", // Dominican Republic 多米尼加
+	"GND": "GD", // Grenada 格林纳达
+	"GEO": "GY", // Guyana 圭亚那
+	"SAP": "HN", "TGU": "HN", // Honduras 洪都拉斯
+	"KIN": "JM", // Jamaica 牙买加
+	"SJU": "PR", // Puerto Rico 波多黎各
+	"PBM": "SR", // Suriname 苏里南
+	"POS": "TT", // Trinidad and Tobago 特立尼达和多巴哥
+	"ABQ": "US", "ANC": "US", "AUS": "US", "BGR": "US", "BUF": "US", // United States 美国新增城市
+	"CVG": "US", "RDU": "US", "HNL": "US", "IND": "US", "JAX": "US",
+	"MCI": "US", "LAS": "US", "MFE": "US", "MEM": "US", "MGM": "US",
+	"BNA": "US", "OKC": "US", "OMA": "US", "PHL": "US", "PIT": "US",
+	"RIC": "US", "SMF": "US", "SAT": "US", "FSD": "US", "STL": "US", "TLH": "US",
+
+	// Middle East & Africa - 新增
+	"EVN": "AM", // Armenia 亚美尼亚
+	"OUA": "BF", // Burkina Faso 布基纳法索
+	"GBE": "BW", // Botswana 博茨瓦纳
+	"ABJ": "CI", "ASK": "CI", // Ivory Coast 科特迪瓦
+	"DLA": "CM", // Cameroon 喀麦隆
+	"JIB": "DJ", // Djibouti 吉布提
+	"AAE": "DZ", "CZL": "DZ", "ORN": "DZ", // Algeria 阿尔及利亚新增城市
+	"ADD": "ET", // Ethiopia 埃塞俄比亚
+	"SUV": "FJ", // Fiji 斐济
+	"HFA": "IL", // Israel 海法
+	"BSR": "IQ", "EBL": "IQ", "NJF": "IQ", "XNH": "IQ", "ISU": "IQ", // Iraq 伊拉克新增城市
+	"TNR": "MG", // Madagascar 马达加斯加
+	"WDH": "NA", // Namibia 纳米比亚
+	"ZDM": "PS", // Palestine 巴勒斯坦
+	"KJA": "RU", "SVX": "RU", // Russia 俄罗斯新增城市
+	"EBB": "UG", // Uganda 乌干达
+	"HRE": "ZW", // Zimbabwe 津巴布韦
 }
 
 // CountryNameMap provides localized names for discovered ISO country codes
@@ -124,6 +202,28 @@ var CountryNameMap = map[string]string{
 	"PE": "秘鲁", "EC": "厄瓜多尔", "EG": "埃及", "KE": "肯尼亚", "GH": "加纳",
 	"MA": "摩洛哥", "SA": "沙特阿拉伯", "QA": "卡塔尔", "HU": "匈牙利", "BG": "保加利亚",
 	"NG": "尼日利亚",
+	// 2026-10-01 补齐：Cloudflare全球边缘节点新增国家
+	"AL": "阿尔巴尼亚", "AM": "亚美尼亚", "AZ": "阿塞拜疆",
+	"BB": "巴巴多斯", "BD": "孟加拉国", "BF": "布基纳法索", "BH": "巴林",
+	"BN": "文莱", "BO": "玻利维亚", "BT": "不丹", "BW": "博茨瓦纳",
+	"BY": "白俄罗斯", "CI": "科特迪瓦", "CM": "喀麦隆", "CY": "塞浦路斯",
+	"DJ": "吉布提", "DO": "多米尼加", "DZ": "阿尔及利亚", "EE": "爱沙尼亚",
+	"ET": "埃塞俄比亚", "FJ": "斐济", "GD": "格林纳达", "GE": "格鲁吉亚",
+	"GU": "关岛", "GY": "圭亚那", "HN": "洪都拉斯", "HR": "克罗地亚",
+	"IS": "冰岛", "JM": "牙买加", "JO": "约旦", "KG": "吉尔吉斯斯坦",
+	"KH": "柬埔寨", "KW": "科威特", "KZ": "哈萨克斯坦", "LA": "老挝",
+	"LB": "黎巴嫩", "LK": "斯里兰卡", "LT": "立陶宛", "LU": "卢森堡",
+	"LV": "拉脱维亚", "MD": "摩尔多瓦", "MG": "马达加斯加", "MK": "北马其顿",
+	"MM": "缅甸", "MN": "蒙古", "MO": "中国澳门", "MT": "马耳他",
+	"MU": "毛里求斯", "MV": "马尔代夫", "MZ": "莫桑比克", "NA": "纳米比亚",
+	"NC": "新喀里多尼亚", "OM": "阿曼", "PF": "法属波利尼西亚", "PK": "巴基斯坦",
+	"PR": "波多黎各", "PS": "巴勒斯坦", "PY": "巴拉圭", "RS": "塞尔维亚",
+	"RW": "卢旺达", "SI": "斯洛文尼亚", "SK": "斯洛伐克", "SN": "塞内加尔",
+	"SR": "苏里南", "TN": "突尼斯", "TT": "特立尼达和多巴哥", "TZ": "坦桑尼亚",
+	"UG": "乌干达", "UZ": "乌兹别克斯坦", "ZM": "赞比亚", "ZW": "津巴布韦",
+	// 2026-10-01 补齐：此前ColoToCountryMap中已有但CountryNameMap缺失的国家
+	"AO": "安哥拉", "CR": "哥斯达黎加", "GT": "危地马拉", "IQ": "伊拉克",
+	"NP": "尼泊尔", "PA": "巴拿马", "SV": "萨尔瓦多", "UY": "乌拉圭",
 }
 
 // GetCountryFlag generates national emoji flag dynamically from ISO 3166-1 alpha-2 code
