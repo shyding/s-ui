@@ -415,6 +415,65 @@ func getInboundTLSEnabled(port string) *bool {
 	return &enabled
 }
 
+// fixVLESSFlow removes the flow param from VLESS URIs if the inbound doesn't support it.
+// A stale flow=xtls-rprx-vision in the URI causes "flow mismatch" handshake failures.
+func fixVLESSFlow(uri string) string {
+	if !strings.HasPrefix(uri, "vless://") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	port := u.Port()
+	if port == "" {
+		return uri
+	}
+	q := u.Query()
+	flow := q.Get("flow")
+	if flow == "" {
+		return uri // No flow in URI, nothing to fix
+	}
+	// Check if inbound supports flow
+	if getInboundVLESSFlow(port) == "" {
+		// Inbound doesn't support flow, remove it from URI
+		q.Del("flow")
+		u.RawQuery = q.Encode()
+		logger.Info("fixVLESSFlow: port " + port + " removed stale flow=" + flow)
+		return u.String()
+	}
+	return uri
+}
+
+// getInboundVLESSFlow returns the flow configured for the VLESS inbound, or "" if none.
+func getInboundVLESSFlow(port string) string {
+	db := database.GetDB()
+	if db == nil {
+		return ""
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return ""
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return ""
+	}
+	// Check top-level flow
+	if flow, _ := opts["flow"].(string); flow != "" {
+		return flow
+	}
+	// Check users[0].flow
+	if users, ok := opts["users"].([]interface{}); ok && len(users) > 0 {
+		if user, ok := users[0].(map[string]interface{}); ok {
+			if flow, _ := user["flow"].(string); flow != "" {
+				return flow
+			}
+		}
+	}
+	return ""
+}
+
 // fixVMessPort ensures VMess JSON port is a number, not a string.
 
 // fixSSMethod syncs the SS method and password from the inbound config.
@@ -675,6 +734,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 	uri = fixSUITransport(uri)
 	// Fix security param (security=none for plain inbounds)
 	uri = fixSUISecurity(uri)
+	// Fix VLESS flow param (remove if inbound doesn't support it)
+	uri = fixVLESSFlow(uri)
 	// fixSUIReality DISABLED: has duplication bug, DB links are correct.
 	// uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
@@ -1283,6 +1344,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSUITransport(finalLink)
 				// Fix security param (security=none for plain, security=tls/reality for TLS)
 				finalLink = fixSUISecurity(finalLink)
+				// Fix VLESS flow param (remove stale flow if inbound doesn't support it)
+				finalLink = fixVLESSFlow(finalLink)
 				// Fix VMess string port (e.g., "port":"54146" -> "port":54146)
 				finalLink = fixVMessPort(finalLink)
 				// Fix VMess transport params (net/path/host) from inbound config
