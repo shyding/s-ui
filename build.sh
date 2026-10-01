@@ -57,8 +57,12 @@ echo "TMPDIR=$TMPDIR"
 echo "GOCACHE=$GOCACHE"
 
 cd frontend
-npm i
-npm run build
+if ! command -v npm >/dev/null 2>&1; then
+  echo "ERROR: npm not found, cannot build frontend. Aborting (web/html left untouched)."
+  exit 1
+fi
+npm i || { echo "ERROR: npm i failed. Aborting (web/html left untouched)."; exit 1; }
+npm run build || { echo "ERROR: npm run build failed. Aborting (web/html left untouched)."; exit 1; }
 
 cd ..
 echo "Backend"
