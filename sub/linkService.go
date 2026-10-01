@@ -517,6 +517,10 @@ func FilterHealthyAndGroupTop3Links(
 		}
 
 		healthyCandidates = append(healthyCandidates, c)
+		// DEBUG: log SUI vmess that pass health check
+		if c.Provider == "SUI" && strings.HasPrefix(c.Uri, "vmess://") {
+			logger.Infof("DEBUG SUI vmess PASSED health: NodeKey=%s, GroupKey=%s", c.NodeKey, c.GroupKey())
+		}
 	}
 
 	if len(healthyCandidates) == 0 {
