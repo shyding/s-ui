@@ -21,7 +21,7 @@ import (
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
-	"github.com/google/uuid"
+	"strconv"
 )
 
 // NodeHealthWorker 负责后台定期健康检查：
@@ -234,16 +234,25 @@ func (w *NodeHealthWorker) runOnce() {
 // It sends a VLESS request header for a test target and expects a valid VLESS response.
 // Returns true if the server responds with a valid VLESS header (UUID accepted).
 func vlessHandshake(conn net.Conn, uuidStr string) bool {
-	uid, err := uuid.Parse(uuidStr)
-	if err != nil {
+	// Parse UUID manually (avoid external dependency)
+	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
+	clean := strings.ReplaceAll(uuidStr, "-", "")
+	if len(clean) != 32 {
 		return false
+	}
+	uuidBytes := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		b, err := strconv.ParseUint(clean[i*2:i*2+2], 16, 8)
+		if err != nil {
+			return false
+		}
+		uuidBytes[i] = byte(b)
 	}
 
 	// Build VLESS request: Version(1) + UUID(16) + Addons(1+0) + Command(1) + Port(2) + Address
 	// Use 1.1.1.1:80 as test target (we only need the handshake, not actual proxying)
 	buf := make([]byte, 0, 64)
 	buf = append(buf, 0x00) // Version
-	uuidBytes, _ := uid.MarshalBinary()
 	buf = append(buf, uuidBytes...)
 	buf = append(buf, 0x00) // Addon length = 0
 	buf = append(buf, 0x01) // Command = TCP
