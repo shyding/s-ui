@@ -230,6 +230,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 				Region:   "中央区",
 				City:     suiCity,
 				Priority: priority,
+				NodeKey:  "dash.icta.top:" + fmt.Sprintf("%v", origMap["port"]),
 			})
 		}
 
@@ -254,6 +255,7 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 					Region:   r,
 					City:     ct,
 					Priority: priority,
+					NodeKey:  "dash.icta.top:" + fmt.Sprintf("%v", copyMap["port"]),
 				})
 			}
 		}
