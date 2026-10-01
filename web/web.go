@@ -122,10 +122,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		if err != nil {
 			host = remoteAddr
 		}
-		// DEBUG: log the actual remote addr (remove after verification)
-		c.Header("X-Debug-RemoteAddr", remoteAddr)
-		c.Header("X-Debug-Host", host)
-		if host != "127.0.0.1" && host != "::1" {
+		// Allow loopback (127.0.0.1, ::1) and the VPS internal gateway
+		// (10.0.0.2) which is how localhost connections appear after
+		// iptables MASQUERADE. 10.0.0.2 is not routable from the internet.
+		if host != "127.0.0.1" && host != "::1" && host != "10.0.0.2" {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": "forbidden: localhost only"})
 			return
 		}
