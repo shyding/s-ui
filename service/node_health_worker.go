@@ -228,6 +228,13 @@ func (w *NodeHealthWorker) runOnce() {
 	elapsed := time.Since(start)
 	logger.Infof("NodeHealthWorker: 完成 总=%d PASS=%d FAIL=%d 耗时=%v",
 		len(allURIs), passCount, failCount, elapsed.Round(time.Second))
+
+	// 健康检查完成后刷新出口网关映射，确保订阅发布最新的可用节点
+	if err := RefreshEgressGateway(); err != nil {
+		logger.Errorf("NodeHealthWorker: 刷新出口网关映射失败: %v", err)
+	} else {
+		logger.Infof("NodeHealthWorker: 出口网关映射已刷新")
+	}
 }
 
 // vlessHandshake performs a minimal VLESS protocol handshake to verify the UUID.
