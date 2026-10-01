@@ -427,10 +427,19 @@ func fixSUIHysteria2(uri string) string {
 		return uri
 	}
 	q := u.Query()
+	changed := false
 	if q.Get("sni") != serverName {
 		q.Set("sni", serverName)
+		changed = true
+	}
+	// Force insecure=0 to match working 54153 (insecure=1 may cause client issues)
+	if q.Get("insecure") == "1" {
+		q.Set("insecure", "0")
+		changed = true
+	}
+	if changed {
 		u.RawQuery = q.Encode()
-		logger.Infof("Fixed SUI hysteria2 sni for port %s: -> %s", port, serverName)
+		logger.Infof("Fixed SUI hysteria2 for port %s: sni=%s insecure=0", port, serverName)
 		return u.String()
 	}
 	return uri
