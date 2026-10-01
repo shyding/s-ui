@@ -565,7 +565,7 @@ func CountryFlag(isoCode string) string {
 	return sb.String()
 }
 
-// FormatStandardRemark strictly formats a remark according to: {国旗} {来源}-{国家}-{区域}-{城市}-{编号}
+// FormatStandardRemark strictly formats a remark according to: {国旗}{来源}-{国家}-{区域}-{城市}-{编号}
 // Enforces 100% Chinese & digits for country, region, city. Zero English and zero "未知".
 func FormatStandardRemark(provider, country, region, city string, index int) string {
 	provider = NormalizeProvider(provider)
@@ -577,7 +577,7 @@ func FormatStandardRemark(provider, country, region, city string, index int) str
 	}
 	flag := CountryFlag(isoCode)
 	if flag != "" {
-		return fmt.Sprintf("%s %s-%s-%s-%s-%02d", flag, provider, country, region, city, index)
+		return fmt.Sprintf("%s%s-%s-%s-%s-%02d", flag, provider, country, region, city, index)
 	}
 	return fmt.Sprintf("%s-%s-%s-%s-%02d", provider, country, region, city, index)
 }
