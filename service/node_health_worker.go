@@ -746,7 +746,7 @@ func verifyRealityConfig(uri, host, port string) bool {
 			break
 		}
 	}
-	return inbound.ID != 0
+	return inbound.Id != 0
 }
 
 // checkExternalNode 对单个外部节点执行完整检测
@@ -837,7 +837,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 			// REALITY: 完整握手需要 Xray core 的 uTLS 实现
 			// 这里验证 TCP 连通性和配置有效性，VLESS 握手在明文层验证
 			// TODO: 集成 sing-box REALITY 客户端实现完整握手
-			if !verifyRealityConfig(uri, checkHost, checkPort) {
+			if !verifyRealityConfig(uri, checkHost, port) {
 				status.LastError = "reality_config_mismatch"
 				return status
 			}
