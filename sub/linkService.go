@@ -165,8 +165,8 @@ func deriveRealityPublicKey(privB64 string) string {
 // fixSUIReality corrects the URI REALITY params (pbk, sid, sni, fp) based on the
 // inbound's actual config in the database. Stored links can be stale after key
 // rotation, causing REALITY handshake failures (client -1).
-// fixSUIRealityFlow ensures REALITY URIs have flow=xtls-rprx-vision.
-// Missing flow causes client -1 (per 3x-ui docs).
+// fixSUIRealityFlow ensures REALITY URIs do NOT have flow=xtls-rprx-vision.
+// Sing-box server may not support XTLS-Vision; the flow param breaks the handshake.
 func fixSUIRealityFlow(uri string) string {
 	if !strings.Contains(uri, "security=reality") {
 		return uri
@@ -176,10 +176,10 @@ func fixSUIRealityFlow(uri string) string {
 		return uri
 	}
 	q := u.Query()
-	if q.Get("flow") == "" {
-		q.Set("flow", "xtls-rprx-vision")
+	if q.Get("flow") != "" {
+		q.Del("flow")
 		u.RawQuery = q.Encode()
-		logger.Infof("Fixed SUI reality flow for %s: added xtls-rprx-vision", u.Port())
+		logger.Infof("Fixed SUI reality flow for %s: removed flow param (sing-box compat)", u.Port())
 		return u.String()
 	}
 	return uri
