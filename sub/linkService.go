@@ -498,8 +498,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 
 	// Fix stale transport params from outdated stored links (causes client -1)
 	uri = fixSUITransport(uri)
-	// Fix stale REALITY params after key rotation
-	uri = fixSUIReality(uri)
+	// fixSUIReality DISABLED: has duplication bug, DB links are correct.
+	// uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
 
 	proto := strings.ToLower(protocol[0])
@@ -1108,9 +1108,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixVMessPort(finalLink)
 				// Fix VMess transport params (net/path/host) from inbound config
 				finalLink = fixVMessTransport(finalLink)
-				// Fix REALITY params (pbk, sid, sni, fp) from inbound config.
-				// Stored links go stale after key rotation, causing REALITY handshake -1.
-				finalLink = fixSUIReality(finalLink)
+				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
+				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
 				// regional egress variants. Expansion creates 100+ duplicates per
 				// inbound, exhausting the 1300 subscription limit.
