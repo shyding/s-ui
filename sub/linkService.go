@@ -769,6 +769,10 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
 				candidates := s.ExpandEgressCandidates(finalLink, activeRegions)
+				// DEBUG: log vmess candidate count
+				if strings.HasPrefix(finalLink, "vmess://") {
+					logger.Infof("DEBUG vmess %s: ExpandEgressCandidates returned %d candidates", link.Remark, len(candidates))
+				}
 				if len(candidates) == 0 {
 					candidates = []CandidateNode{{
 						Uri:      finalLink,
