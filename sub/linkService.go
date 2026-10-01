@@ -928,7 +928,8 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		"未知", "unknown", "unknow", "Unknown", "Unknow", "null", "NULL", "none", "None", "Undefined", "undefined",
 	}
 	// SUI 本地 inbound 的 tag（如 vless-54142）是合法的，不应被过滤
-	suiTagPrefixes := []string{"vless-", "vmess-", "trojan-", "tuic-", "hysteria2-", "ss-", "mixed-", "socks-"}
+	// 格式化后的 SUI 备注（如 SUI-新加坡-中央区-新加坡城-01）也是合法的，由 FilterHealthyAndGroupTop3Links 生成
+	suiTagPrefixes := []string{"vless-", "vmess-", "trojan-", "tuic-", "hysteria2-", "ss-", "mixed-", "socks-", "SUI-"}
 	bannedDomains := []string{
 		"workers.dev", "globals-download.com", "guardora.pro", "cloudflare.com",
 	}
