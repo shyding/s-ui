@@ -477,10 +477,12 @@ func fixSSMethod(uri string) string {
 func getInboundSSMethod(port string) string {
 	db := database.GetDB()
 	if db == nil {
+		logger.Error("fixSSMethod: database is nil")
 		return ""
 	}
 	var inbound model.Inbound
 	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		logger.Error("fixSSMethod: inbound not found for port " + port + ": " + err.Error())
 		return ""
 	}
 	var opts map[string]interface{}
@@ -488,6 +490,9 @@ func getInboundSSMethod(port string) string {
 		return ""
 	}
 	method, _ := opts["method"].(string)
+	if method != "" {
+		logger.Info("fixSSMethod: port " + port + " method=" + method)
+	}
 	return method
 }
 
