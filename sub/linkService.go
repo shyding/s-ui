@@ -391,6 +391,51 @@ func fixSUISecurity(uri string) string {
 	return uri
 }
 
+// fixSUIHysteria2 ensures the HY2 URI has the correct sni param from the inbound's TLS config.
+// Missing sni causes client -1.
+func fixSUIHysteria2(uri string) string {
+	if !strings.HasPrefix(uri, "hysteria2://") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	port := u.Port()
+	if port == "" {
+		return uri
+	}
+	// Get inbound TLS server_name
+	db := database.GetDB()
+	if db == nil {
+		return uri
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return uri
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return uri
+	}
+	tlsCfg, _ := opts["tls"].(map[string]interface{})
+	if tlsCfg == nil {
+		return uri
+	}
+	serverName, _ := tlsCfg["server_name"].(string)
+	if serverName == "" {
+		return uri
+	}
+	q := u.Query()
+	if q.Get("sni") != serverName {
+		q.Set("sni", serverName)
+		u.RawQuery = q.Encode()
+		logger.Infof("Fixed SUI hysteria2 sni for port %s: -> %s", port, serverName)
+		return u.String()
+	}
+	return uri
+}
+
 // getInboundTLSEnabled returns whether TLS is enabled for the inbound on the given port.
 // Returns nil if unknown.
 func getInboundTLSEnabled(port string) *bool {
@@ -734,6 +779,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 	uri = fixSUISecurity(uri)
 	// Fix VLESS flow param (remove if inbound doesn't support it)
 	uri = fixVLESSFlow(uri)
+	// Fix HY2 sni param (missing sni causes client -1)
+	uri = fixSUIHysteria2(uri)
 	// fixSUIReality DISABLED: has duplication bug, DB links are correct.
 	// uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
