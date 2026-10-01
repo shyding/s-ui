@@ -407,8 +407,9 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 
 	// ── 协议级握手验证 ───────────────────────────────────
 	// VLESS: 执行真实 VLESS 握手验证 UUID 有效性
+	// SUI 本地节点 (127.0.0.1): 跳过握手，TCP+TLS 成功即视为可用
 	// 其他协议: 暂时用 TCP+TLS 成功作为通过标准 (后续扩展)
-	if strings.ToLower(proto) == "vless" {
+	if strings.ToLower(proto) == "vless" && checkHost != "127.0.0.1" {
 		uuidStr := extractVlessUUID(uri)
 		if uuidStr == "" {
 			status.LastError = "vless_no_uuid"
@@ -420,7 +421,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 		}
 		status.ProxyCheck = true
 	} else {
-		// 非 VLESS 协议: 保持原有 TCP+TLS 通过标准
+		// SUI 本地节点或非 VLESS 协议: TCP+TLS 通过即视为可用
 		// TODO: 为 Trojan/VMess/SS 添加协议级握手
 		status.ProxyCheck = true
 	}
