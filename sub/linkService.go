@@ -436,6 +436,43 @@ func fixSUIHysteria2(uri string) string {
 	return uri
 }
 
+// fixSOCKSAuth ensures the SOCKS URI auth matches the inbound config.
+// If inbound has no users, remove userinfo from URI (server rejects unexpected auth).
+func fixSOCKSAuth(uri string) string {
+	if !strings.HasPrefix(uri, "socks5://") && !strings.HasPrefix(uri, "socks://") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	port := u.Port()
+	if port == "" {
+		return uri
+	}
+	db := database.GetDB()
+	if db == nil {
+		return uri
+	}
+	var inbound model.Inbound
+	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
+		return uri
+	}
+	var opts map[string]interface{}
+	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+		return uri
+	}
+	// Check if inbound has users
+	_, hasUsers := opts["users"]
+	if !hasUsers && u.User != nil {
+		// Inbound expects no auth, but URI has it - remove
+		u.User = nil
+		logger.Infof("Fixed SUI socks auth for port %s: removed unexpected userinfo", port)
+		return u.String()
+	}
+	return uri
+}
+
 // getInboundTLSEnabled returns whether TLS is enabled for the inbound on the given port.
 // Returns nil if unknown.
 func getInboundTLSEnabled(port string) *bool {
@@ -1399,6 +1436,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSSMethod(finalLink)
 				// Fix HY2 sni param (missing sni causes client -1)
 				finalLink = fixSUIHysteria2(finalLink)
+				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
+				finalLink = fixSOCKSAuth(finalLink)
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
