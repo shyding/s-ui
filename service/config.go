@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -22,6 +24,12 @@ var (
 	// restarts (e.g., from multiple subscription auto-updates) from racing and
 	// leaving sing-box in a half-started state with "address already in use".
 	coreMutex sync.Mutex
+	// lastAppliedInboundHash tracks the hash of inbounds from the last successful
+	// core start. RestartCore skips the disruptive stop/start if inbounds are
+	// unchanged (e.g., outbound-only egress promotions), preventing brief SUI
+	// outages during client speed tests.
+	lastAppliedInboundHash string
+	inboundHashMu         sync.Mutex
 )
 
 type ConfigService struct {
@@ -128,6 +136,12 @@ func (s *ConfigService) startCoreLocked(defaultConfig string) error {
 		err = corePtr.Start(rawConfig)
 		if err == nil {
 			logger.Info("sing-box started")
+			// Record inbound hash after successful start
+			if h, herr := s.computeInboundHash(); herr == nil {
+				inboundHashMu.Lock()
+				lastAppliedInboundHash = h
+				inboundHashMu.Unlock()
+			}
 			return nil
 		}
 
@@ -264,6 +278,19 @@ func (s *ConfigService) RestartCore() error {
 }
 
 func (s *ConfigService) restartCoreLocked() error {
+	// Fundamental fix: skip disruptive restart if inbounds are unchanged.
+	// Egress promotions and subscription updates often change only outbounds;
+	// restarting for those causes brief SUI outages (client -1 during tests).
+	// Only stop/start when the inbound listeners actually changed.
+	if newHash, err := s.computeInboundHash(); err == nil {
+		inboundHashMu.Lock()
+		oldHash := lastAppliedInboundHash
+		inboundHashMu.Unlock()
+		if oldHash != "" && oldHash == newHash {
+			logger.Info("Skip sing-box restart: inbounds unchanged (outbound-only update)")
+			return nil
+		}
+	}
 	err := s.stopCoreLocked()
 	if err != nil {
 		return err
@@ -281,6 +308,21 @@ func (s *ConfigService) restartCoreLocked() error {
 	// Extra grace period for OS to release TCP ports
 	time.Sleep(2 * time.Second)
 	return s.startCoreLocked("")
+}
+
+// computeInboundHash returns a SHA256 hash of the sing-box inbounds section.
+// Used to skip disruptive restarts when only outbounds changed.
+func (s *ConfigService) computeInboundHash() (string, error) {
+	cfg, err := s.GetConfig("")
+	if err != nil {
+		return "", err
+	}
+	inboundBytes, err := json.Marshal(cfg.Inbounds)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(inboundBytes)
+	return hex.EncodeToString(h[:]), nil
 }
 
 func (s *ConfigService) restartCoreWithConfig(config json.RawMessage) error {
