@@ -295,6 +295,9 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	}
 	defer rawConn.Close()
 	tcpMs := time.Since(t0).Milliseconds()
+	if tcpMs <= 0 {
+		tcpMs = 1
+	}
 	status.TCPCheck = true
 	status.Latency = tcpMs
 
