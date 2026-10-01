@@ -539,6 +539,10 @@ func FilterHealthyAndGroupTop3Links(
 	for _, k := range groupKeys {
 		if strings.HasPrefix(k, "SUI-") {
 			suiKeys = append(suiKeys, k)
+			// DEBUG: log SUI group size
+			if strings.Contains(k, "新加坡城") && !strings.Contains(k, "2") && !strings.Contains(k, "5") && !strings.Contains(k, "原版") {
+				logger.Infof("DEBUG SUI group %s has %d items", k, len(groups[k]))
+			}
 		} else {
 			otherKeys = append(otherKeys, k)
 		}
