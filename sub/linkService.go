@@ -343,9 +343,12 @@ func fixSUITransport(uri string) string {
 // fixSUISecurity ensures the URI security parameter matches the inbound's TLS config.
 // Plain (non-TLS) inbounds need explicit security=none, otherwise clients may default to TLS.
 func fixSUISecurity(uri string) string {
-	// Skip Shadowsocks: it doesn't use the security query param, and adding
-	// ?security=none corrupts the URI and breaks downstream port parsing.
-	if strings.HasPrefix(uri, "ss://") {
+	// Skip protocols that don't use the security query param.
+	// Adding ?security=... corrupts the URI and breaks downstream parsing.
+	if strings.HasPrefix(uri, "ss://") ||
+		strings.HasPrefix(uri, "hysteria2://") ||
+		strings.HasPrefix(uri, "socks5://") ||
+		strings.HasPrefix(uri, "socks://") {
 		return uri
 	}
 	u, err := url.Parse(uri)
