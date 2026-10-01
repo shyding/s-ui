@@ -1269,3 +1269,44 @@ func (a *ApiService) SaveHealthCheckTime(c *gin.Context) {
 	}
 	jsonObj(c, gin.H{"success": true, "healthCheckTime": t}, nil)
 }
+
+// GetSUINodes 返回38个 SUI inbound 的 id/tag/port 列表（按端口排序）
+// 供新建用户时一键勾选使用
+func (a *ApiService) GetSUINodes(c *gin.Context) {
+	db := database.GetDB()
+	specs := service.GetSUINodeSpecs()
+	tags := make([]string, 0, len(specs))
+	for _, s := range specs {
+		tags = append(tags, s.Tag)
+	}
+	var inbounds []model.Inbound
+	if err := db.Where("tag IN ?", tags).Find(&inbounds).Error; err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	byTag := make(map[string]uint, len(inbounds))
+	for _, ib := range inbounds {
+		byTag[ib.Tag] = ib.Id
+	}
+	type suiNode struct {
+		Id   uint   `json:"id"`
+		Tag  string `json:"tag"`
+		Port int    `json:"port"`
+	}
+	nodes := make([]suiNode, 0, len(specs))
+	for _, s := range specs {
+		nodes = append(nodes, suiNode{Id: byTag[s.Tag], Tag: s.Tag, Port: s.Port})
+	}
+	jsonObj(c, gin.H{"nodes": nodes, "total": len(nodes)}, nil)
+}
+
+// EnsureSUINodes 幂等创建38个 SUI inbound（缺失的才创建，已存在的不覆盖）
+func (a *ApiService) EnsureSUINodes(c *gin.Context) {
+	created, err := service.EnsureSUINodes(nil)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	missing := service.VerifySUINodes(nil)
+	jsonObj(c, gin.H{"created": created, "missing": missing, "total": 38}, nil)
+}

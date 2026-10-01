@@ -100,6 +100,9 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	case "saveHealthCheckTime":
 		// 保存用户配置的每日健康检测时间
 		a.ApiService.SaveHealthCheckTime(c)
+	case "ensureSUINodes":
+		// 幂等创建38个 SUI inbound
+		a.ApiService.EnsureSUINodes(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -150,6 +153,9 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 	case "egressStatus":
 		// 查询出口健康检查是否正在运行
 		a.ApiService.GetEgressStatus(c)
+	case "suiNodes":
+		// 38个 SUI inbound 列表（新建用户一键勾选用）
+		a.ApiService.GetSUINodes(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

@@ -90,6 +90,16 @@
                   </v-select>
                 </v-col>
               </v-row>
+              <v-row>
+                <v-col cols="auto">
+                  <v-btn variant="tonal" color="primary" :loading="suiLoading" @click="setSUINodes">
+                    <v-icon icon="mdi-server-network" start />添加38个SUI节点
+                  </v-btn>
+                </v-col>
+                <v-col cols="auto" v-if="suiCount > 0">
+                  <span class="text-caption text-medium-emphasis">已识别 {{ suiCount }}/38 个SUI节点</span>
+                </v-col>
+              </v-row>
             </v-window-item>
             <v-window-item value="t2">
               <v-row>
@@ -197,6 +207,7 @@
 import { createClient, randomConfigs, updateConfigs, Link, shuffleConfigs } from '@/types/clients'
 import DatePick from '@/components/DateTime.vue'
 import { HumanReadable } from '@/plugins/utils'
+import HttpUtils from '@/plugins/httputil'
 import Data from '@/store/modules/data'
 
 export default {
@@ -212,6 +223,8 @@ export default {
       links: <Link[]>[],
       extLinks: <Link[]>[],
       subLinks: <Link[]>[],
+      suiLoading: false,
+      suiCount: 0,
     }
   },
   methods: {
@@ -260,6 +273,24 @@ export default {
     },
     setAllInbounds(){
       this.client.inbounds = this.inboundTags.map((i:any) => i.value).sort()
+    },
+    async setSUINodes(){
+      // 一键勾选38个SUI节点（端口54142-54179）
+      this.suiLoading = true
+      try {
+        const msg = await HttpUtils.get('api/suiNodes')
+        if (msg.success && msg.obj?.nodes) {
+          const ids = msg.obj.nodes.filter((n:any) => n.id > 0).map((n:any) => n.id).sort((a:number,b:number) => a-b)
+          this.suiCount = msg.obj.nodes.filter((n:any) => n.id > 0).length
+          if (ids.length > 0) {
+            // 合并到已选（去重）
+            const merged = Array.from(new Set([...this.client.inbounds, ...ids])).sort((a:number,b:number) => a-b)
+            this.client.inbounds = merged
+          }
+        }
+      } finally {
+        this.suiLoading = false
+      }
     },
     shuffle(k?:string) {
       shuffleConfigs(this.clientConfig, k)
