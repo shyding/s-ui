@@ -318,6 +318,44 @@ func fixSUITransport(uri string) string {
 	return u.String()
 }
 
+// fixVMessPort ensures VMess JSON port is a number, not a string.
+// Some stored links have "port":"54146" (string) which causes clients
+// to fail parsing. This converts it to "port":54146 (number).
+func fixVMessPort(uri string) string {
+	if !strings.HasPrefix(uri, "vmess://") {
+		return uri
+	}
+	parts := strings.SplitN(uri, "://", 2)
+	if len(parts) != 2 {
+		return uri
+	}
+	rawB64 := parts[1]
+	fragment := ""
+	if idx := strings.Index(rawB64, "#"); idx != -1 {
+		fragment = rawB64[idx:]
+		rawB64 = rawB64[:idx]
+	}
+	decoded, err := util.B64StrToByte(rawB64)
+	if err != nil {
+		return uri
+	}
+	var vmessObj map[string]interface{}
+	if err := json.Unmarshal(decoded, &vmessObj); err != nil {
+		return uri
+	}
+	// Convert string port to number
+	if portStr, ok := vmessObj["port"].(string); ok {
+		var portNum int
+		if _, err := fmt.Sscanf(portStr, "%d", &portNum); err == nil && portNum > 0 && portNum <= 65535 {
+			vmessObj["port"] = portNum
+			if raw, err := json.Marshal(vmessObj); err == nil {
+				return "vmess://" + util.ByteToB64Str(raw) + fragment
+			}
+		}
+	}
+	return uri
+}
+
 // ExpandEgressCandidates expands a single inbound link into candidate nodes across active regions
 func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service.EgressRegion) []CandidateNode {
 	if len(activeRegions) == 0 {
@@ -945,6 +983,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				// Fix stale transport params from outdated stored links (causes client -1)
 				// e.g., type=tcp for a ws inbound
 				finalLink = fixSUITransport(finalLink)
+				// Fix VMess string port (e.g., "port":"54146" -> "port":54146)
+				finalLink = fixVMessPort(finalLink)
 				// TODO: fixSUIReality disabled - has bug, DB links are now correct
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
