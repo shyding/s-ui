@@ -240,8 +240,9 @@ func (w *NodeHealthWorker) runOnce() {
 }
 
 // vlessHandshake performs a minimal VLESS protocol handshake to verify the UUID.
-// It sends a VLESS request header for a test target and expects a valid VLESS response.
-// Returns true if the server responds with a valid VLESS header (UUID accepted).
+// It sends a VLESS request header for a test target.
+// Returns true if the server accepts the UUID (connection stays open).
+// A server closes the connection immediately on invalid UUID.
 func vlessHandshake(conn net.Conn, uuidStr string) bool {
 	// Parse UUID manually (avoid external dependency)
 	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
@@ -276,23 +277,29 @@ func vlessHandshake(conn net.Conn, uuidStr string) bool {
 		return false
 	}
 
-	// Read VLESS response: Version(1) + AddonLen(1) + AddonData
+	// Try to read VLESS response: Version(1) + AddonLen(1) + AddonData
+	// Server with valid UUID keeps connection open; invalid UUID -> immediate close
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
 	resp := make([]byte, 2)
-	if _, err := io.ReadFull(conn, resp); err != nil {
-		return false
-	}
-	// Valid VLESS response starts with version 0x00
-	if resp[0] != 0x00 {
-		return false
-	}
-	// Read addon data if present
-	if resp[1] > 0 {
-		addon := make([]byte, resp[1])
-		if _, err := io.ReadFull(conn, addon); err != nil {
-			return false
+	n, err := io.ReadFull(conn, resp)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Timeout but connection still open -> UUID accepted
+			// (server waiting for more data, not rejecting)
+			return true
 		}
+		// Connection closed/reset -> UUID rejected
+		return false
 	}
-	return true
+	if n == 2 && resp[0] == 0x00 {
+		// Valid VLESS response header
+		if resp[1] > 0 {
+			addon := make([]byte, resp[1])
+			io.ReadFull(conn, addon)
+		}
+		return true
+	}
+	return false
 }
 
 // extractVlessUUID extracts the UUID from a vless:// URI
