@@ -254,16 +254,20 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 
 	udpProtos := map[string]bool{"hysteria2": true, "hysteria": true, "tuic": true}
 	if udpProtos[strings.ToLower(proto)] {
-		// UDP 协议：只做 UDP 探测
+		// UDP 协议：只做 UDP 可达性探测，不等待应用层响应
+		// Hysteria2/TUIC 不会响应随机探测包，Read 会超时 2s 导致 latency 虚高
 		conn, err := net.DialTimeout("udp", addr, 4*time.Second)
 		if err != nil {
 			status.LastError = "udp_fail: " + err.Error()
 			return status
 		}
+		// 发送探测包验证端口可写，成功即视为可达
 		conn.SetDeadline(time.Now().Add(2 * time.Second))
-		conn.Write(make([]byte, 16))
-		buf := make([]byte, 32)
-		conn.Read(buf)
+		if _, err := conn.Write(make([]byte, 16)); err != nil {
+			conn.Close()
+			status.LastError = "udp_write_fail: " + err.Error()
+			return status
+		}
 		conn.Close()
 		status.TCPCheck = true
 		status.TLSCheck = true
@@ -272,6 +276,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 		if status.Latency <= 0 {
 			status.Latency = 1
 		}
+		// UDP 探测延迟应为毫秒级，若超过 650ms 说明网络异常
 		status.Speed = float64(10000) / float64(status.Latency)
 		if status.Speed > 100 {
 			status.Speed = 100
