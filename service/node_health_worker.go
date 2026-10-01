@@ -310,6 +310,17 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 		return nil
 	}
 
+	// SUI 本地入站节点：dash.icta.top 指向本机，直接用 127.0.0.1 避免 DNS 故障
+	// SUI 端口范围：54142-54179 (URI) 和 57300+ (VMess JSON)
+	checkHost := host
+	if host == "dash.icta.top" {
+		if p, err := strconv.Atoi(port); err == nil {
+			if (p >= 54142 && p <= 54179) || (p >= 57300 && p <= 57400) {
+				checkHost = "127.0.0.1"
+			}
+		}
+	}
+
 	nodeKey := host + ":" + port
 	status := &model.NodeHealthStatus{
 		Node:        nodeKey,
@@ -323,7 +334,7 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	defer cancel()
 
 	// ── TCP 检测 ─────────────────────────────────────────
-	addr := net.JoinHostPort(host, port)
+	addr := net.JoinHostPort(checkHost, port)
 	t0 := time.Now()
 
 	udpProtos := map[string]bool{"hysteria2": true, "hysteria": true, "tuic": true}
