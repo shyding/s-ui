@@ -377,6 +377,106 @@ func fixVMessPort(uri string) string {
 	return uri
 }
 
+// fixVMessTransport syncs VMess JSON transport params (net, path, host) from
+// the inbound's actual config. Stored VMess links can have stale transport
+// params, causing client -1.
+func fixVMessTransport(uri string) string {
+	if !strings.HasPrefix(uri, "vmess://") {
+		return uri
+	}
+	parts := strings.SplitN(uri, "://", 2)
+	if len(parts) != 2 {
+		return uri
+	}
+	rawB64 := parts[1]
+	fragment := ""
+	if idx := strings.Index(rawB64, "#"); idx != -1 {
+		fragment = rawB64[idx:]
+		rawB64 = rawB64[:idx]
+	}
+	decoded, err := util.B64StrToByte(rawB64)
+	if err != nil {
+		return uri
+	}
+	var vmessObj map[string]interface{}
+	if err := json.Unmarshal(decoded, &vmessObj); err != nil {
+		return uri
+	}
+	// Get port for inbound lookup
+	var portStr string
+	switch p := vmessObj["port"].(type) {
+	case float64:
+		portStr = fmt.Sprintf("%.0f", p)
+	case string:
+		portStr = p
+	case int:
+		portStr = fmt.Sprintf("%d", p)
+	default:
+		return uri
+	}
+	transport := getInboundTransport(portStr)
+	if transport == nil {
+		return uri
+	}
+	transportType, _ := transport["type"].(string)
+	if transportType == "" {
+		transportType = "tcp"
+	}
+	changed := false
+	// Sync net type
+	if currentNet, _ := vmessObj["net"].(string); currentNet != transportType {
+		vmessObj["net"] = transportType
+		changed = true
+	}
+	// Sync transport-specific params
+	switch transportType {
+	case "ws":
+		if path, ok := transport["path"].(string); ok && path != "" {
+			if vmessObj["path"] != path {
+				vmessObj["path"] = path
+				changed = true
+			}
+		}
+		if headers, ok := transport["headers"].(map[string]interface{}); ok {
+			if host, ok := headers["Host"].(string); ok && host != "" {
+				if vmessObj["host"] != host {
+					vmessObj["host"] = host
+					changed = true
+				}
+			}
+		}
+	case "grpc":
+		if sn, ok := transport["service_name"].(string); ok && sn != "" {
+			// VMess gRPC uses "path" for serviceName in some clients, or "serviceName"
+			if vmessObj["path"] != sn {
+				vmessObj["path"] = sn
+				changed = true
+			}
+		}
+	case "httpupgrade":
+		if path, ok := transport["path"].(string); ok && path != "" {
+			if vmessObj["path"] != path {
+				vmessObj["path"] = path
+				changed = true
+			}
+		}
+		if host, ok := transport["host"].(string); ok && host != "" {
+			if vmessObj["host"] != host {
+				vmessObj["host"] = host
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return uri
+	}
+	if raw, err := json.Marshal(vmessObj); err == nil {
+		logger.Infof("Fixed VMess transport for port %s: net=%s", portStr, transportType)
+		return "vmess://" + util.ByteToB64Str(raw) + fragment
+	}
+	return uri
+}
+
 // ExpandEgressCandidates expands a single inbound link into candidate nodes across active regions
 func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service.EgressRegion) []CandidateNode {
 	if len(activeRegions) == 0 {
@@ -1006,8 +1106,11 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSUITransport(finalLink)
 				// Fix VMess string port (e.g., "port":"54146" -> "port":54146)
 				finalLink = fixVMessPort(finalLink)
-				// TODO: fixSUIReality disabled - has bug, DB links are now correct
-				// finalLink = fixSUIReality(finalLink)
+				// Fix VMess transport params (net/path/host) from inbound config
+				finalLink = fixVMessTransport(finalLink)
+				// Fix REALITY params (pbk, sid, sni, fp) from inbound config.
+				// Stored links go stale after key rotation, causing REALITY handshake -1.
+				finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
 				// regional egress variants. Expansion creates 100+ duplicates per
 				// inbound, exhausting the 1300 subscription limit.
