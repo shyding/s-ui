@@ -202,7 +202,9 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 	switch proto {
 	case "vmess":
 		var vmessJson map[string]interface{}
-		config, err := util.B64StrToByte(protocol[1])
+		// Strip fragment before base64 decoding
+		b64Part := strings.Split(protocol[1], "#")[0]
+		config, err := util.B64StrToByte(b64Part)
 		if err != nil {
 			return candidates
 		}
@@ -856,6 +858,11 @@ func (s *LinkService) GetLocalLinks(linkJson *json.RawMessage, clientInfo string
 func extractNodeKey(uri string) string {
 	if strings.HasPrefix(uri, "vmess://") {
 		rawB64 := strings.TrimPrefix(uri, "vmess://")
+		// Strip fragment (#...) before base64 decoding
+		// The fragment contains the remark (e.g. #SUI-...) which is not part of base64
+		if idx := strings.Index(rawB64, "#"); idx != -1 {
+			rawB64 = rawB64[:idx]
+		}
 		decoded, err := util.B64StrToByte(rawB64)
 		if err != nil {
 			return ""
@@ -974,6 +981,10 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		// 3. Protocol specific verification
 		if strings.HasPrefix(link, "vmess://") {
 			rawB64 := strings.TrimPrefix(link, "vmess://")
+			// Strip fragment before base64 decoding
+			if idx := strings.Index(rawB64, "#"); idx != -1 {
+				rawB64 = rawB64[:idx]
+			}
 			decoded, err := util.B64StrToByte(rawB64)
 			if err != nil {
 				violations = append(violations, fmt.Sprintf("Invalid vmess base64: %v", err))
@@ -1072,7 +1083,9 @@ func (s *LinkService) addClientInfo(uri string, clientInfo string) string {
 	switch protocol[0] {
 	case "vmess":
 		var vmessJson map[string]interface{}
-		config, err := util.B64StrToByte(protocol[1])
+		// Strip fragment before base64 decoding
+		b64Part := strings.Split(protocol[1], "#")[0]
+		config, err := util.B64StrToByte(b64Part)
 		if err != nil {
 			logger.Warning("sub: Error decoding vmess content:", err)
 			return uri
