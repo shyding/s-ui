@@ -49,8 +49,10 @@ const (
 	SUICertKeyPath = "/usr/local/s-ui/certs/privkey.pem"
 	// SUIServerName TLS SNI
 	SUIServerName = "dash.icta.top"
-	// SUISSPassword Shadowsocks 密码（与现有部署一致）
-	SUISSPassword = "icta-ss-aead-2026"
+	// SUISSPassword Shadowsocks 密码（与现有部署一致，用户数据：icta-ss-aaad-2026）
+	SUISSPassword = "icta-ss-aaad-2026"
+	// SUITrojanPasswordBase Trojan 密码前缀（每端口唯一后缀，用户选择方案1）
+	SUITrojanPasswordBase = "icta-trojan-2026"
 )
 
 // SUINodeSpec 描述一个 SUI inbound 的创建规格
@@ -162,6 +164,12 @@ func (s SUINodeSpec) BuildOptions() map[string]interface{} {
 	if s.Type == "tuic" {
 		opts["congestion_control"] = "bbr"
 	}
+	if s.Type == "trojan" {
+		// Trojan 每端口唯一密码（用户选择方案1，避免 sing-box "user already exists"）
+		opts["users"] = []map[string]interface{}{
+			{"password": fmt.Sprintf("%s-%d", SUITrojanPasswordBase, s.Port)},
+		}
+	}
 	return opts
 }
 
@@ -177,8 +185,8 @@ func GetSUINodeSpecs() []SUINodeSpec {
 		{Port: 54148, Type: "vmess", Tag: "vmess-grpc-54148", TLS: true, Transport: "grpc", GRPCName: "vgrpc"},
 		{Port: 54149, Type: "vmess", Tag: "vmess-httpupgrade-54149", TLS: true, Transport: "httpupgrade", HUPath: "/vhu"},
 		{Port: 54150, Type: "trojan", Tag: "trojan-tcp-54150", TLS: true},
-		{Port: 54151, Type: "trojan", Tag: "trojan-ws-54151", TLS: true, Transport: "ws", WSPath: "/ws"},
-		{Port: 54152, Type: "trojan", Tag: "trojan-grpc-54152", TLS: true, Transport: "grpc", GRPCName: "vgrpc"},
+		{Port: 54151, Type: "trojan", Tag: "trojan-ws-54151", TLS: true, Transport: "ws", WSPath: "/trws"},
+		{Port: 54152, Type: "trojan", Tag: "trojan-grpc-54152", TLS: true, Transport: "grpc", GRPCName: "trgrpc"},
 		{Port: 54153, Type: "hysteria2", Tag: "hysteria2-54153", TLS: true},
 		{Port: 54154, Type: "tuic", Tag: "tuic-54154", TLS: true},
 		{Port: 54155, Type: "vmess", Tag: "vmess-tcp-54155", TLS: true},
