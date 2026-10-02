@@ -1476,8 +1476,28 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 			continue
 		case "local":
 			if types == "all" {
-				if len(allowedTags) > 0 && !allowedTags[link.Remark] {
-					continue
+				if len(allowedTags) > 0 {
+					// allowedTags contains inbound tags like "vless-54142", "trojan-ws-54151"
+					// but link.Remark is a formatted remark like "🇸🇬SUI-新加坡-..."
+					// Match by extracting port from URI and checking it against allowed tag ports.
+					matched := allowedTags[link.Remark]
+					if !matched {
+						// Extract port from URI (host:port from NodeKey format)
+						nodeKey := extractNodeKey(cleanUri)
+						if idx := strings.LastIndex(nodeKey, ":"); idx != -1 {
+							uriPort := nodeKey[idx+1:]
+							for tag := range allowedTags {
+								// inbound tags end with port number e.g. "vless-54142" -> "54142"
+								if strings.HasSuffix(tag, "-"+uriPort) {
+									matched = true
+									break
+								}
+							}
+						}
+					}
+					if !matched {
+						continue
+					}
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
 				// Fix stale transport params from outdated stored links (causes client -1)
