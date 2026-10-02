@@ -178,21 +178,56 @@ func EnsureWireGuardBridges(db *gorm.DB) ([]WGBridgeInfo, error) {
 }
 
 // buildWGBridgeRemark 构建桥接节点的订阅显示名称
+// 规范：100%中文/数字，0英文（provider名称除外）
 func buildWGBridgeRemark(outboundTag string) string {
-	// cf-de-pool -> 🇩🇪CF-德国-法兰克福-WARP-01
-	// out-proton-us-01 -> 🇺🇸Proton-美国-VPN-01
 	tag := strings.ToLower(outboundTag)
 	if strings.HasPrefix(tag, "cf-") {
-		// Cloudflare WARP
+		// Cloudflare WARP: cf-de-pool -> 🇩🇪Cloudflare-德国-WARP
 		region := strings.TrimPrefix(tag, "cf-")
 		region = strings.TrimSuffix(region, "-pool")
-		return fmt.Sprintf("☁️CF-WARP-%s", strings.ToUpper(region))
+		countryCN := wgRegionToChinese(region)
+		return fmt.Sprintf("☁️Cloudflare-%s-WARP", countryCN)
 	}
 	if strings.HasPrefix(tag, "out-proton-") {
+		// Proton: out-proton-us-01 -> 🔒Proton-美国-01
 		name := strings.TrimPrefix(tag, "out-proton-")
-		return fmt.Sprintf("🔒Proton-%s", name)
+		// 提取国家代码和编号
+		parts := strings.Split(name, "-")
+		countryCN := name
+		suffix := ""
+		if len(parts) >= 2 {
+			countryCN = wgRegionToChinese(parts[0])
+			suffix = "-" + strings.Join(parts[1:], "-")
+		} else if len(parts) == 1 {
+			countryCN = wgRegionToChinese(parts[0])
+		}
+		return fmt.Sprintf("🔒Proton-%s%s", countryCN, suffix)
 	}
 	return fmt.Sprintf("🔗%s", outboundTag)
+}
+
+// wgRegionToChinese 将地区代码转换为中文
+func wgRegionToChinese(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	m := map[string]string{
+		"de": "德国", "us": "美国", "uk": "英国", "fr": "法国",
+		"nl": "荷兰", "se": "瑞典", "ch": "瑞士", "at": "奥地利",
+		"be": "比利时", "dk": "丹麦", "fi": "芬兰", "ie": "爱尔兰",
+		"it": "意大利", "es": "西班牙", "pt": "葡萄牙", "pl": "波兰",
+		"cz": "捷克", "hu": "匈牙利", "ro": "罗马尼亚", "bg": "保加利亚",
+		"hr": "克罗地亚", "sk": "斯洛伐克", "si": "斯洛文尼亚", "ee": "爱沙尼亚",
+		"lv": "拉脱维亚", "lt": "立陶宛", "gr": "希腊", "no": "挪威",
+		"is": "冰岛", "lu": "卢森堡", "mt": "马耳他", "cy": "塞浦路斯",
+		"jp": "日本", "kr": "韩国", "sg": "新加坡", "hk": "香港",
+		"tw": "台湾", "au": "澳大利亚", "nz": "新西兰", "ca": "加拿大",
+		"mx": "墨西哥", "br": "巴西", "ar": "阿根廷", "cl": "智利",
+		"in": "印度", "id": "印尼", "my": "马来西亚", "th": "泰国",
+		"vn": "越南", "ph": "菲律宾",
+	}
+	if cn, ok := m[code]; ok {
+		return cn
+	}
+	return code // 未知代码保留原文
 }
 
 // CleanupStaleWGBridges 清理已不健康的WireGuard出站对应的桥接

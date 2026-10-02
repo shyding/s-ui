@@ -11,6 +11,7 @@ import (
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
+	"gorm.io/gorm"
 )
 
 // 38 SUI类型协议矩阵：所有已测试OK的客户端协议类型
