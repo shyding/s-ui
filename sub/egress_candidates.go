@@ -10,8 +10,6 @@ import (
 	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/service"
-	"gorm.io/gorm"
 )
 
 // 38 SUI类型协议矩阵：所有已测试OK的客户端协议类型
@@ -53,62 +51,51 @@ func getEgressCandidates() []CandidateNode {
 		return nil
 	}
 
-	// HProxy/Cloudflare/Proton 统一走桥接：
-	// 每个健康的出站创建一个新的SOCKS入站（38类型中的SOCKS为模板），
-	// 客户端看到 dash.icta.top:PORT 的SOCKS节点，流量经由对应出站转发。
-	// 不动原有38个SUI节点，全部为新增。
-	seen := make(map[string]bool)
-	return getWGBridgeCandidates(db, seen)
-}
-
-// getVpsDomain 获取VPS域名（用于WireGuard桥接SOCKS节点的URI）
-func getVpsDomain() string {
-	// 从设置中获取，或使用默认值
-	// WireGuard桥接入站直接监听在VPS上，无需egress gateway重写
-	return "dash.icta.top"
-}
-
-// getWGBridgeCandidates 获取WireGuard桥接候选节点
-// Cloudflare/Proton的WireGuard出站通过VPS上的SOCKS桥接入站暴露，
-// 客户端看到的是38类型中的SOCKS节点，流量经由WireGuard出站转发。
-func getWGBridgeCandidates(db *gorm.DB, seen map[string]bool) []CandidateNode {
-	bridges := service.WGBridgeCandidates(db)
-	if len(bridges) == 0 {
-		return nil
-	}
-
-	domain := getVpsDomain()
 	var candidates []CandidateNode
-	for _, b := range bridges {
-		nodeKey := "wgbridge:" + b.OutboundTag
-		if seen[nodeKey] {
+	seen := make(map[string]bool)
+
+	for _, src := range egressSources {
+		var outbounds []model.Outbound
+		// 质量门：available=true 且有国家信息（通过健康检查）
+		err := db.Where("tag LIKE ? AND available = ?", src.TagLike, true).Find(&outbounds).Error
+		if err != nil {
+			logger.Warningf("加载%s候选节点失败: %v", src.Provider, err)
 			continue
 		}
-		seen[nodeKey] = true
 
-		// SOCKS URI: socks5://domain:port#remark (remark需URL编码)
-		uri := fmt.Sprintf("socks5://%s:%d#%s", domain, b.Port, url.PathEscape(b.Remark))
+		for _, ob := range outbounds {
+			// 协议必须在38类型矩阵中
+			proto := normalizeEgressProtocol(ob.Type)
+			if !suiTypeProtocolMatrix[proto] {
+				logger.Debugf("跳过%s节点 %s: 协议 %s 不在38类型矩阵中", src.Provider, ob.Tag, ob.Type)
+				continue
+			}
 
-		// 判断Provider
-		provider := "WireGuard"
-		tagLower := strings.ToLower(b.OutboundTag)
-		if strings.HasPrefix(tagLower, "cf-") {
-			provider = "Cloudflare"
-		} else if strings.Contains(tagLower, "proton") {
-			provider = "Proton"
-		} else if strings.HasPrefix(tagLower, "hproxy-") {
-			provider = "HProxy"
+			uri := buildEgressURI(&ob, proto, src.Provider)
+			if uri == "" {
+				continue
+			}
+
+			nodeKey := extractNodeKey(uri)
+			if seen[nodeKey] {
+				continue
+			}
+			seen[nodeKey] = true
+
+			candidates = append(candidates, CandidateNode{
+				Uri:      uri,
+				Protocol: proto,
+				Provider: src.Provider,
+				Country:  ob.Country,
+				Region:   ob.Region,
+				City:     ob.City,
+				Priority: getEgressPriority(proto),
+				NodeKey:  nodeKey,
+			})
 		}
-
-		candidates = append(candidates, CandidateNode{
-			Uri:      uri,
-			Protocol: "socks",
-			Provider: provider,
-			Priority: getEgressPriority("socks"),
-			NodeKey:  nodeKey,
-		})
+		logger.Infof("%s: 加载 %d 个候选节点（通过质量门且协议可映射）", src.Provider, len(candidates))
 	}
-	logger.Infof("WireGuard桥接: 加载 %d 个候选节点（SOCKS映射）", len(candidates))
+
 	return candidates
 }
 

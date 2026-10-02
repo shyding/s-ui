@@ -510,8 +510,6 @@ func (s *ConfigService) sanitizeConfig(singboxConfig *SingBoxConfig) bool {
 					}
 				}
 				newRules = InjectEgressRouteRulesForClients(newRules, clientNames, activeRegions)
-				// 注入WireGuard桥接路由规则：wg-bridge-* -> 对应的WireGuard出站
-				newRules = InjectWGBridgeRouteRules(newRules)
 				modified = true
 				if modified {
 					routeMap["rules"] = newRules
