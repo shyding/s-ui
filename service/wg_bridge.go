@@ -59,9 +59,11 @@ func sanitizeBridgeName(name string) string {
 }
 
 // GetHealthyWireGuardOutbounds 获取健康的WireGuard出站
+// 包括：Cloudflare WARP (cf-*-pool), Proton (out-proton-*)
 func GetHealthyWireGuardOutbounds(db *gorm.DB) []model.Outbound {
 	var outbounds []model.Outbound
 	// Cloudflare WARP (cf-*-pool) 和 Proton (out-proton-*) 都是 WireGuard
+	// 通过SOCKS桥接暴露（WireGuard无法通过iptables DNAT）
 	db.Where("available = ? AND (tag LIKE ? OR tag LIKE ? OR type = ?)",
 		true, "cf-%", "out-proton-%", "wireguard").Find(&outbounds)
 	return outbounds
@@ -182,7 +184,7 @@ func EnsureWireGuardBridges(db *gorm.DB) ([]WGBridgeInfo, error) {
 func buildWGBridgeRemark(outboundTag string) string {
 	tag := strings.ToLower(outboundTag)
 	if strings.HasPrefix(tag, "cf-") {
-		// Cloudflare WARP: cf-de-pool -> 🇩🇪Cloudflare-德国-WARP
+		// Cloudflare WARP: cf-de-pool -> ☁️Cloudflare-德国-WARP
 		region := strings.TrimPrefix(tag, "cf-")
 		region = strings.TrimSuffix(region, "-pool")
 		countryCN := wgRegionToChinese(region)
@@ -202,6 +204,26 @@ func buildWGBridgeRemark(outboundTag string) string {
 			countryCN = wgRegionToChinese(parts[0])
 		}
 		return fmt.Sprintf("🔒Proton-%s%s", countryCN, suffix)
+	}
+	if strings.HasPrefix(tag, "hproxy-") {
+		// HProxy: hproxy-us-north-bergen-198-199-86-11-3128 -> 🌐HProxy-美国-01
+		// 提取国家代码（hproxy-<cc>-...）
+		rest := strings.TrimPrefix(tag, "hproxy-")
+		parts := strings.Split(rest, "-")
+		countryCN := rest
+		if len(parts) >= 1 {
+			countryCN = wgRegionToChinese(parts[0])
+		}
+		// 使用tag的hash生成稳定编号，避免重复
+		hash := 0
+		for _, c := range tag {
+			hash = hash*31 + int(c)
+		}
+		if hash < 0 {
+			hash = -hash
+		}
+		num := hash % 900 + 100 // 100-999
+		return fmt.Sprintf("🌐HProxy-%s-%d", countryCN, num)
 	}
 	return fmt.Sprintf("🔗%s", outboundTag)
 }
