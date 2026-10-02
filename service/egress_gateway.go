@@ -134,67 +134,6 @@ func GenerateEgressMappings() ([]EgressMapping, error) {
 		port++
 	}
 
-	// HProxy: 从outbounds表加载健康的HProxy节点（SOCKS/HTTP）
-	// 它们没有NodeHealthStatus记录，但outbounds.available=true表示通过质量门
-	var hproxyOutbounds []model.Outbound
-	db.Where("tag LIKE ? AND available = ?", "hproxy-%", true).Find(&hproxyOutbounds)
-	for _, ob := range hproxyOutbounds {
-		if port > EgressGatewayPortEnd {
-			logger.Warning("Egress gateway port range exhausted (HProxy)")
-			break
-		}
-		var opts map[string]interface{}
-		if err := json.Unmarshal(ob.Options, &opts); err != nil {
-			continue
-		}
-		server, _ := opts["server"].(string)
-		if server == "" {
-			continue
-		}
-		var portStr string
-		switch p := opts["server_port"].(type) {
-		case float64:
-			portStr = fmt.Sprintf("%d", int(p))
-		case int:
-			portStr = fmt.Sprintf("%d", p)
-		default:
-			continue
-		}
-		configKey := server + ":" + portStr + "|HProxy"
-		if seenConfigs[configKey] {
-			continue
-		}
-		seenConfigs[configKey] = true
-
-		// Resolve hostname to IP for iptables
-		seedIP := server
-		if ip := net.ParseIP(server); ip == nil {
-			ips, err := net.LookupIP(server)
-			if err != nil || len(ips) == 0 {
-				continue
-			}
-			for _, ip := range ips {
-				if ip.To4() != nil {
-					seedIP = ip.String()
-					break
-				}
-			}
-			if seedIP == server {
-				seedIP = ips[0].String()
-			}
-		}
-
-		mappings = append(mappings, EgressMapping{
-			VpsPort:    port,
-			SeedHost:   server,
-			SeedIP:     seedIP,
-			SeedPort:   portStr,
-			Provider:   "HProxy",
-			ConfigHash: configKey,
-		})
-		port++
-	}
-
 	// Persist to file
 	if err := saveEgressMappings(mappings); err != nil {
 		return nil, err

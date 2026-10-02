@@ -23,10 +23,10 @@ import (
 //   - 订阅中发布为 socks5://dash.icta.top:PORT#remark
 
 const (
-	// WGBridgePortStart WireGuard桥接端口起始
+	// WGBridgePortStart 桥接端口起始
 	WGBridgePortStart = 54200
-	// WGBridgePortEnd WireGuard桥接端口结束
-	WGBridgePortEnd = 54399
+	// WGBridgePortEnd 桥接端口结束（54200-55999，共1800个，容纳HProxy/Cloudflare/Proton）
+	WGBridgePortEnd = 55999
 	// WGBridgeTagPrefix 桥接入站标签前缀
 	WGBridgeTagPrefix = "wg-bridge-"
 )
@@ -58,14 +58,14 @@ func sanitizeBridgeName(name string) string {
 	return s
 }
 
-// GetHealthyWireGuardOutbounds 获取健康的WireGuard出站
-// 包括：Cloudflare WARP (cf-*-pool), Proton (out-proton-*)
+// GetHealthyWireGuardOutbounds 获取健康的出站（需桥接）
+// 包括：Cloudflare WARP (cf-*-pool), Proton (out-proton-*), HProxy (hproxy-*)
+// 这些出站通过VPS上的SOCKS桥接入站暴露（38类型中的SOCKS为模板）
+// 客户端看到SOCKS节点，流量经由对应出站转发
 func GetHealthyWireGuardOutbounds(db *gorm.DB) []model.Outbound {
 	var outbounds []model.Outbound
-	// Cloudflare WARP (cf-*-pool) 和 Proton (out-proton-*) 都是 WireGuard
-	// 通过SOCKS桥接暴露（WireGuard无法通过iptables DNAT）
-	db.Where("available = ? AND (tag LIKE ? OR tag LIKE ? OR type = ?)",
-		true, "cf-%", "out-proton-%", "wireguard").Find(&outbounds)
+	db.Where("available = ? AND (tag LIKE ? OR tag LIKE ? OR tag LIKE ? OR type = ?)",
+		true, "cf-%", "out-proton-%", "hproxy-%", "wireguard").Find(&outbounds)
 	return outbounds
 }
 
