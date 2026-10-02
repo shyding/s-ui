@@ -1553,9 +1553,15 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 
 	// HProxy/Cloudflare/Proton: 从outbounds表加载通过质量门的节点，
 	// 映射到38 SUI类型矩阵后作为订阅候选暴露。
-	// 只有协议在38类型矩阵中的节点才会被映射（如WireGuard不在矩阵中会被跳过）。
-	for _, ec := range getEgressCandidates() {
-		allCandidates = append(allCandidates, ec)
+	// 只有协议在38类型矩阵中的节点才会被映射（如WireGuard已通过桥接转为SOCKS）。
+	// 注意：egress候选已通过outbounds表的available=true质量门，
+	// 无需再经过inbound健康过滤（它们没有NodeHealthStatus记录）。
+	egressCandidates := getEgressCandidates()
+	for _, ec := range egressCandidates {
+		if !seen[ec.Uri] {
+			seen[ec.Uri] = true
+			result = append(result, ec.Uri)
+		}
 	}
 
 	if len(allCandidates) > 0 {
