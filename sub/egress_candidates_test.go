@@ -5,18 +5,18 @@ import (
 	"testing"
 )
 
-// TestSUITTypeProtocolMatrix 验证38类型协议矩阵包含预期的协议
+// TestSUITTypeProtocolMatrix 验证42类型协议矩阵包含预期的协议
 func TestSUITTypeProtocolMatrix(t *testing.T) {
 	// 38 SUI节点覆盖的协议类型都应在矩阵中
 	required := []string{"vless", "vmess", "trojan", "hysteria2", "tuic", "ss", "shadowsocks", "socks", "socks5", "mixed"}
 	for _, p := range required {
 		if !suiTypeProtocolMatrix[p] {
-			t.Errorf("协议 %s 应在38类型矩阵中", p)
+			t.Errorf("协议 %s 应在42类型矩阵中", p)
 		}
 	}
 	// WireGuard不应在矩阵中（无法映射为订阅URI）
 	if suiTypeProtocolMatrix["wireguard"] {
-		t.Error("wireguard 不应在38类型矩阵中")
+		t.Error("wireguard 不应在42类型矩阵中")
 	}
 }
 

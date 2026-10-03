@@ -12,7 +12,7 @@ import (
 	"github.com/alireza0/s-ui/logger"
 )
 
-// 38 SUI类型协议矩阵：所有已测试OK的客户端协议类型
+// 42 SUI类型协议矩阵：所有已测试OK的客户端协议类型
 // 只有这些协议的外部节点才能映射暴露
 var suiTypeProtocolMatrix = map[string]bool{
 	"vless":      true,
@@ -27,6 +27,7 @@ var suiTypeProtocolMatrix = map[string]bool{
 	"socks5":     true,
 	"mixed":      true,
 	"http":       true,
+	"anytls":     true,
 }
 
 // egressSource 定义外部节点来源及其outbound tag模式
@@ -44,7 +45,7 @@ var egressSources = []egressSource{
 
 // getEgressCandidates 从outbounds表加载通过质量门的HProxy/Cloudflare/Proton节点，
 // 生成映射到38 SUI类型矩阵的客户端URI，作为订阅候选。
-// 只有协议在38类型矩阵中的节点才会被映射暴露（如WireGuard不在矩阵中，会被跳过）。
+// 只有协议在42类型矩阵中的节点才会被映射暴露（如WireGuard不在矩阵中，会被跳过）。
 func getEgressCandidates() []CandidateNode {
 	db := database.GetDB()
 	if db == nil {
@@ -64,10 +65,10 @@ func getEgressCandidates() []CandidateNode {
 		}
 
 		for _, ob := range outbounds {
-			// 协议必须在38类型矩阵中
+			// 协议必须在42类型矩阵中
 			proto := normalizeEgressProtocol(ob.Type)
 			if !suiTypeProtocolMatrix[proto] {
-				logger.Debugf("跳过%s节点 %s: 协议 %s 不在38类型矩阵中", src.Provider, ob.Tag, ob.Type)
+				logger.Debugf("跳过%s节点 %s: 协议 %s 不在42类型矩阵中", src.Provider, ob.Tag, ob.Type)
 				continue
 			}
 
@@ -99,7 +100,7 @@ func getEgressCandidates() []CandidateNode {
 	return candidates
 }
 
-// normalizeEgressProtocol 标准化协议名称以匹配38类型矩阵
+// normalizeEgressProtocol 标准化协议名称以匹配42类型矩阵
 func normalizeEgressProtocol(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
 	switch t {
