@@ -2,9 +2,9 @@
 .SYNOPSIS
   Build an Ubuntu/Linux amd64 s-ui binary from Windows.
 .DESCRIPTION
-  Uses Ubuntu/WSL when a Linux Go toolchain is available. Otherwise it uses
-  the installed Windows Go toolchain with CGO disabled (s-ui uses pure-Go
-  SQLite), then validates the output as an ELF binary.
+  Uses only the installed Windows Go toolchain with CGO disabled (s-ui uses
+  pure-Go SQLite), then validates the output as an ELF binary. No WSL script
+  or Linux shell is invoked.
 #>
 [CmdletBinding()]
 param(
@@ -29,22 +29,16 @@ function Assert-Elf([string]$Path) {
   }
 }
 
-# Preferred path: a real Ubuntu toolchain in WSL, matching CI/server builds.
-$wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
-if ($wsl) {
-  $linuxGo = (& wsl.exe bash -lc "command -v go >/dev/null 2>&1 && go version" 2>$null | Out-String).Trim()
-  if ($linuxGo -match "go1\.26") {
-    $linuxRoot = (& wsl.exe wslpath -a "$Root").Trim()
-    $skip = if ($SkipFrontend) { "SKIP_FRONTEND=1 " } else { "" }
-    & wsl.exe bash -lc "cd '$linuxRoot' && ${skip}./scripts/build_linux.sh '$linuxRoot/dist/linux-amd64'"
-    if ($LASTEXITCODE -ne 0) { throw "WSL Linux build failed ($LASTEXITCODE)" }
-    Assert-Elf $Binary
-    Write-Host "Built with Ubuntu/WSL: $Binary"
-    exit 0
-  }
+function Compress-Gzip([string]$InputPath, [string]$OutputPath) {
+  $input = [System.IO.File]::OpenRead($InputPath)
+  $output = [System.IO.File]::Create($OutputPath)
+  try {
+    $gzip = New-Object System.IO.Compression.GzipStream($output, [System.IO.Compression.CompressionLevel]::SmallestSize)
+    try { $input.CopyTo($gzip) } finally { $gzip.Dispose() }
+  } finally { $input.Dispose(); $output.Dispose() }
 }
 
-# Fallback: native Windows Go cross-compilation. CGO must remain disabled.
+# Native Windows Go cross-compilation. CGO must remain disabled.
 $go = Get-Command go.exe -ErrorAction SilentlyContinue
 if (-not $go) { throw "Go was not found. Install Go 1.26.x or install it inside WSL." }
 $version = (& go.exe version).Trim()
@@ -71,8 +65,7 @@ try {
   $env:GOOS=$oldGoOS; $env:GOARCH=$oldGoArch; $env:CGO_ENABLED=$oldCgo
 }
 Assert-Elf $Binary
-if ($wsl) { & wsl.exe gzip -f -9 ((& wsl.exe wslpath -a $Binary).Trim()) }
-if (-not (Test-Path $Gzip)) { throw "gzip output was not created: $Gzip" }
+Compress-Gzip $Binary $Gzip
 Get-FileHash $Binary -Algorithm SHA256
 Get-FileHash $Gzip -Algorithm SHA256
 Write-Host "Built Linux amd64 ELF: $Binary"
