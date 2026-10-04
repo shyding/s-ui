@@ -33,7 +33,7 @@ function Compress-Gzip([string]$InputPath, [string]$OutputPath) {
   $input = [System.IO.File]::OpenRead($InputPath)
   $output = [System.IO.File]::Create($OutputPath)
   try {
-    $gzip = New-Object System.IO.Compression.GzipStream($output, [System.IO.Compression.CompressionLevel]::SmallestSize)
+    $gzip = [System.IO.Compression.GzipStream]::new($output, [System.IO.Compression.CompressionMode]::Compress, $false)
     try { $input.CopyTo($gzip) } finally { $gzip.Dispose() }
   } finally { $input.Dispose(); $output.Dispose() }
 }
