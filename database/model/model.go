@@ -26,9 +26,12 @@ type Client struct {
 	Id       uint            `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	Enable   bool            `json:"enable" form:"enable"`
 	Name     string          `json:"name" form:"name"`
-	Config   json.RawMessage `json:"config,omitempty" form:"config"`
-	Inbounds json.RawMessage `json:"inbounds" form:"inbounds"`
-	Links    json.RawMessage `json:"links,omitempty" form:"links"`
+	// SQLite drivers may return JSON columns as strings rather than []byte.
+	// GORM's JSON serializer accepts both representations and keeps the public
+	// field type as json.RawMessage for compatibility with existing callers.
+	Config   json.RawMessage `json:"config,omitempty" form:"config" gorm:"serializer:json"`
+	Inbounds json.RawMessage `json:"inbounds" form:"inbounds" gorm:"serializer:json"`
+	Links    json.RawMessage `json:"links,omitempty" form:"links" gorm:"serializer:json"`
 	Volume   int64           `json:"volume" form:"volume"`
 	Expiry   int64           `json:"expiry" form:"expiry"`
 	Down     int64           `json:"down" form:"down"`
