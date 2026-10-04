@@ -29,7 +29,7 @@ var (
 	// unchanged (e.g., outbound-only egress promotions), preventing brief SUI
 	// outages during client speed tests.
 	lastAppliedInboundHash string
-	inboundHashMu         sync.Mutex
+	inboundHashMu          sync.Mutex
 )
 
 type ConfigService struct {
@@ -310,14 +310,65 @@ func (s *ConfigService) restartCoreLocked() error {
 	return s.startCoreLocked("")
 }
 
-// computeInboundHash returns a SHA256 hash of the sing-box inbounds section.
-// Used to skip disruptive restarts when only outbounds changed.
+// computeInboundHash returns a stable SHA256 hash of the persisted listener and
+// authentication configuration.  Do not hash GetConfig().Inbounds here: those
+// generated inbounds contain health-derived regional users, so an outbound
+// health promotion used to look like an inbound edit and caused a full core
+// restart (and a short outage on every SUI port).
 func (s *ConfigService) computeInboundHash() (string, error) {
-	cfg, err := s.GetConfig("")
-	if err != nil {
+	db := database.GetDB()
+	if db == nil {
+		return "", fmt.Errorf("database is not initialized")
+	}
+
+	type inboundFingerprint struct {
+		ID      uint            `json:"id"`
+		Type    string          `json:"type"`
+		Tag     string          `json:"tag"`
+		TLSID   uint            `json:"tls_id"`
+		Options json.RawMessage `json:"options"`
+		Server  json.RawMessage `json:"tls_server,omitempty"`
+	}
+	type clientFingerprint struct {
+		ID       uint            `json:"id"`
+		Enable   bool            `json:"enable"`
+		Name     string          `json:"name"`
+		Config   json.RawMessage `json:"config"`
+		Inbounds json.RawMessage `json:"inbounds"`
+	}
+
+	var inbounds []model.Inbound
+	if err := db.Preload("Tls").Order("id ASC").Find(&inbounds).Error; err != nil {
 		return "", err
 	}
-	inboundBytes, err := json.Marshal(cfg.Inbounds)
+	stableInbounds := make([]inboundFingerprint, 0, len(inbounds))
+	for _, inbound := range inbounds {
+		fp := inboundFingerprint{
+			ID: inbound.Id, Type: inbound.Type, Tag: inbound.Tag,
+			TLSID: inbound.TlsId, Options: inbound.Options,
+		}
+		if inbound.Tls != nil {
+			fp.Server = inbound.Tls.Server
+		}
+		stableInbounds = append(stableInbounds, fp)
+	}
+
+	var clients []model.Client
+	if err := db.Order("id ASC").Find(&clients).Error; err != nil {
+		return "", err
+	}
+	stableClients := make([]clientFingerprint, 0, len(clients))
+	for _, client := range clients {
+		stableClients = append(stableClients, clientFingerprint{
+			ID: client.Id, Enable: client.Enable, Name: client.Name,
+			Config: client.Config, Inbounds: client.Inbounds,
+		})
+	}
+
+	inboundBytes, err := json.Marshal(struct {
+		Inbounds []inboundFingerprint `json:"inbounds"`
+		Clients  []clientFingerprint  `json:"clients"`
+	}{stableInbounds, stableClients})
 	if err != nil {
 		return "", err
 	}

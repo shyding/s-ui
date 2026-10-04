@@ -68,21 +68,17 @@ func nextScheduledRun() (time.Duration, string) {
 }
 
 // StartEgressHealthWorker 启动出口健康检查 Worker：
-//   - 启动后延迟 5 分钟再跑第一轮（避免启动时 CPU 过载导致 VPS 卡死）
-//   - 之后每 30 分钟跑一次
+//   - 按 healthCheckTime 的次日偏移30分钟运行，避开节点健康检查
+//   - 每天仅运行一次
 //   - 用户可通过前端手动触发
 func StartEgressHealthWorker(reload ...func() error) {
 	egressReloadFns = reload
 	egressHealthWorkerOnce.Do(func() {
 		go func() {
-			// 启动后延迟 5 分钟再跑第一轮，让系统先稳定下来
-			// （直接启动就跑曾导致 VPS CPU/内存耗尽卡死）
-			logger.Info("EgressHealthWorker: first run in 5 minutes (delayed to avoid startup overload)")
-			time.Sleep(5 * time.Minute)
-			safeRunEgressHealthCheck()
 			for {
-				d := 30 * time.Minute
-				logger.Infof("EgressHealthWorker: Next run in 30 minutes")
+				d, configured := nextScheduledRun()
+				d += 30 * time.Minute
+				logger.Infof("EgressHealthWorker: next daily run in %v (%s +30m)", d.Round(time.Minute), configured)
 				time.Sleep(d)
 				safeRunEgressHealthCheck()
 			}
@@ -232,7 +228,6 @@ func runEgressHealthCheck(reload ...func() error) {
 			logger.Infof("seed client node health check finished: tested=%d passed=%d failures=%v", len(seedResults), seedPassed, failures)
 		}
 	}
-
 
 	// HProxy候选：每天测一遍，低并发(10)，每次300个
 	// （曾用 50 并发/1500 上限导致 VPS 资源耗尽卡死，现降低）

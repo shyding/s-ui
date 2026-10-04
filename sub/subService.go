@@ -159,7 +159,7 @@ func (s *SubService) GetSubs(subId string) (*string, []string, error) {
 		}
 	}
 
-	linksArray := s.LinkService.GetAuthorizedLinks(&client.Links, "all", clientInfo, allowedTags)
+	linksArray := s.LinkService.GetAuthorizedLinksForClient(&client.Links, "all", clientInfo, allowedTags, &client.Config)
 
 	// Rewrite Seed/Cloudflare egress URIs to use VPS port forwarding.
 	// Client sees dash.icta.top:VPS_PORT, VPS forwards to Seed via iptables DNAT.

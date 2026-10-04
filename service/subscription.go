@@ -28,11 +28,11 @@ const userProvidedSubscriptionName = "User Provided Live Candidates"
 const seededClientNodesSubscriptionName = "Local v2rayN Seed Nodes"
 
 func EnsureHProxySubscription() error {
-	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 30)
+	return ensureCandidateSubscription("HProxy Live Candidates", hproxyLiveURL, 360)
 }
 
 func EnsureProxyScrapeSubscription() error {
-	return ensureCandidateSubscription("ProxyScrape Live Candidates", proxyScrapeLiveURL, 30)
+	return ensureCandidateSubscription("ProxyScrape Live Candidates", proxyScrapeLiveURL, 360)
 }
 
 func EnsureUserProvidedSubscription() error {
@@ -93,7 +93,10 @@ func ensureCandidateSubscription(name, url string, interval int) error {
 	db := database.GetDB()
 	var existing model.Subscription
 	if err := db.Where("url = ?", url).First(&existing).Error; err == nil {
-		return nil
+		return db.Model(&existing).Updates(map[string]interface{}{
+			"name": name, "enabled": true, "update_interval": interval,
+			"update_mode": "replace",
+		}).Error
 	} else if err != gorm.ErrRecordNotFound {
 		return err
 	}
@@ -362,6 +365,11 @@ func (s *SubscriptionService) checkAndUpdate(afterRefresh func() error) {
 			logger.Info("Auto-updating subscription:", sub.Name)
 			result, err := s.Refresh(sub.Id)
 			if err != nil {
+				// Record the attempt so a broken source is retried at its configured
+				// interval, not once per minute forever.  The last known-good node
+				// inventory remains untouched by Refresh on failure.
+				_ = database.GetDB().Model(&model.Subscription{}).Where("id = ?", sub.Id).
+					Update("last_update", now).Error
 				logger.Error("Failed to auto-update subscription", sub.Name, ":", err)
 				continue
 			}

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/alireza0/s-ui/database/model"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

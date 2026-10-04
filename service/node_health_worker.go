@@ -51,7 +51,7 @@ func StartNodeHealthWorker() {
 	workerOnce.Do(func() {
 		globalHealthWorker = &NodeHealthWorker{
 			interval:    24 * time.Hour, // 仅用于日志，实际由 04:30 cron 控制
-			concurrency: 5,             // 极低并发，不抢 CPU
+			concurrency: 5,              // 极低并发，不抢 CPU
 		}
 		go globalHealthWorker.run()
 	})
@@ -269,7 +269,7 @@ func vlessHandshake(conn net.Conn, uuidStr string) bool {
 	portBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(portBytes, 80)
 	buf = append(buf, portBytes...)
-	buf = append(buf, 0x01) // Address type = IPv4
+	buf = append(buf, 0x01)       // Address type = IPv4
 	buf = append(buf, 1, 1, 1, 1) // 1.1.1.1
 
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -588,7 +588,9 @@ func trojanHandshake(conn net.Conn, uri string) bool {
 	// 1. SHA224(password) hex (56 chars) + "\r\n"
 	// 2. SOCKS5 CONNECT 请求 (CMD=1, ATYP=1, 1.1.1.1:80)
 	// 3. "\r\n"
-	// 4. 服务器响应
+	// 4. HTTP 请求数据。Trojan 协议没有 SOCKS5 风格的成功响应；服务端
+	//    建立目标连接后直接双向转发 payload。旧实现等待 SOCKS 回包，导致
+	//    正常 Trojan 节点被误判 unavailable。
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	// SHA224(password)
@@ -607,30 +609,28 @@ func trojanHandshake(conn net.Conn, uri string) bool {
 	binary.BigEndian.PutUint16(portBytes, 80)
 	buf = append(buf, portBytes...)
 	buf = append(buf, '\r', '\n')
+	buf = append(buf, []byte("HEAD / HTTP/1.1\r\nHost: one.one.one.one\r\nConnection: close\r\n\r\n")...)
 
 	if _, err := conn.Write(buf); err != nil {
 		return false
 	}
-	// 读取 SOCKS5 响应: VER(1) + REP(1) + RSV(1) + ATYP(1) + ADDR + PORT
-	// 有效密码 -> 服务器保持连接 (可能立即响应或等待数据)
-	// 无效密码 -> 服务器立即关闭连接
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-	resp := make([]byte, 4)
-	n, err := io.ReadFull(conn, resp)
-	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			// 超时但连接保持 -> 密码有效
-			return true
-		}
-		// 连接关闭 -> 密码无效
-		return false
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	return err == nil && strings.HasPrefix(line, "HTTP/")
+}
+
+// CheckNodeHealthNow performs and persists one synchronous health check.  It
+// is used by the subscription quality gate to repair a missing/stale local SUI
+// record immediately instead of hiding a healthy node until the next daily run.
+func CheckNodeHealthNow(uri string) *model.NodeHealthStatus {
+	status := checkExternalNode(uri)
+	if status == nil {
+		return nil
 	}
-	// 收到响应，检查 REP 字段 (0x00=成功)
-	if n == 4 && resp[1] == 0x00 {
-		return true
+	if db := database.GetDB(); db != nil {
+		_ = db.Save(status).Error
 	}
-	// 有响应即视为通过 (连接保持)
-	return n > 0
+	return status
 }
 
 // verifyRealityConfig 验证 REALITY 配置有效性
@@ -655,13 +655,13 @@ func verifyRealityConfig(uri, host, port string) bool {
 	}
 	portInt := 0
 	fmt.Sscanf(port, "%d", &portInt)
-	
+
 	rows, err := db.Raw("SELECT options FROM inbounds").Rows()
 	if err != nil {
 		return false
 	}
 	defer rows.Close()
-	
+
 	found := false
 	for rows.Next() {
 		var optionsRaw []byte
@@ -738,7 +738,10 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 	addr := net.JoinHostPort(checkHost, port)
 	t0 := time.Now()
 
-	udpProtos := map[string]bool{"hysteria2": true, "hysteria": true, "tuic": true}
+	// WireGuard is also UDP.  Treating its URI as TCP made every native
+	// WireGuard node report -1 even when the relay was listening correctly:
+	// net.DialTimeout(..., "tcp", host:port) can never reach a UDP listener.
+	udpProtos := map[string]bool{"hysteria2": true, "hysteria": true, "tuic": true, "wireguard": true}
 	if udpProtos[strings.ToLower(proto)] {
 		// UDP 协议：只做 UDP 可达性探测，不等待应用层响应
 		// Hysteria2/TUIC 不会响应随机探测包，Read 会超时 2s 导致 latency 虚高
@@ -858,6 +861,28 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 		}
 		status.ProxyCheck = true
 	case "trojan":
+		u, _ := url.Parse(uri)
+		transport := strings.ToLower(u.Query().Get("type"))
+		// The existing lightweight gRPC wrapper cannot carry a Trojan stream.
+		// TLS + a syntactically valid password is the strongest non-destructive
+		// check available here until the checker uses a full sing-box client.
+		if transport == "grpc" || transport == "gun" {
+			if u.User == nil || u.User.Username() == "" {
+				status.LastError = "trojan_no_password"
+				return status
+			}
+			status.ProxyCheck = true
+			break
+		}
+		wrappedConn, err := wrapVlessTransport(conn, uri, host, useTLS, sni)
+		if err != nil {
+			status.LastError = "trojan_transport_fail:" + err.Error()
+			return status
+		}
+		if wrappedConn != conn {
+			defer wrappedConn.Close()
+			conn = wrappedConn
+		}
 		if !trojanHandshake(conn, uri) {
 			status.LastError = "trojan_handshake_fail"
 			return status
@@ -945,10 +970,10 @@ func determineStandardProvider(uri string) string {
 			if json.Unmarshal(decoded, &obj) == nil {
 				if add, ok := obj["add"].(string); ok {
 					addLower := strings.ToLower(add)
-				if strings.Contains(addLower, "dash.icta.top") || strings.Contains(addLower, "s-ui") {
-					return "SUI"
+					if strings.Contains(addLower, "dash.icta.top") || strings.Contains(addLower, "s-ui") {
+						return "SUI"
+					}
 				}
-			}
 			}
 		}
 	}

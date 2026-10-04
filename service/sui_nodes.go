@@ -89,6 +89,19 @@ func suiTLSOptionsNoALPN() map[string]interface{} {
 	}
 }
 
+// TUIC runs over QUIC and requires the HTTP/3 ALPN during TLS negotiation.
+// Using the generic TCP ALPN list causes clients to fail with
+// `server did not select an ALPN protocol`.
+func suiTUICTLSOptions() map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":          true,
+		"server_name":      SUIServerName,
+		"alpn":             []string{"h3"},
+		"certificate_path": SUICertPath,
+		"key_path":         SUICertKeyPath,
+	}
+}
+
 // transportOptions 返回传输层配置，transport 为 "" 时返回 nil
 func (s SUINodeSpec) transportOptions() map[string]interface{} {
 	switch s.Transport {
@@ -98,9 +111,9 @@ func (s SUINodeSpec) transportOptions() map[string]interface{} {
 			path = "/ws"
 		}
 		return map[string]interface{}{
-			"type":                  "ws",
-			"path":                  path,
-			"max_early_data":        2048,
+			"type":                   "ws",
+			"path":                   path,
+			"max_early_data":         2048,
 			"early_data_header_name": "Sec-WebSocket-Protocol",
 		}
 	case "grpc":
@@ -129,17 +142,19 @@ func (s SUINodeSpec) transportOptions() map[string]interface{} {
 // BuildOptions 构建 sing-box inbound options
 func (s SUINodeSpec) BuildOptions() map[string]interface{} {
 	opts := map[string]interface{}{
-		"type":                     s.Type,
-		"tag":                      s.Tag,
-		"listen":                   "::",
-		"listen_port":              s.Port,
-		"tcp_fast_open":            true,
-		"sniff":                    true,
+		"type":                       s.Type,
+		"tag":                        s.Tag,
+		"listen":                     "::",
+		"listen_port":                s.Port,
+		"tcp_fast_open":              true,
+		"sniff":                      true,
 		"sniff_override_destination": false,
 	}
 	if s.TLS {
 		// 54142-54149 使用带 ALPN 的配置，其余使用无 ALPN 配置（与现有部署一致）
-		if s.Port >= 54142 && s.Port <= 54149 {
+		if s.Type == "tuic" {
+			opts["tls"] = suiTUICTLSOptions()
+		} else if s.Port >= 54142 && s.Port <= 54149 {
 			opts["tls"] = suiTLSOptions()
 		} else {
 			opts["tls"] = suiTLSOptionsNoALPN()
@@ -183,10 +198,13 @@ func GetSUINodeSpecs() []SUINodeSpec {
 		{Port: 54154, Type: "tuic", Tag: "tuic-54154", TLS: true},
 		{Port: 54155, Type: "vmess", Tag: "vmess-tcp-54155", TLS: true},
 		{Port: 54156, Type: "mixed", Tag: "mixed-54156"},
-		{Port: 54157, Type: "vless", Tag: "vless-tcp-plain-54157"},
-		{Port: 54158, Type: "vless", Tag: "vless-ws-plain-54158", Transport: "ws", WSPath: "/ws"},
-		{Port: 54159, Type: "vless", Tag: "vless-grpc-plain-54159", Transport: "grpc", GRPCName: "vgrpc"},
-		{Port: 54160, Type: "vless", Tag: "vless-httpupgrade-plain-54160", Transport: "httpupgrade", HUPath: "/vhu"},
+		// Public plaintext VLESS is rejected by current Xray cores (26.7+).
+		// Keep the protocol/transport coverage, but use the existing SUI TLS
+		// certificate so current clients can build the outbound safely.
+		{Port: 54157, Type: "vless", Tag: "vless-tcp-plain-54157", TLS: true},
+		{Port: 54158, Type: "vless", Tag: "vless-ws-plain-54158", TLS: true, Transport: "ws", WSPath: "/ws"},
+		{Port: 54159, Type: "vless", Tag: "vless-grpc-plain-54159", TLS: true, Transport: "grpc", GRPCName: "vgrpc"},
+		{Port: 54160, Type: "vless", Tag: "vless-httpupgrade-plain-54160", TLS: true, Transport: "httpupgrade", HUPath: "/vhu"},
 		{Port: 54161, Type: "vless", Tag: "vless-tcp-reality-54161", TLS: true},
 		{Port: 54162, Type: "vless", Tag: "vless-ws-reality-54162", TLS: true, Transport: "ws", WSPath: "/ws"},
 		{Port: 54163, Type: "vless", Tag: "vless-grpc-reality-54163", TLS: true, Transport: "grpc", GRPCName: "vgrpc"},
@@ -203,7 +221,8 @@ func GetSUINodeSpecs() []SUINodeSpec {
 		{Port: 54174, Type: "vless", Tag: "vless-tcp-vision-54174", TLS: true},
 		{Port: 54175, Type: "vless", Tag: "vless-ws-vision-54175", TLS: true, Transport: "ws", WSPath: "/wsv"},
 		{Port: 54176, Type: "vmess", Tag: "vmess-tcp-plain-2-54176"},
-		{Port: 54177, Type: "trojan", Tag: "trojan-tcp-plain-54177"},
+		// Current Xray also rejects public plaintext Trojan outbounds.
+		{Port: 54177, Type: "trojan", Tag: "trojan-tcp-plain-54177", TLS: true},
 		{Port: 54178, Type: "hysteria2", Tag: "hysteria2-3-54178", TLS: true},
 		{Port: 54179, Type: "tuic", Tag: "tuic-3-54179", TLS: true},
 	}
@@ -219,6 +238,49 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 	for _, spec := range specs {
 		var existing model.Inbound
 		if err := db.Where("tag = ?", spec.Tag).First(&existing).Error; err == nil {
+			// Reconcile credentials for built-in nodes. Older deployments used
+			// a typo in the Shadowsocks password (aaad vs aead), which made every
+			// generated SS link fail authentication while the port stayed open.
+			if spec.Type == "shadowsocks" {
+				canonical, marshalErr := json.MarshalIndent(spec.BuildOptions(), "", "  ")
+				if marshalErr != nil {
+					return created, fmt.Errorf("marshal options for %s: %w", spec.Tag, marshalErr)
+				}
+				if string(existing.Options) != string(canonical) {
+					if updateErr := db.Model(&existing).Update("options", canonical).Error; updateErr != nil {
+						return created, fmt.Errorf("reconcile options for %s: %w", spec.Tag, updateErr)
+					}
+					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s credentials", spec.Tag))
+				}
+			}
+			if spec.Type == "tuic" {
+				canonical, marshalErr := json.MarshalIndent(spec.BuildOptions(), "", "  ")
+				if marshalErr != nil {
+					return created, fmt.Errorf("marshal options for %s: %w", spec.Tag, marshalErr)
+				}
+				if string(existing.Options) != string(canonical) {
+					if updateErr := db.Model(&existing).Update("options", canonical).Error; updateErr != nil {
+						return created, fmt.Errorf("reconcile options for %s: %w", spec.Tag, updateErr)
+					}
+					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s TLS ALPN", spec.Tag))
+				}
+			}
+			// Public plaintext VLESS/Trojan nodes must be migrated to the
+			// certificate-backed transport for current Xray clients.  Reconcile
+			// only the built-in SUI entries that were intentionally upgraded.
+			if spec.TLS && (spec.Type == "vless" || spec.Type == "trojan") &&
+				(spec.Port >= 54157 && spec.Port <= 54160 || spec.Port == 54177) {
+				canonical, marshalErr := json.MarshalIndent(spec.BuildOptions(), "", "  ")
+				if marshalErr != nil {
+					return created, fmt.Errorf("marshal options for %s: %w", spec.Tag, marshalErr)
+				}
+				if string(existing.Options) != string(canonical) {
+					if updateErr := db.Model(&existing).Update("options", canonical).Error; updateErr != nil {
+						return created, fmt.Errorf("reconcile TLS for %s: %w", spec.Tag, updateErr)
+					}
+					logger.Infof("EnsureSUINodes: migrated public plaintext %s to TLS", spec.Tag)
+				}
+			}
 			continue // 已存在，跳过
 		}
 		opts := spec.BuildOptions()
@@ -238,6 +300,34 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 		}
 		created++
 		logger.Info(fmt.Sprintf("EnsureSUINodes: created %s (port %d)", spec.Tag, spec.Port))
+	}
+	// Apply the TUIC QUIC TLS invariant to every TUIC inbound, including
+	// inbounds added later from the management UI (arbitrary ports).
+	var tuicInbounds []model.Inbound
+	if err := db.Where("type = ?", "tuic").Find(&tuicInbounds).Error; err != nil {
+		return created, fmt.Errorf("load TUIC inbounds for ALPN reconciliation: %w", err)
+	}
+	for _, inbound := range tuicInbounds {
+		var opts map[string]interface{}
+		if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+			continue
+		}
+		tls, _ := opts["tls"].(map[string]interface{})
+		if tls == nil {
+			continue
+		}
+		alpn, _ := tls["alpn"].([]interface{})
+		if len(alpn) == 1 {
+			if v, _ := alpn[0].(string); v == "h3" {
+				continue
+			}
+		}
+		tls["alpn"] = []string{"h3"}
+		opts["tls"] = tls
+		updated, marshalErr := json.MarshalIndent(opts, "", "  ")
+		if marshalErr == nil && db.Model(&inbound).Update("options", updated).Error == nil {
+			logger.Infof("EnsureSUINodes: reconciled TUIC ALPN dynamically for %s", inbound.Tag)
+		}
 	}
 	return created, nil
 }
@@ -291,4 +381,164 @@ func VerifySUINodes(db *gorm.DB) []string {
 		}
 	}
 	return missing
+}
+
+// EnsureSUIInboundTypeCoverage keeps the management page representative of
+// the complete sing-box inbound catalogue.  These are deliberately separate
+// from the 38 performance nodes: the UI also exposes protocol/system
+// inbounds that are not meaningful subscription links (tun/redirect/tproxy).
+func EnsureSUIInboundTypeCoverage(db *gorm.DB) (created int, err error) {
+	if db == nil {
+		db = database.GetDB()
+	}
+	tls := map[string]interface{}{"enabled": true, "server_name": SUIServerName, "certificate_path": SUICertPath, "key_path": SUICertKeyPath}
+	newOpts := func(typ string, port int) map[string]interface{} {
+		o := map[string]interface{}{"type": typ, "tag": fmt.Sprintf("coverage-%s-%d", typ, port), "listen": "::", "listen_port": port}
+		switch typ {
+		case "naive":
+			o["tls"] = tls
+			o["users"] = []map[string]string{{"username": "my", "password": "icta-naive-2026"}}
+			o["network"] = "tcp"
+		case "hysteria":
+			o["up_mbps"] = 100
+			o["down_mbps"] = 100
+			o["tls"] = tls
+		case "shadowtls":
+			o["version"] = 3
+			o["password"] = "icta-shadowtls-2026"
+			o["users"] = []map[string]string{{"name": "my", "password": "icta-shadowtls-2026"}}
+			o["handshake"] = map[string]interface{}{"server": SUIServerName, "server_port": 443}
+		case "anytls":
+			o["tls"] = tls
+			o["padding_scheme"] = []string{"stop=8"}
+		case "tun":
+			delete(o, "listen")
+			delete(o, "listen_port")
+			o["interface_name"] = "sui-cov-tun"
+			o["mtu"] = 1500
+			o["address"] = []string{"172.31.0.1/30"}
+			o["auto_route"] = false
+			o["stack"] = "gvisor"
+		case "tproxy":
+			// TProxy is a system-level transparent-proxy endpoint, not a
+			// client subscription protocol.  Exposing the coverage listener on
+			// :: lets scanners/open clients create half-closed connections and
+			// exhaust the S-UI file-descriptor limit.  Keep the catalogue entry
+			// visible in the UI, but restrict the listener to the local host.
+			o["listen"] = "127.0.0.1"
+			o["network"] = []string{"tcp", "udp"}
+		}
+		return o
+	}
+	// TProxy is a host-level transparent proxy, not a remotely consumable
+	// subscription node. Remove the legacy auto-created coverage entry and its
+	// client grants once, while keeping the frontend's tproxy type available
+	// for explicit administrator-created inbounds.
+	var legacyTProxy model.Inbound
+	if e := db.Where("tag = ?", "coverage-tproxy-54208").First(&legacyTProxy).Error; e == nil {
+		var clients []model.Client
+		if e = db.Where("name = ?", "my").Find(&clients).Error; e == nil {
+			for _, client := range clients {
+				var ids []uint
+				if json.Unmarshal(client.Inbounds, &ids) == nil {
+					filtered := ids[:0]
+					for _, id := range ids {
+						if id != legacyTProxy.Id {
+							filtered = append(filtered, id)
+						}
+					}
+					if len(filtered) != len(ids) {
+						if raw, marshalErr := json.Marshal(filtered); marshalErr == nil {
+							_ = db.Model(&client).Update("inbounds", raw).Error
+						}
+					}
+				}
+			}
+		}
+		if e = db.Delete(&legacyTProxy).Error; e != nil {
+			return created, e
+		}
+	}
+	specs := []struct {
+		typ  string
+		port int
+	}{
+		{"socks", 54200}, {"http", 54201}, {"naive", 54202}, {"hysteria", 54203},
+		{"shadowtls", 54204}, {"anytls", 54205}, {"tun", 54206}, {"redirect", 54207},
+	}
+	coverageIDs := make([]uint, 0, len(specs))
+	for _, spec := range specs {
+		tag := fmt.Sprintf("coverage-%s-%d", spec.typ, spec.port)
+		var existing model.Inbound
+		raw, e := json.Marshal(newOpts(spec.typ, spec.port))
+		if e != nil {
+			return created, e
+		}
+		if e := db.Where("tag = ?", tag).First(&existing).Error; e == nil {
+			// Coverage entries are owned by this function; refresh their options
+			// so a previously isolated invalid placeholder becomes runnable.
+			if e = db.Model(&existing).Update("options", raw).Error; e != nil {
+				return created, e
+			}
+			coverageIDs = append(coverageIDs, existing.Id)
+			continue
+		} else if e != gorm.ErrRecordNotFound {
+			return created, e
+		}
+		if e = db.Create(&model.Inbound{Type: spec.typ, Tag: tag, Options: raw, Addrs: json.RawMessage(`[]`), OutJson: json.RawMessage(`{}`)}).Error; e != nil {
+			return created, e
+		}
+		var made model.Inbound
+		if e = db.Where("tag = ?", tag).First(&made).Error; e == nil {
+			coverageIDs = append(coverageIDs, made.Id)
+		}
+		created++
+	}
+	// Give the canonical local client credentials for the link-capable
+	// coverage protocols.  Without these, addUsers intentionally strips the
+	// placeholder users and sing-box rejects naive/shadowtls at startup.
+	var clients []model.Client
+	if e := db.Where("name = ?", "my").Find(&clients).Error; e == nil {
+		for _, client := range clients {
+			var cfg map[string]interface{}
+			if json.Unmarshal(client.Config, &cfg) != nil {
+				cfg = map[string]interface{}{}
+			}
+			if _, ok := cfg["naive"]; !ok {
+				cfg["naive"] = map[string]interface{}{"username": "my", "password": "icta-naive-2026"}
+			}
+			if _, ok := cfg["hysteria"]; !ok {
+				cfg["hysteria"] = map[string]interface{}{"auth_str": "icta-hysteria-2026"}
+			}
+			if _, ok := cfg["shadowtls"]; !ok {
+				cfg["shadowtls"] = map[string]interface{}{"password": "icta-shadowtls-2026"}
+			}
+			if _, ok := cfg["anytls"]; !ok {
+				cfg["anytls"] = map[string]interface{}{"password": "icta-anytls-2026"}
+			}
+			newCfg, _ := json.Marshal(cfg)
+			var ids []uint
+			_ = json.Unmarshal(client.Inbounds, &ids)
+			seen := map[uint]bool{}
+			for _, id := range ids {
+				seen[id] = true
+			}
+			for _, id := range coverageIDs {
+				if !seen[id] {
+					ids = append(ids, id)
+				}
+			}
+			newIDs, _ := json.Marshal(ids)
+			_ = db.Model(&client).Updates(map[string]interface{}{"config": newCfg, "inbounds": newIDs}).Error
+		}
+	}
+	if len(coverageIDs) > 0 {
+		var coverage []model.Inbound
+		if e := db.Where("id IN ?", coverageIDs).Find(&coverage).Error; e == nil {
+			// Rebuild only the local links for these entries.  This makes the
+			// newly visible protocol types appear in the subscription immediately.
+			_ = (&ClientService{}).UpdateLinksByInboundChange(db, &coverage, SUIServerName, "")
+		}
+	}
+	return created, nil
 }

@@ -139,7 +139,7 @@ func (s *InboundService) Save(tx *gorm.DB, act string, data json.RawMessage, ini
 			}
 
 			if act == "edit" {
-				inboundConfig, err = s.addUsers(tx, inboundConfig, inbound.Id, inbound.Type)
+				inboundConfig, err = s.addUsers(tx, inboundConfig, inbound.Id, inbound.Type, GetActiveEgressRegions(tx))
 			} else {
 				inboundConfig, err = s.initUsers(tx, inboundConfig, initUserIds, inbound.Type)
 			}
@@ -229,6 +229,10 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve dynamic egress regions once per generated config.  Previously this
+	// queried the same tables once for every inbound and emitted dozens of log
+	// lines during a restart.
+	activeRegions := GetActiveEgressRegions(db)
 	for _, inbound := range inbounds {
 		// Naive, Hysteria, TUIC, Hysteria2 strictly require a valid TLS certificate for QUIC server
 		// If Tls is missing, disabled, or empty, sing-box crashes on startup with: "TLS is required for QUIC server"
@@ -279,7 +283,7 @@ func (s *InboundService) GetAllConfig(db *gorm.DB) ([]json.RawMessage, error) {
 		}
 		// Shadowsocks 2022 password: pass through as-is from DB.
 		// Do NOT strip base64 padding - sing-box handles both padded and unpadded.
-		inboundJson, err = s.addUsers(db, inboundJson, inbound.Id, inbound.Type)
+		inboundJson, err = s.addUsers(db, inboundJson, inbound.Id, inbound.Type, activeRegions)
 		if err != nil {
 			return nil, err
 		}
@@ -332,8 +336,14 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 		if err := json.Unmarshal([]byte(row.Config), &userMap); err != nil {
 			continue
 		}
-		// Populate client name so regional expansion and auth_user rules match
-		userMap["name"] = row.Name
+		// Populate client name only for protocols whose user schema supports it.
+		// SOCKS/HTTP/Naive use auth.User (username/password only); injecting the
+		// generic name field makes sing-box reject the whole inbound config.
+		switch inboundType {
+		case "socks", "http", "naive":
+		default:
+			userMap["name"] = row.Name
+		}
 		if inboundType == "vless" && inbound["tls"] == nil {
 			if flow, ok := userMap["flow"].(string); ok && strings.Contains(flow, "xtls-rprx-vision") {
 				userMap["flow"] = ""
@@ -349,7 +359,7 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 	return usersJson, nil
 }
 
-func (s *InboundService) addUsers(db *gorm.DB, inboundJson []byte, inboundId uint, inboundType string) ([]byte, error) {
+func (s *InboundService) addUsers(db *gorm.DB, inboundJson []byte, inboundId uint, inboundType string, activeRegions []EgressRegion) ([]byte, error) {
 	if !s.hasUser(inboundType) {
 		return inboundJson, nil
 	}
@@ -359,13 +369,19 @@ func (s *InboundService) addUsers(db *gorm.DB, inboundJson []byte, inboundId uin
 	if err != nil {
 		return nil, err
 	}
+	// The built-in coverage SOCKS listener is intentionally unauthenticated.
+	// Do not attach the generic "my" client here: sing-box then advertises
+	// username/password auth and unauthenticated SOCKS clients receive 05 ff.
+	if tag, _ := inbound["tag"].(string); inboundType == "socks" && strings.HasPrefix(tag, "coverage-socks-") {
+		delete(inbound, "users")
+		return json.Marshal(inbound)
+	}
 
 	condition := fmt.Sprintf("%d IN (SELECT json_each.value FROM json_each(clients.inbounds))", inboundId)
 	users, err := s.fetchUsers(db, inboundType, condition, inbound)
 	if err != nil {
 		return nil, err
 	}
-	activeRegions := GetActiveEgressRegions(db)
 	inbound["users"] = ExpandUsersForMultiplexing(users, inboundType, activeRegions)
 
 	return json.Marshal(inbound)
@@ -419,7 +435,7 @@ func (s *InboundService) RestartInbounds(tx *gorm.DB, ids []uint) error {
 		if err != nil {
 			return err
 		}
-		inboundConfig, err = s.addUsers(tx, inboundConfig, inbound.Id, inbound.Type)
+		inboundConfig, err = s.addUsers(tx, inboundConfig, inbound.Id, inbound.Type, GetActiveEgressRegions(tx))
 		if err != nil {
 			return err
 		}

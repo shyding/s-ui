@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/util/common"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -31,10 +30,13 @@ func (s *WarpService) getWarpInfo(deviceId string, accessToken string) ([]byte, 
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("WARP info returned HTTP %d", resp.StatusCode)
+	}
 	buffer := bytes.NewBuffer(make([]byte, 8192))
 	buffer.Reset()
 	_, err = buffer.ReadFrom(resp.Body)
@@ -64,10 +66,13 @@ func (s *WarpService) RegisterWarp(ep *model.Endpoint) error {
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("WARP registration returned HTTP %d", resp.StatusCode)
+	}
 	buffer := bytes.NewBuffer(make([]byte, 8192))
 	buffer.Reset()
 	_, err = buffer.ReadFrom(resp.Body)
@@ -81,12 +86,12 @@ func (s *WarpService) RegisterWarp(ep *model.Endpoint) error {
 		return err
 	}
 
-	deviceId := rspData["id"].(string)
-	token := rspData["token"].(string)
-	license, ok := rspData["account"].(map[string]interface{})["license"].(string)
-	if !ok {
-		logger.Debug("Error accessing license value.")
-		return err
+	deviceId, idOK := rspData["id"].(string)
+	token, tokenOK := rspData["token"].(string)
+	account, accountOK := rspData["account"].(map[string]interface{})
+	license, licenseOK := account["license"].(string)
+	if !idOK || !tokenOK || !accountOK || !licenseOK || deviceId == "" || token == "" {
+		return fmt.Errorf("WARP registration response is missing identity fields")
 	}
 
 	warpInfo, err := s.getWarpInfo(deviceId, token)
@@ -100,15 +105,35 @@ func (s *WarpService) RegisterWarp(ep *model.Endpoint) error {
 		return err
 	}
 
-	warpConfig, _ := warpDetails["config"].(map[string]interface{})
+	warpConfig, ok := warpDetails["config"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARP info response is missing config")
+	}
 	clientId, _ := warpConfig["client_id"].(string)
 	reserved := s.getReserved(clientId)
-	interfaceConfig, _ := warpConfig["interface"].(map[string]interface{})
-	addresses, _ := interfaceConfig["addresses"].(map[string]interface{})
+	interfaceConfig, ok := warpConfig["interface"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARP info response is missing interface")
+	}
+	addresses, ok := interfaceConfig["addresses"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARP info response is missing addresses")
+	}
 	v4, _ := addresses["v4"].(string)
 	v6, _ := addresses["v6"].(string)
-	peer, _ := warpConfig["peers"].([]interface{})[0].(map[string]interface{})
-	peerEndpoint, _ := peer["endpoint"].(map[string]interface{})["host"].(string)
+	peerList, ok := warpConfig["peers"].([]interface{})
+	if !ok || len(peerList) == 0 {
+		return fmt.Errorf("WARP info response is missing peers")
+	}
+	peer, ok := peerList[0].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARP info response has an invalid peer")
+	}
+	peerEndpointMap, ok := peer["endpoint"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("WARP info response is missing peer endpoint")
+	}
+	peerEndpoint, _ := peerEndpointMap["host"].(string)
 	peerEpAddress, peerEpPort, err := net.SplitHostPort(peerEndpoint)
 	if err != nil {
 		return err

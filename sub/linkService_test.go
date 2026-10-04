@@ -50,7 +50,7 @@ func TestExpandEgressLinks_VMess(t *testing.T) {
 	_ = json.Unmarshal(raw0, &obj0)
 	ps0 := obj0["ps"].(string)
 
-	if !strings.HasPrefix(ps0, "SUI-新加坡-中央区-新加坡城") {
+	if !strings.HasPrefix(ps0, "🇸🇬SUI-新加坡-中央区-新加坡城") {
 		t.Errorf("First node must be SUI Singapore entry, got %s", ps0)
 	}
 
@@ -105,7 +105,7 @@ func TestExpandEgressLinks_VLESS(t *testing.T) {
 	}
 
 	u0, _ := url.Parse(expanded[0])
-	if !strings.HasPrefix(u0.Fragment, "SUI-新加坡-中央区-新加坡城") {
+	if !strings.HasPrefix(u0.Fragment, "🇸🇬SUI-新加坡-中央区-新加坡城") {
 		t.Errorf("First node must be SUI Singapore entry, got %s", u0.Fragment)
 	}
 
@@ -211,7 +211,7 @@ func TestGetAuthorizedLinks_EmptyAllowedTags(t *testing.T) {
 	}
 }
 
-func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
+func TestGetAuthorizedLinks_PublishesOnlyLocalSUILinks(t *testing.T) {
 	testDb := t.TempDir() + "/test_client_egress_links.db"
 	_ = database.InitDB(testDb)
 	db := database.GetDB()
@@ -234,7 +234,7 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 	// FilterHealthyAndGroupTop3Links returns empty (no virtual records).
 	now := time.Now().UTC().Format(time.RFC3339)
 	healthRecords := []model.NodeHealthStatus{
-		{Node: "sui-sg-health", Provider: "SUI", Country: "新加坡", Region: "中央区", City: "新加坡城", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 50, Speed: 100.0, LastCheckTime: now},
+		{Node: "dash.icta.top:2096", Provider: "SUI", Country: "新加坡", Region: "中央区", City: "新加坡城", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 50, Speed: 100.0, LastCheckTime: now},
 		{Node: "proton-us-health", Provider: "Proton", Country: "US", Region: "California", City: "Los Angeles", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 150, Speed: 50.0, LastCheckTime: now},
 		{Node: "proton-jp-health", Provider: "Proton", Country: "JP", Region: "Tokyo", City: "Tokyo", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 120, Speed: 60.0, LastCheckTime: now},
 		{Node: "proton-nl-health", Provider: "Proton", Country: "NL", Region: "Provincie Noord-Holland", City: "Amsterdam", Status: "available", TCPCheck: true, TLSCheck: true, ProxyCheck: true, Latency: 180, Speed: 40.0, LastCheckTime: now},
@@ -243,7 +243,6 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 		db.Create(&hr)
 	}
 
-	baseUUID := "403db7be-930b-449e-b5f4-34537cb594c7"
 	linksJSON := json.RawMessage(`[
 		{"type":"local","remark":"vless-in","uri":"vless://403db7be-930b-449e-b5f4-34537cb594c7@dash.icta.top:2096?security=tls&type=ws&path=%2Fws#vless-in"},
 		{"type":"external","remark":"external","uri":"vless://external-user@198.51.100.10:443?security=tls&type=ws#external"},
@@ -251,8 +250,8 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 	]`)
 
 	links := (&LinkService{}).GetAuthorizedLinks(&linksJSON, "all", "", nil)
-	if len(links) < len(service.StandardEgressRegions) {
-		t.Fatalf("expected local links for every standard egress region, got %d", len(links))
+	if len(links) != 1 {
+		t.Fatalf("expected exactly one local SUI link without regional duplication, got %d", len(links))
 	}
 
 	for _, link := range links {
@@ -268,9 +267,42 @@ func TestGetAuthorizedLinks_PublishesOnlyExpandedLocalLinks(t *testing.T) {
 		}
 	}
 
-	expectedUSUUID := service.DeriveUUID(baseUUID, "us")
-	if !strings.Contains(strings.Join(links, "\n"), expectedUSUUID) {
-		t.Fatal("expected a US egress link with a derived UUID")
+}
+
+func TestGetAuthorizedLinksForClientSynchronizesHysteria2Password(t *testing.T) {
+	testDB := t.TempDir() + "/test_hysteria2_auth.db"
+	_ = database.InitDB(testDB)
+	db := database.GetDB()
+	defer func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+
+	inboundOptions := json.RawMessage(`{"tls":{"enabled":true,"server_name":"dash.icta.top"}}`)
+	tlsRecord := model.Tls{Name: "test", Server: json.RawMessage(`{"enabled":true,"server_name":"dash.icta.top"}`)}
+	if err := db.Create(&tlsRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Inbound{Tag: "hysteria2-54170", Type: "hysteria2", TlsId: tlsRecord.Id, Options: inboundOptions}).Error; err != nil {
+		t.Fatal(err)
+	}
+	linksJSON := json.RawMessage(`[{"type":"local","remark":"hysteria2-54170","uri":"hysteria2://stale-password@dash.icta.top:54170?insecure=0#old"}]`)
+	clientConfig := json.RawMessage(`{"hysteria2":{"password":"current/pass+word="}}`)
+
+	links := (&LinkService{}).GetAuthorizedLinksForClient(&linksJSON, "all", "", nil, &clientConfig)
+	if len(links) != 1 {
+		t.Fatalf("expected one Hysteria2 link, got %d", len(links))
+	}
+	u, err := url.Parse(links[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.User.Username() != "current/pass+word=" {
+		t.Fatalf("expected current client password, got %q", u.User.Username())
+	}
+	if u.Query().Get("sni") != "dash.icta.top" {
+		t.Fatalf("expected inbound SNI to be retained, got %q", u.Query().Get("sni"))
 	}
 }
 
