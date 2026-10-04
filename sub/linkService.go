@@ -84,12 +84,6 @@ func getProtocolPriority(proto string) int {
 	}
 }
 
-// inboundTransportCache caches port -> transport config to avoid per-URI DB queries
-var inboundTransportCache = struct {
-	sync.RWMutex
-	data map[string]map[string]interface{}
-}{data: make(map[string]map[string]interface{})}
-
 // inboundRealityCache caches port -> reality config (pbk, sid, sni, fp) to avoid per-URI DB queries
 var inboundRealityCache = struct {
 	sync.RWMutex
@@ -287,13 +281,6 @@ func fixSUIReality(uri string) string {
 }
 
 func getInboundTransport(port string) map[string]interface{} {
-	inboundTransportCache.RLock()
-	if t, ok := inboundTransportCache.data[port]; ok {
-		inboundTransportCache.RUnlock()
-		return t
-	}
-	inboundTransportCache.RUnlock()
-
 	db := database.GetDB()
 	if db == nil {
 		return nil
@@ -306,11 +293,13 @@ func getInboundTransport(port string) map[string]interface{} {
 	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
 		return nil
 	}
+	// Return an empty map for a real inbound without transport. This is
+	// different from nil (which means the port was not found), and lets the
+	// URI fixer correct stale `type=ws/grpc/httpupgrade` values back to tcp.
 	transport, _ := opts["transport"].(map[string]interface{})
-
-	inboundTransportCache.Lock()
-	inboundTransportCache.data[port] = transport
-	inboundTransportCache.Unlock()
+	if transport == nil {
+		transport = map[string]interface{}{}
+	}
 	return transport
 }
 
@@ -331,8 +320,8 @@ func fixSUITransport(uri string) string {
 		return uri
 	}
 	transportType, _ := transport["type"].(string)
-	if transportType == "" || transportType == "tcp" {
-		return uri // already correct or tcp (default)
+	if transportType == "" {
+		transportType = "tcp"
 	}
 	// Fix the transport type in URI
 	q := u.Query()
@@ -493,6 +482,65 @@ func fixSUIHysteria2(uri string) string {
 		return u.String()
 	}
 	return uri
+}
+
+// fixSUITUICALPN ensures TUIC clients offer HTTP/3 ALPN during QUIC TLS.
+// Without h3, the server rejects the connection with
+// "tls: server did not select an ALPN protocol".
+func fixSUITUICALPN(uri string) string {
+	if !strings.HasPrefix(strings.ToLower(uri), "tuic://") {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	q := u.Query()
+	if q.Get("alpn") == "h3" {
+		return uri
+	}
+	q.Set("alpn", "h3")
+	u.RawQuery = q.Encode()
+	logger.Infof("Fixed SUI TUIC ALPN for port %s: alpn=h3", u.Port())
+	return u.String()
+}
+
+// hysteria2PasswordFromClientConfig returns the same per-client password used
+// by InboundService.fetchUsers when it builds the running Hysteria2 inbounds.
+// Stored links can outlive a client password change, so the subscription must
+// not trust their userinfo.
+func hysteria2PasswordFromClientConfig(clientConfig *json.RawMessage) string {
+	if clientConfig == nil || len(*clientConfig) == 0 {
+		return ""
+	}
+	var config struct {
+		Hysteria2 struct {
+			Password string `json:"password"`
+		} `json:"hysteria2"`
+	}
+	if err := json.Unmarshal(*clientConfig, &config); err != nil {
+		return ""
+	}
+	return config.Hysteria2.Password
+}
+
+// fixSUIHysteria2Auth synchronizes a stale stored URI with the client's
+// current Hysteria2 credential. url.User deliberately escapes characters that
+// have special meaning in URI userinfo while preserving them after decoding.
+func fixSUIHysteria2Auth(uri string, password string) string {
+	if password == "" || (!strings.HasPrefix(uri, "hysteria2://") && !strings.HasPrefix(uri, "hy2://")) {
+		return uri
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	if u.User != nil && u.User.Username() == password {
+		return uri
+	}
+	u.User = url.User(password)
+	logger.Infof("Synchronized SUI Hysteria2 authentication for port %s", u.Port())
+	return u.String()
 }
 
 // fixSOCKSAuth ensures the SOCKS URI auth matches the inbound config.
@@ -877,6 +925,8 @@ func (s *LinkService) ExpandEgressCandidates(uri string, activeRegions []service
 	uri = fixVLESSFlow(uri)
 	// Fix HY2 sni param (missing sni causes client -1)
 	uri = fixSUIHysteria2(uri)
+	// Fix TUIC QUIC ALPN (missing h3 causes TLS CRYPTO_ERROR 0x178)
+	uri = fixSUITUICALPN(uri)
 	// fixSUIReality DISABLED: has duplication bug, DB links are correct.
 	// uri = fixSUIReality(uri)
 	protocol = strings.Split(uri, "://")
@@ -1125,14 +1175,9 @@ func FilterHealthyAndGroupTop3Links(
 				}
 			}
 		}
-		if len(records) == 0 {
-			// STRICT FAIL-CLOSED: health table is completely unpopulated
-			// (fresh deploy or health checker not yet run).
-			// DO NOT publish unverified nodes. Return empty; the subscription
-			// will populate once the health checker completes its first run.
-			// See: docs/SUI_QUALITY_AND_QUANTITY_RULES.md (strict FAIL-CLOSED).
-			return nil
-		}
+		// A fresh database is allowed to continue into the loop below: local SUI
+		// nodes will be synchronously verified there, while external nodes still
+		// remain fail-closed because they have no health record.
 	}
 
 	// 1. Filter healthy candidates (FAIL-CLOSED)
@@ -1152,6 +1197,18 @@ func FilterHealthyAndGroupTop3Links(
 				rec = healthMap[nodeKey]
 			} else if healthMap[c.GroupKey()] != nil {
 				rec = healthMap[c.GroupKey()]
+			}
+		}
+
+		// Local SUI nodes are cheap to validate. Repair missing, stale, or failed
+		// records synchronously so a checker defect does not hide a healthy
+		// inbound until the next daily run. The actual protocol check remains
+		// fail-closed.
+		if c.Provider == "SUI" && (rec == nil || !rec.IsHealthyWithTTL(ttl)) {
+			if fresh := service.CheckNodeHealthNow(c.Uri); fresh != nil {
+				rec = fresh
+				healthMap[fresh.Node] = fresh
+				healthMap[c.Uri] = fresh
 			}
 		}
 
@@ -1447,6 +1504,17 @@ func (s *LinkService) ExpandEgressLinks(uri string, activeRegions []service.Egre
 }
 
 func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool) []string {
+	return s.getAuthorizedLinks(linkJson, types, clientInfo, allowedTags, nil)
+}
+
+// GetAuthorizedLinksForClient is the production subscription path. It accepts
+// clientConfig so protocol credentials in stored links can be synchronized
+// with the credentials used by the running inbounds.
+func (s *LinkService) GetAuthorizedLinksForClient(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool, clientConfig *json.RawMessage) []string {
+	return s.getAuthorizedLinks(linkJson, types, clientInfo, allowedTags, clientConfig)
+}
+
+func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string, clientInfo string, allowedTags map[string]bool, clientConfig *json.RawMessage) []string {
 	links := []Link{}
 	err := json.Unmarshal(*linkJson, &links)
 	if err != nil {
@@ -1455,12 +1523,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 
 	var result []string
 	seen := make(map[string]bool)
-	activeRegions := service.GetVerifiedEgressRegions(database.GetDB(), model.DefaultHealthTTL)
-	if len(activeRegions) == 0 && database.GetDB() == nil {
-		activeRegions = service.StandardEgressRegions
-	}
-
 	var allCandidates []CandidateNode
+	hysteria2Password := hysteria2PasswordFromClientConfig(clientConfig)
 
 	for _, link := range links {
 		// Filter out obsolete/unsupported protocols that standard clients cannot import
@@ -1515,6 +1579,10 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				finalLink = fixSSMethod(finalLink)
 				// Fix HY2 sni param (missing sni causes client -1)
 				finalLink = fixSUIHysteria2(finalLink)
+				// Fix TUIC QUIC ALPN (h3 is required by the TUIC TLS server)
+				finalLink = fixSUITUICALPN(finalLink)
+				// Stored links can contain an old password after a client edit.
+				finalLink = fixSUIHysteria2Auth(finalLink, hysteria2Password)
 				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
 				finalLink = fixSOCKSAuth(finalLink)
 				// Fix REALITY flow (remove flow param for sing-box compat, or convert to TLS)
@@ -1544,7 +1612,8 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 	// Load Seed nodes from file (SUI_SEED_NODES_FILE) as candidates.
 	// Seed nodes are external proxies that have passed health checks.
 	// They are added with Provider="Seed" for FAIL-CLOSED filtering.
-	if seedFile := os.Getenv("SUI_SEED_NODES_FILE"); seedFile != "" {
+	includeExternal := strings.EqualFold(strings.TrimSpace(os.Getenv("SUI_INCLUDE_EXTERNAL_NODES")), "true")
+	if seedFile := os.Getenv("SUI_SEED_NODES_FILE"); includeExternal && seedFile != "" {
 		if f, err := os.Open(seedFile); err == nil {
 			scanner := bufio.NewScanner(f)
 			buf := make([]byte, 0, 64*1024)
@@ -1574,8 +1643,10 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 	// HProxy/Cloudflare/Proton: 从outbounds表加载通过质量门的节点，
 	// 映射到38 SUI类型矩阵后作为订阅候选暴露。
 	// 只有协议在38类型矩阵中的节点才会被映射（如WireGuard不在矩阵中会被跳过）。
-	for _, ec := range getEgressCandidates() {
-		allCandidates = append(allCandidates, ec)
+	if includeExternal {
+		for _, ec := range getEgressCandidates() {
+			allCandidates = append(allCandidates, ec)
+		}
 	}
 
 	if len(allCandidates) > 0 {
@@ -1585,6 +1656,15 @@ func (s *LinkService) GetAuthorizedLinks(linkJson *json.RawMessage, types string
 				seen[egressLink] = true
 				result = append(result, egressLink)
 			}
+		}
+	}
+
+	// Two subscription-only native WireGuard nodes complete the fixed 40-node
+	// inventory (38 application inbounds + UDP 54180/54181 relays).
+	for _, wgLink := range service.GetSUIWireGuardLinks(database.GetDB()) {
+		if !seen[wgLink] {
+			seen[wgLink] = true
+			result = append(result, wgLink)
 		}
 	}
 
@@ -1715,7 +1795,21 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 		// 1. IP check: No raw IP addresses allowed in client subscription.
 		// Egress nodes (Seed/Cloudflare/HProxy/Proton) must go through the SUI
 		// ingress and must never be exposed directly to clients.
-		if match := ipRegex.FindString(link); match != "" {
+		ipCheckTarget := link
+		if strings.HasPrefix(strings.ToLower(link), "wireguard://") {
+			// WireGuard necessarily carries private tunnel interface addresses in
+			// its address/allowed_ips query fields. They are client routing
+			// selectors, not exposed endpoints; remove them before enforcing the
+			// no-raw-public-IP rule.
+			if parsed, err := url.Parse(link); err == nil {
+				q := parsed.Query()
+				q.Del("address")
+				q.Del("allowed_ips")
+				parsed.RawQuery = q.Encode()
+				ipCheckTarget = parsed.String()
+			}
+		}
+		if match := ipRegex.FindString(ipCheckTarget); match != "" {
 			violations = append(violations, fmt.Sprintf("Exposed raw IP '%s' in link: %s", match, link))
 		}
 
