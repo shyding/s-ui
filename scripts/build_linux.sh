@@ -31,7 +31,16 @@ fi
 export GOOS=linux
 export GOARCH=amd64
 export CGO_ENABLED=1
-command -v gcc >/dev/null 2>&1 || fail "gcc is required for the SQLite build"
+if ! command -v gcc >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    echo "gcc not found; installing build-essential"
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends build-essential file gzip
+  else
+    fail "gcc is required for the SQLite build (install build-essential)"
+  fi
+fi
+command -v file >/dev/null 2>&1 || fail "file is required to validate the ELF output"
 
 BIN="${OUT_DIR}/sui"
 echo "Building ${BIN} (${GO_VERSION})"
