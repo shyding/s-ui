@@ -26,6 +26,10 @@
   - VPS 基础设施、数据库关键表快照、种子节点、证书信息、灾难恢复 SQL、攻坚任务清单。VPS 崩溃时凭此文档 30 分钟完整恢复。
 - [11. 订阅节点品质与数量刚性铁律](../SUI_QUALITY_AND_QUANTITY_RULES.md)
   - 100% 连通零 -1、<= 650ms 延迟门、备注全中文零英文零未知、SUI >= 20 协议组合、总数 >= 1000 节点、端到端闭环自测。
+- [12. 登录与数据库安全：Burp/MCP 验证手册](12_auth_database_burp_security.md)
+  - 固化登录、Session、SQLite/GORM 与数据库导入导出攻击面，提供按授权预算执行的 Burp MCP 请求模板、停止条件和证据要求。
+- [13. SQLite/GORM JSON 字段扫描兼容性](13_gorm_json_sqlite_scan_compatibility.md)
+  - 固化 `json.RawMessage` 与 SQLite `TEXT` 扫描不兼容的根因、`serializer:json` 修复方式及回归测试要求。
 
 
 
