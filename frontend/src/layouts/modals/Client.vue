@@ -1,5 +1,5 @@
 <template>
-  <v-dialog transition="dialog-bottom-transition" width="800">
+  <v-dialog :model-value="visible" @update:model-value="onVisibilityChange" transition="dialog-bottom-transition" width="800">
     <v-card class="rounded-lg" :loading="loading">
       <v-card-title>
         {{ $t('actions.' + title) + " " + $t('objects.client') }}
@@ -305,6 +305,12 @@ export default {
     closeModal() {
       this.updateData(0) // reset
       this.$emit('close')
+    },
+    onVisibilityChange(val: boolean) {
+      // v-dialog closed via ESC/outside click: notify parent to sync visible=false
+      if (!val) {
+        this.$emit('close')
+      }
     },
     async saveChanges() {
       if (!this.$props.visible) return
