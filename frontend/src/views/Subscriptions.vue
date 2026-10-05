@@ -102,9 +102,32 @@
     </v-card>
   </v-dialog>
 
+  <!-- Search -->
+  <v-row class="mt-2">
+    <v-col cols="12" sm="6" md="4" lg="3">
+      <v-text-field
+        v-model="search"
+        :label="$t('search') || 'Search'"
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+        density="compact"
+        hide-details
+        clearable
+      ></v-text-field>
+    </v-col>
+    <v-col cols="12" sm="6" md="8" lg="9" class="d-flex align-center" v-if="selectedIds.length > 0">
+      <v-btn color="error" size="small" variant="outlined" @click="batchDeleteConfirm = true" class="mr-2">
+        {{ $t('actions.deleteSelected') || 'Delete Selected' }} ({{ selectedIds.length }})
+      </v-btn>
+      <v-btn color="secondary" size="small" variant="outlined" @click="selectedIds = []">
+        {{ $t('actions.clearSelection') || 'Clear' }}
+      </v-btn>
+    </v-col>
+  </v-row>
+
   <!-- Subscriptions List -->
   <v-row class="mt-4">
-    <v-col cols="12" md="6" lg="4" v-for="sub in subscriptions" :key="sub.id">
+    <v-col cols="12" md="6" lg="4" v-for="sub in filteredSubscriptions" :key="sub.id">
       <v-card rounded="xl" elevation="5">
         <template v-slot:prepend>
           <v-checkbox
@@ -156,6 +179,17 @@
   </v-row>
 
   <!-- Delete Confirm Dialog -->
+  <v-dialog v-model="batchDeleteConfirm" max-width="400">
+    <v-card :title="$t('actions.del')" rounded="lg">
+      <v-divider></v-divider>
+      <v-card-text>{{ $t('actions.confirmDeleteSelected', { count: selectedIds.length }) || `Delete ${selectedIds.length} selected subscriptions?` }}</v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="error" variant="outlined" :loading="deleting" @click="batchDelete">{{ $t('yes') }}</v-btn>
+        <v-btn color="success" variant="outlined" @click="batchDeleteConfirm = false">{{ $t('no') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
   <v-dialog v-model="deleteDialog.visible" max-width="400">
     <v-card>
       <v-card-title>{{ $t('actions.del') || 'Delete' }}</v-card-title>
@@ -181,7 +215,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import HttpUtils from '@/plugins/httputil'
 import NodeTest from '@/layouts/modals/NodeTest.vue'
 
@@ -198,6 +232,31 @@ interface Subscription {
 
 const subscriptions = ref<Subscription[]>([])
 const selectedIds = ref<number[]>([])
+const search = ref('')
+const batchDeleteConfirm = ref(false)
+
+const filteredSubscriptions = computed(() => {
+  if (!search.value) return subscriptions.value
+  const q = search.value.toLowerCase()
+  return subscriptions.value.filter(s =>
+    (s.name && s.name.toLowerCase().includes(q)) ||
+    (s.url && s.url.toLowerCase().includes(q))
+  )
+})
+
+const batchDelete = async () => {
+  deleting.value = true
+  try {
+    for (const id of selectedIds.value) {
+      await HttpUtils.post('api/deleteSubscription', { id: id.toString() })
+    }
+    selectedIds.value = []
+    batchDeleteConfirm.value = false
+    await loadSubscriptions()
+  } finally {
+    deleting.value = false
+  }
+}
 const refreshing = ref(false)
 const refreshingId = ref<number | null>(null)
 const saving = ref(false)
