@@ -543,9 +543,11 @@ func fixSUIHysteria2Auth(uri string, password string) string {
 	return u.String()
 }
 
-// fixSOCKSAuth ensures the SOCKS URI auth matches the inbound config.
+// fixSOCKSAuth ensures the SOCKS URI auth matches both the inbound config and
+// the current client's mixed/socks credentials.  A stale stored URI can be
+// syntactically valid yet fail with -1 when the client password was rotated.
 // If inbound has no users, remove userinfo from URI (server rejects unexpected auth).
-func fixSOCKSAuth(uri string) string {
+func fixSOCKSAuth(uri string, clientConfig *json.RawMessage) string {
 	if !strings.HasPrefix(uri, "socks5://") && !strings.HasPrefix(uri, "socks://") {
 		return uri
 	}
@@ -576,6 +578,21 @@ func fixSOCKSAuth(uri string) string {
 		u.User = nil
 		logger.Infof("Fixed SUI socks auth for port %s: removed unexpected userinfo", port)
 		return u.String()
+	}
+	if hasUsers && clientConfig != nil && len(*clientConfig) > 0 {
+		var cfg map[string]map[string]interface{}
+		if json.Unmarshal(*clientConfig, &cfg) == nil {
+			userCfg := cfg["mixed"]
+			if userCfg == nil {
+				userCfg = cfg["socks"]
+			}
+			username, _ := userCfg["username"].(string)
+			password, _ := userCfg["password"].(string)
+			if username != "" {
+				u.User = url.UserPassword(username, password)
+				return u.String()
+			}
+		}
 	}
 	return uri
 }
@@ -1584,7 +1601,7 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 				// Stored links can contain an old password after a client edit.
 				finalLink = fixSUIHysteria2Auth(finalLink, hysteria2Password)
 				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
-				finalLink = fixSOCKSAuth(finalLink)
+				finalLink = fixSOCKSAuth(finalLink, clientConfig)
 				// Fix REALITY flow (remove flow param for sing-box compat, or convert to TLS)
 				finalLink = fixSUIRealityToTLS(finalLink)
 				finalLink = fixSUIRealityFlow(finalLink)
