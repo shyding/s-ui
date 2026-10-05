@@ -12,7 +12,7 @@
       title="S-UI"
     >
       <template v-slot:append v-if="isMobile">
-        <v-icon icon="mdi-close" />
+        <v-btn icon="mdi-close" variant="text" density="compact" @click.stop="$emit('toggleDrawer')"></v-btn>
       </template>
     </v-list-item>
 
@@ -43,9 +43,14 @@ import router from '@/router'
 import { logout } from '@/plugins/httputil'
 
 const props = defineProps(['isMobile','displayDrawer'])
+const emit = defineEmits(['toggleDrawer'])
 
-const showDrawer = computed((): boolean => {
-  return props.displayDrawer
+const showDrawer = computed({
+  get: (): boolean => props.displayDrawer,
+  set: (val: boolean) => {
+    // Scrim click or swipe sets false -> close drawer
+    if (!val && props.displayDrawer) emit('toggleDrawer')
+  }
 })
 
 const menu = [
