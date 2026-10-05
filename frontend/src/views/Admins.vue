@@ -25,8 +25,24 @@
     </v-col>
   </v-row>
   <v-row>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(item, index) in <any[]>users" :key="item.id">
-      <v-card rounded="xl" elevation="5" min-width="200" :title="item.username">
+    <v-col cols="12">
+      <v-row align="center" no-gutters>
+        <v-spacer></v-spacer>
+        <v-col cols="12" sm="6" md="4" lg="3">
+          <v-text-field
+            v-model="searchAdmins"
+            :label="$t('search') || 'Search'"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-text-field>
+        </v-col>
+      </v-row>
+    </v-col>
+    <v-col cols="12" sm="4" md="3" lg="2" v-for="(entry, fidx) in filteredAdmins" :key="entry.item.id">
+      <v-card rounded="xl" elevation="5" min-width="200" :title="entry.item.username">
         <v-card-subtitle style="margin-top: -20px;">
           {{ $t('admin.lastLogin') }}
         </v-card-subtitle>
@@ -34,29 +50,29 @@
           <v-row>
             <v-col>{{ $t('admin.date') }}</v-col>
             <v-col>
-              {{ item.loginDate }}
+              {{ entry.item.loginDate }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('admin.time') }}</v-col>
             <v-col>
-              {{ item.loginTime }}
+              {{ entry.item.loginTime }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>IP</v-col>
             <v-col>
-              {{ item.ip }}
+              {{ entry.item.ip }}
             </v-col>
           </v-row>
         </v-card-text>
         <v-divider></v-divider>
         <v-card-actions style="padding: 0;">
-          <v-btn icon="mdi-account-edit" @click="showEditModal(item)">
+          <v-btn icon="mdi-account-edit" @click="showEditModal(entry.item)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
-          <v-btn icon="mdi-list-box-outline" @click="showChangesModal(item.username)">
+          <v-btn icon="mdi-list-box-outline" @click="showChangesModal(entry.item.username)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('admin.changes')"></v-tooltip>
           </v-btn>
@@ -72,11 +88,22 @@ import ChangeModal  from '@/layouts/modals/Changes.vue'
 import TokenModal from '@/layouts/modals/Token.vue'
 import { i18n } from '@/locales'
 import HttpUtils from '@/plugins/httputil'
-import { Ref, ref, inject, onMounted } from 'vue'
+import { Ref, ref, inject, onMounted, computed } from 'vue'
 
 const loading:Ref = inject('loading')?? ref(false)
 
 const users = ref(<any[]>[])
+
+const searchAdmins = ref('')
+
+const filteredAdmins = computed((): {item: any, index: number}[] => {
+  const all = users.value.map((item: any, index: number) => ({ item, index }))
+  if (!searchAdmins.value) return all
+  const q = searchAdmins.value.toLowerCase()
+  return all.filter(({ item }) =>
+    (item.username && String(item.username).toLowerCase().includes(q))
+  )
+})
 
 onMounted(async () => {loadData()})
 
