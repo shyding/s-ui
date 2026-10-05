@@ -113,7 +113,7 @@
         </v-col>
       </v-row>
     </v-col>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(entry, fidx) in filteredRulesets" :key="entry.item.tag">
+    <v-col cols="12" sm="4" md="3" lg="2" v-if="showContent" v-for="(entry, fidx) in filteredRulesets" :key="entry.item.tag">
       <v-card rounded="xl" elevation="5" min-width="200" :title="entry.item.tag">
         <v-checkbox
           :model-value="selectedRulesets.includes(entry.item.tag)"
@@ -199,28 +199,7 @@
             clearable
           ></v-select>
         </v-col>
-        <v-col cols="6" sm="4" md="3" lg="2">
-          <v-select
-            v-model="filterRuleAction"
-            :items="ruleActions"
-            :label="$t('action') || 'Action'"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-          ></v-select>
-        </v-col>
-        <v-col cols="6" sm="4" md="3" lg="2">
-          <v-select
-            v-model="filterRuleType"
-            :items="ruleTypes"
-            :label="$t('type') || 'Type'"
-            variant="outlined"
-            density="compact"
-            hide-details
-            clearable
-          ></v-select>
-        </v-col>
+
       </v-row>
       <v-row v-if="selectedRules.length > 0" class="mt-2" no-gutters>
         <v-col cols="auto" class="d-flex align-center ga-2">
@@ -232,7 +211,7 @@
         </v-col>
       </v-row>
     </v-col>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(entry, fidx) in filteredRules"
+    <v-col cols="12" sm="4" md="3" lg="2" v-if="showContent" v-for="(entry, fidx) in filteredRules"
         :key="entry.index"
         :draggable="true"
         @dragstart="onDragStart(entry.index)"
@@ -348,6 +327,10 @@ const appConfig = computed((): Config => {
 })
 
 onMounted(async () => {
+  // Render page frame first, then heavy card lists
+  requestAnimationFrame(() => {
+    showContent.value = true
+  })
   // Defer deep clone so page renders first
   setTimeout(() => {
     oldConfig.value = JSON.parse(JSON.stringify(Data().config))
@@ -422,12 +405,12 @@ const searchRules = ref('')
 const searchRulesets = ref('')
 const filterRulesetTag = ref<string | null>(null)
 const filterRuleOutbound = ref<string | null>(null)
-const filterRuleAction = ref<string | null>(null)
-const filterRuleType = ref<string | null>(null)
 const selectedRules = ref<number[]>([])
 const selectedRulesets = ref<string[]>([])
 const batchDelRuleConfirm = ref(false)
 const batchDelRulesetConfirm = ref(false)
+
+const showContent = ref(false)
 
 const blurActive = () => {
   (document.activeElement as HTMLElement)?.blur()
@@ -444,23 +427,11 @@ const filteredRulesets = computed((): {item: any, index: number}[] => {
   })
 })
 
-const ruleActions = computed((): string[] => {
-  const s = new Set<string>()
-  rules.value.forEach((r: any) => { if (r.action) s.add(String(r.action)) })
-  return [...s].sort()
-})
-const ruleTypes = computed((): string[] => {
-  const s = new Set<string>()
-  rules.value.forEach((r: any) => { if (r.type) s.add(String(r.type)) })
-  return [...s].sort()
-})
 const filteredRules = computed((): {item: any, index: number}[] => {
   const all = rules.value.map((item: any, index: number) => ({ item, index }))
   const q = searchRules.value.toLowerCase()
   return all.filter(({ item }) => {
     if (filterRuleOutbound.value && String(item.outbound) !== filterRuleOutbound.value) return false
-    if (filterRuleAction.value && String(item.action) !== filterRuleAction.value) return false
-    if (filterRuleType.value && String(item.type) !== filterRuleType.value) return false
     if (!q) return true
     return (item.outbound && String(item.outbound).toLowerCase().includes(q)) ||
       (item.action && String(item.action).toLowerCase().includes(q)) ||
