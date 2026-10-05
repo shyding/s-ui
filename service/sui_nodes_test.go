@@ -85,6 +85,16 @@ func TestSUINodeSpec_BuildOptions(t *testing.T) {
 	if ss["method"] != "aes-256-gcm" || ss["password"] != SUISSPassword {
 		t.Fatalf("ss-54172 mismatch: %v", ss)
 	}
+	for _, tag := range []string{"vmess-httpupgrade-54149", "vmess-httpupgrade-plain-54168"} {
+		opts := byTag[tag].BuildOptions()
+		if byTag[tag].TLS {
+			tlsMap := opts["tls"].(map[string]interface{})
+			alpn, ok := tlsMap["alpn"].([]string)
+			if !ok || len(alpn) != 1 || alpn[0] != "http/1.1" {
+				t.Fatalf("%s: HTTPUpgrade must advertise HTTP/1.1 only, got %#v", tag, tlsMap["alpn"])
+			}
+		}
+	}
 }
 
 func TestEnsureSUINodes_Idempotent(t *testing.T) {

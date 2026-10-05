@@ -855,6 +855,19 @@ func checkExternalNode(uri string) *model.NodeHealthStatus {
 		}
 		status.ProxyCheck = true
 	case "vmess":
+		// VMess uses the same transport wrappers as VLESS.  Previously the
+		// checker sent a VMess probe directly on the TLS socket, so WS and
+		// HTTPUpgrade nodes were reported -1 even though their listener and
+		// credentials were valid.
+		wrappedConn, err := wrapVlessTransport(conn, uri, host, useTLS, sni)
+		if err != nil {
+			status.LastError = "vmess_transport_fail:" + err.Error()
+			return status
+		}
+		if wrappedConn != conn {
+			defer wrappedConn.Close()
+			conn = wrappedConn
+		}
 		if !vmessHandshake(conn, uri) {
 			status.LastError = "vmess_handshake_fail"
 			return status

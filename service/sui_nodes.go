@@ -102,6 +102,20 @@ func suiTUICTLSOptions() map[string]interface{} {
 	}
 }
 
+// HTTPUpgrade is an HTTP/1.1 upgrade transport.  Advertising h2 first (or
+// allowing the TLS stack to negotiate h2) makes clients send HTTP/2 to an
+// HTTPUpgrade listener, which never reaches the upgrade handler and appears
+// as a dead node.  Keep this ALPN profile separate from ordinary TLS/WS nodes.
+func suiHTTPUpgradeTLSOptions() map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":          true,
+		"server_name":      SUIServerName,
+		"alpn":             []string{"http/1.1"},
+		"certificate_path": SUICertPath,
+		"key_path":         SUICertKeyPath,
+	}
+}
+
 // transportOptions 返回传输层配置，transport 为 "" 时返回 nil
 func (s SUINodeSpec) transportOptions() map[string]interface{} {
 	switch s.Transport {
@@ -151,9 +165,12 @@ func (s SUINodeSpec) BuildOptions() map[string]interface{} {
 		"sniff_override_destination": false,
 	}
 	if s.TLS {
-		// 54142-54149 使用带 ALPN 的配置，其余使用无 ALPN 配置（与现有部署一致）
+		// HTTPUpgrade must negotiate HTTP/1.1 only; h2 cannot carry this
+		// upgrade request.  TUIC separately requires h3.
 		if s.Type == "tuic" {
 			opts["tls"] = suiTUICTLSOptions()
+		} else if s.Transport == "httpupgrade" {
+			opts["tls"] = suiHTTPUpgradeTLSOptions()
 		} else if s.Port >= 54142 && s.Port <= 54149 {
 			opts["tls"] = suiTLSOptions()
 		} else {
@@ -253,7 +270,10 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s credentials", spec.Tag))
 				}
 			}
-			if spec.Type == "tuic" {
+			// These built-in entries are owned by S-UI. Reconcile their complete
+			// transport profile so upgrades from the old shared-ALPN profile do
+			// not leave 54149/54168 permanently unusable.
+			if spec.Type == "tuic" || spec.Port == 54149 || spec.Port == 54168 || spec.Port == 54156 {
 				canonical, marshalErr := json.MarshalIndent(spec.BuildOptions(), "", "  ")
 				if marshalErr != nil {
 					return created, fmt.Errorf("marshal options for %s: %w", spec.Tag, marshalErr)
@@ -262,7 +282,7 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 					if updateErr := db.Model(&existing).Update("options", canonical).Error; updateErr != nil {
 						return created, fmt.Errorf("reconcile options for %s: %w", spec.Tag, updateErr)
 					}
-					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s TLS ALPN", spec.Tag))
+					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s transport profile", spec.Tag))
 				}
 			}
 			// Public plaintext VLESS/Trojan nodes must be migrated to the
