@@ -103,7 +103,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelDnsConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedDnsServers = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedDnsServers = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>
@@ -192,7 +192,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelDnsRuleConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedDnsRules = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedDnsRules = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>

@@ -116,6 +116,7 @@ export default {
   },
   actions: {
     action: "操作",
+    search: "查詢",
     add: "添加",
     addbulk: "批量添加",
     new: "新建",

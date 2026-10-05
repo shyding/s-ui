@@ -77,7 +77,7 @@
       <v-row align="center" no-gutters>
         <v-col cols="auto">{{ $t('rule.ruleset') }}</v-col>
         <v-spacer></v-spacer>
-        <v-col cols="12" sm="6" md="4" lg="3">
+        <v-col cols="12" sm="8" md="6" lg="4" class="d-flex ga-2 align-center">
           <v-text-field
             v-model="searchRulesets"
             :label="$t('search') || 'Search'"
@@ -86,7 +86,10 @@
             density="compact"
             hide-details
             clearable
+            class="flex-grow-1"
+            @keyup.enter="blurActive"
           ></v-text-field>
+          <v-btn color="primary" size="small" @click="blurActive">{{ $t('actions.search') || 'Search' }}</v-btn>
         </v-col>
       </v-row>
       <v-row v-if="selectedRulesets.length > 0" class="mt-2" no-gutters>
@@ -95,7 +98,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelRulesetConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedRulesets = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedRulesets = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>
@@ -160,7 +163,7 @@
       <v-row align="center" no-gutters>
         <v-col cols="auto">{{ $t('pages.rules') }}</v-col>
         <v-spacer></v-spacer>
-        <v-col cols="12" sm="6" md="4" lg="3">
+        <v-col cols="12" sm="8" md="6" lg="4" class="d-flex ga-2 align-center">
           <v-text-field
             v-model="searchRules"
             :label="$t('search') || 'Search'"
@@ -169,7 +172,10 @@
             density="compact"
             hide-details
             clearable
+            class="flex-grow-1"
+            @keyup.enter="blurActive"
           ></v-text-field>
+          <v-btn color="primary" size="small" @click="blurActive">{{ $t('actions.search') || 'Search' }}</v-btn>
         </v-col>
       </v-row>
       <v-row v-if="selectedRules.length > 0" class="mt-2" no-gutters>
@@ -178,7 +184,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelRuleConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedRules = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedRules = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>
@@ -371,6 +377,10 @@ const selectedRules = ref<number[]>([])
 const selectedRulesets = ref<string[]>([])
 const batchDelRuleConfirm = ref(false)
 const batchDelRulesetConfirm = ref(false)
+
+const blurActive = () => {
+  (document.activeElement as HTMLElement)?.blur()
+}
 
 const filteredRulesets = computed((): {item: any, index: number}[] => {
   const all = rulesets.value.map((item: any, index: number) => ({ item, index }))

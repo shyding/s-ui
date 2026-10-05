@@ -116,6 +116,7 @@ export default {
   },
   actions: {
     action: "Действие",
+    search: "Поиск",
     add: "Добавить",
     addbulk: "Добавить пакетно",
     new: "Новый",

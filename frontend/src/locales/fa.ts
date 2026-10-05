@@ -116,6 +116,7 @@ export default {
   },
   actions: {
     action: "فرمان",
+    search: "جستجو",
     add: "ایجاد",
     addbulk: "ایجاد انبوه",
     new: "جدید",

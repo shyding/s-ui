@@ -116,6 +116,7 @@ export default {
   },
   actions: {
     action: "Hành động",
+    search: "Tìm kiếm",
     add: "Thêm",
     addbulk: "Thêm Hàng loạt",
     new: "Mới",

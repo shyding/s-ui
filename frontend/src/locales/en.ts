@@ -140,6 +140,7 @@ export default {
     copy: "Copy",
     download: "Download",
     deleteSelected: "Delete Selected",
+    search: "Search",
     clearSelection: "Clear Selection",
     confirmDeleteSelected: "Are you sure you want to delete {count} selected nodes?",
     sort: "Sort",

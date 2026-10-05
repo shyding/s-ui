@@ -140,6 +140,7 @@ export default {
     copy: "复制",
     download: "下载",
     deleteSelected: "删除已选",
+    search: "查询",
     clearSelection: "取消选择",
     confirmDeleteSelected: "确定要删除 {count} 个已选节点吗？",
     sort: "排序",

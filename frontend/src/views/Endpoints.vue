@@ -54,7 +54,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelEndpointConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedEndpoints = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedEndpoints = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>

@@ -37,7 +37,7 @@
           <v-btn color="error" size="small" variant="outlined" @click="batchDelServiceConfirm = true">
             {{ $t('actions.deleteSelected') || 'Delete Selected' }}
           </v-btn>
-          <v-btn size="small" variant="outlined" @click="selectedServices = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedServices = []">{{ $t('actions.clearSelection') || 'Clear' }}</v-btn>
         </v-col>
       </v-row>
     </v-col>
