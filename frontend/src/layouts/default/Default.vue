@@ -14,14 +14,15 @@ import DefaultView from './View.vue'
 import { useDisplay } from 'vuetify'
 
 const { smAndDown } = useDisplay()
-const displayDrawer = ref(false)
+const displayDrawer = ref(!smAndDown.value)
 
 const toggleDrawer = () => {
   displayDrawer.value = !displayDrawer.value
 }
 
-const isMobile = computed( ():boolean =>{
-  displayDrawer.value = !smAndDown.value
+// Pure computed: no side effects. displayDrawer is initialized once above
+// and only mutated by toggleDrawer.
+const isMobile = computed((): boolean => {
   return smAndDown.value
 })
 </script>
