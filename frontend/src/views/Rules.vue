@@ -147,24 +147,10 @@
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
-          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRulesetOverlay[entry.index] = true">
+          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="askDelRuleset(entry.index)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.del')"></v-tooltip>
           </v-btn>
-          <v-overlay
-            v-model="delRulesetOverlay[entry.index]"
-            contained
-            class="align-center justify-center"
-          >
-            <v-card :title="$t('actions.del')" rounded="lg">
-              <v-divider></v-divider>
-              <v-card-text>{{ $t('confirm') }}</v-card-text>
-              <v-card-actions>
-                <v-btn color="error" variant="outlined" @click="delRuleset(entry.index)">{{ $t('yes') }}</v-btn>
-                <v-btn color="success" variant="outlined" @click="delRulesetOverlay[entry.index] = false">{{ $t('no') }}</v-btn>
-              </v-card-actions>
-            </v-card>
-          </v-overlay>
         </v-card-actions>
       </v-card>
     </v-col>
@@ -263,28 +249,26 @@
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
-          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRuleOverlay[entry.index] = true">
+          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="askDelRule(entry.index)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.del')"></v-tooltip>
           </v-btn>
-          <v-overlay
-            v-model="delRuleOverlay[entry.index]"
-            contained
-            class="align-center justify-center"
-          >
-            <v-card :title="$t('actions.del')" rounded="lg">
-              <v-divider></v-divider>
-              <v-card-text>{{ $t('confirm') }}</v-card-text>
-              <v-card-actions>
-                <v-btn color="error" variant="outlined" @click="delRule(entry.index)">{{ $t('yes') }}</v-btn>
-                <v-btn color="success" variant="outlined" @click="delRuleOverlay[entry.index] = false">{{ $t('no') }}</v-btn>
-              </v-card-actions>
-            </v-card>
-          </v-overlay>
         </v-card-actions>
       </v-card>
     </v-col>
   </v-row>
+  <!-- Shared single-delete confirm dialog -->
+  <v-dialog v-model="delConfirmVisible" max-width="400">
+    <v-card :title="$t('actions.del')" rounded="lg">
+      <v-divider></v-divider>
+      <v-card-text>{{ $t('confirm') }}</v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="error" variant="outlined" @click="confirmDel">{{ $t('yes') }}</v-btn>
+        <v-btn color="success" variant="outlined" @click="delConfirmVisible = false">{{ $t('no') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
   <!-- Batch delete confirm dialogs -->
   <v-dialog v-model="batchDelRulesetConfirm" max-width="400">
     <v-card :title="$t('actions.del')" rounded="lg">
@@ -397,8 +381,17 @@ const inboundTags = computed((): string[] => {
   return [...Data().inbounds?.map((o:any) => o.tag), ...Data().endpoints?.filter((e:any) => e.listen_port > 0).map((e:any) => e.tag)]
 })
 
-let delRuleOverlay = ref(new Array<boolean>)
-let delRulesetOverlay = ref(new Array<boolean>)
+const delTarget = ref<{ type: 'rule' | 'ruleset', index: number } | null>(null)
+const delConfirmVisible = ref(false)
+const askDelRule = (index: number) => { delTarget.value = { type: 'rule', index }; delConfirmVisible.value = true }
+const askDelRuleset = (index: number) => { delTarget.value = { type: 'ruleset', index }; delConfirmVisible.value = true }
+const confirmDel = () => {
+  if (!delTarget.value) return
+  if (delTarget.value.type === 'rule') delRule(delTarget.value.index)
+  else delRuleset(delTarget.value.index)
+  delConfirmVisible.value = false
+  delTarget.value = null
+}
 
 // Search & batch selection for rules/rulesets
 const searchRules = ref('')
@@ -500,7 +493,6 @@ const saveRuleModal = (data:any) => {
 
 const delRule = (index: number) => {
   rules.value.splice(index,1)
-  delRuleOverlay.value[index] = false
 }
 
 const rulesetModal = ref({
@@ -531,7 +523,6 @@ const saveRulesetModal = (data:ruleset) => {
 
 const delRuleset = (index: number) => {
   rulesets.value.splice(index,1)
-  delRulesetOverlay.value[index] = false
 }
 
 const draggedItemIndex = ref(null)
