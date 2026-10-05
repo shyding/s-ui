@@ -54,3 +54,18 @@ go test -tags 'with_quic,with_grpc,with_utls,with_acme,with_gvisor' ./database/.
 - 回归测试：`TestClientJSONFieldsScanFromSQLiteText` 通过
 - 覆盖字段：`Client.Config`、`Client.Inbounds`、`Client.Links`
 
+## 相关节点测速故障的排查基线
+
+固定 SUI 节点出现少量 `-1` 时，不能只看端口是否开放，必须区分传输层和认证层：
+
+| 节点 | 根因 | 修复位置 |
+|---|---|---|
+| VMess HTTPUpgrade（54149） | 服务端旧配置同时声明 `h2`，HTTPUpgrade 实际只接受 HTTP/1.1 | `service/sui_nodes.go`：HTTPUpgrade 专用 ALPN |
+| VMess HTTPUpgrade（54168） | 健康检查器绕过了 WS/HTTPUpgrade 包装，直接在裸 TCP 上检查 VMess | `service/node_health_worker.go`：VMess 先包装传输 |
+| Mixed/SOCKS（54156） | 已轮换的 mixed/socks 用户密码可能仍留在旧 URI | `sub/linkService.go`：按当前客户端配置同步凭据 |
+| WireGuard（54181/54182） | 云主机出口网卡名不固定，旧实现硬编码 `eth0`；反向路径过滤也可能丢弃隧道回包 | `service/sui_wireguard.go`：按路由探测出口网卡并关闭 rp_filter |
+
+WireGuard 的正确链路是：客户端 URI → 公网 UDP 54181/54182 → Linux 原生
+WireGuard 接口 `suiwg54181/54182` → peer 的隧道地址 → 默认出口网卡 NAT。它不是
+普通 TCP 端口，不能用 TCP connect 或随机 UDP 回包作为应用层成功证明；验证时要同时
+检查监听端口、`wg show` 的 latest-handshake、隧道地址路由和 POSTROUTING MASQUERADE。
