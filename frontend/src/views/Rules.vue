@@ -91,6 +91,17 @@
           ></v-text-field>
           <v-btn color="primary" size="small" @click="blurActive">{{ $t('actions.search') || 'Search' }}</v-btn>
         </v-col>
+        <v-col cols="6" sm="4" md="3" lg="2">
+          <v-select
+            v-model="filterRulesetTag"
+            :items="rulesetTags"
+            :label="$t('objects.tag') || 'Tag'"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-select>
+        </v-col>
       </v-row>
       <v-row v-if="selectedRulesets.length > 0" class="mt-2" no-gutters>
         <v-col cols="auto" class="d-flex align-center ga-2">
@@ -176,6 +187,39 @@
             @keyup.enter="blurActive"
           ></v-text-field>
           <v-btn color="primary" size="small" @click="blurActive">{{ $t('actions.search') || 'Search' }}</v-btn>
+        </v-col>
+        <v-col cols="6" sm="4" md="3" lg="2">
+          <v-select
+            v-model="filterRuleOutbound"
+            :items="outboundTags"
+            :label="$t('objects.outbound') || 'Outbound'"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-select>
+        </v-col>
+        <v-col cols="6" sm="4" md="3" lg="2">
+          <v-select
+            v-model="filterRuleAction"
+            :items="ruleActions"
+            :label="$t('action') || 'Action'"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-select>
+        </v-col>
+        <v-col cols="6" sm="4" md="3" lg="2">
+          <v-select
+            v-model="filterRuleType"
+            :items="ruleTypes"
+            :label="$t('type') || 'Type'"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-select>
         </v-col>
       </v-row>
       <v-row v-if="selectedRules.length > 0" class="mt-2" no-gutters>
@@ -304,7 +348,10 @@ const appConfig = computed((): Config => {
 })
 
 onMounted(async () => {
-  oldConfig.value = JSON.parse(JSON.stringify(Data().config))
+  // Defer deep clone so page renders first
+  setTimeout(() => {
+    oldConfig.value = JSON.parse(JSON.stringify(Data().config))
+  }, 0)
 })
 
 const routeMark = computed({
@@ -373,6 +420,10 @@ let delRulesetOverlay = ref(new Array<boolean>)
 // Search & batch selection for rules/rulesets
 const searchRules = ref('')
 const searchRulesets = ref('')
+const filterRulesetTag = ref<string | null>(null)
+const filterRuleOutbound = ref<string | null>(null)
+const filterRuleAction = ref<string | null>(null)
+const filterRuleType = ref<string | null>(null)
 const selectedRules = ref<number[]>([])
 const selectedRulesets = ref<string[]>([])
 const batchDelRuleConfirm = ref(false)
@@ -384,23 +435,37 @@ const blurActive = () => {
 
 const filteredRulesets = computed((): {item: any, index: number}[] => {
   const all = rulesets.value.map((item: any, index: number) => ({ item, index }))
-  if (!searchRulesets.value) return all
   const q = searchRulesets.value.toLowerCase()
-  return all.filter(({ item }) =>
-    (item.tag && item.tag.toLowerCase().includes(q)) ||
-    (item.type && item.type.toLowerCase().includes(q))
-  )
+  return all.filter(({ item }) => {
+    if (filterRulesetTag.value && item.tag !== filterRulesetTag.value) return false
+    if (!q) return true
+    return (item.tag && item.tag.toLowerCase().includes(q)) ||
+      (item.type && item.type.toLowerCase().includes(q))
+  })
 })
 
+const ruleActions = computed((): string[] => {
+  const s = new Set<string>()
+  rules.value.forEach((r: any) => { if (r.action) s.add(String(r.action)) })
+  return [...s].sort()
+})
+const ruleTypes = computed((): string[] => {
+  const s = new Set<string>()
+  rules.value.forEach((r: any) => { if (r.type) s.add(String(r.type)) })
+  return [...s].sort()
+})
 const filteredRules = computed((): {item: any, index: number}[] => {
   const all = rules.value.map((item: any, index: number) => ({ item, index }))
-  if (!searchRules.value) return all
   const q = searchRules.value.toLowerCase()
-  return all.filter(({ item }) =>
-    (item.outbound && String(item.outbound).toLowerCase().includes(q)) ||
-    (item.action && String(item.action).toLowerCase().includes(q)) ||
-    (item.type && String(item.type).toLowerCase().includes(q))
-  )
+  return all.filter(({ item }) => {
+    if (filterRuleOutbound.value && String(item.outbound) !== filterRuleOutbound.value) return false
+    if (filterRuleAction.value && String(item.action) !== filterRuleAction.value) return false
+    if (filterRuleType.value && String(item.type) !== filterRuleType.value) return false
+    if (!q) return true
+    return (item.outbound && String(item.outbound).toLowerCase().includes(q)) ||
+      (item.action && String(item.action).toLowerCase().includes(q)) ||
+      (item.type && String(item.type).toLowerCase().includes(q))
+  })
 })
 
 const toggleRulesetSelect = (tag: string, val: boolean) => {
