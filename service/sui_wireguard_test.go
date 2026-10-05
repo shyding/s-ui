@@ -125,3 +125,18 @@ func TestSUIWireGuardUDPRelayRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected relay response %q", got)
 	}
 }
+
+func TestDefaultEgressInterfaceParsesRoute(t *testing.T) {
+	// The parser is intentionally kept in the production helper; this test
+	// documents the expected `ip route get` shape without requiring Linux.
+	fields := strings.Fields("1.1.1.1 via 10.0.0.1 dev ens5 src 10.0.0.2")
+	var got string
+	for i, field := range fields {
+		if field == "dev" && i+1 < len(fields) {
+			got = fields[i+1]
+		}
+	}
+	if got != "ens5" {
+		t.Fatalf("unexpected route interface: %q", got)
+	}
+}

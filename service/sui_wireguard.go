@@ -353,12 +353,39 @@ func configureNativeWireGuard(port int, opts *suiWireGuardOptions) error {
 		return fmt.Errorf("start %s: %w (%s)", name, e, out)
 	}
 	_, _ = runRoot("sysctl", "-w", "net.ipv4.ip_forward=1")
+	// Reverse-path filtering can discard replies sourced from the tunnel
+	// address before they reach the WireGuard peer.  Loose/disabled filtering
+	// is required for a routed VPN interface on cloud hosts.
+	_, _ = runRoot("sysctl", "-w", "net.ipv4.conf.all.rp_filter=0")
+	_, _ = runRoot("sysctl", "-w", fmt.Sprintf("net.ipv4.conf.%s.rp_filter=0", name))
 	_ = ensureIPTablesRule([]string{"-A", "FORWARD", "-i", name, "-j", "ACCEPT"})
 	_ = ensureIPTablesRule([]string{"-A", "FORWARD", "-o", name, "-j", "ACCEPT"})
 	_, subnet, _ := net.ParseCIDR(opts.ServerAddress)
 	sourceNet := subnet.String()
-	_ = ensureIPTablesRule([]string{"-t", "nat", "-A", "POSTROUTING", "-s", sourceNet, "-o", "eth0", "-j", "MASQUERADE"})
+	egressIf := defaultEgressInterface()
+	if egressIf == "" {
+		return fmt.Errorf("cannot determine default egress interface for WireGuard %d", port)
+	}
+	_ = ensureIPTablesRule([]string{"-t", "nat", "-A", "POSTROUTING", "-s", sourceNet, "-o", egressIf, "-j", "MASQUERADE"})
 	return nil
+}
+
+// defaultEgressInterface returns the interface selected by the host routing
+// table.  Tencent/Ubuntu images are not guaranteed to call it eth0 (ens5,
+// enp1s0 and renamed interfaces are common), so a fixed interface silently
+// breaks WireGuard handshakes after migration.
+func defaultEgressInterface() string {
+	out, err := exec.Command("ip", "route", "get", "1.1.1.1").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	for i, field := range fields {
+		if field == "dev" && i+1 < len(fields) {
+			return fields[i+1]
+		}
+	}
+	return ""
 }
 
 func runRoot(name string, args ...string) ([]byte, error) {
