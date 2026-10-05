@@ -1,16 +1,16 @@
 <template>
   <v-row>
-    <v-col cols="12" justify="center" align="center">
+    <v-col cols="12" class="d-flex flex-wrap justify-center ga-2">
       <v-btn color="primary" @click="showAddModal">{{ $t('actions.add') }}</v-btn>
-      <v-btn color="secondary" class="ml-2" @click="showHProxyModal">
+      <v-btn color="secondary"  @click="showHProxyModal">
         添加 HProxy 实时源
       </v-btn>
-      <v-btn color="secondary" class="ml-2" @click="showProxyScrapeModal">
+      <v-btn color="secondary"  @click="showProxyScrapeModal">
         添加 ProxyScrape 实时源
       </v-btn>
       <v-btn 
         color="success" 
-        class="ml-2" 
+         
         @click="refreshSelected"
         :disabled="selectedIds.length === 0"
         :loading="refreshing"
@@ -19,7 +19,7 @@
       </v-btn>
       <v-btn 
         color="info" 
-        class="ml-2" 
+         
         @click="viewSelectedNodes"
         :disabled="selectedIds.length === 0"
       >
@@ -27,7 +27,7 @@
       </v-btn>
       <v-btn 
         color="warning" 
-        class="ml-2" 
+         
         @click="selectedIds = []"
         v-if="selectedIds.length > 0"
       >

@@ -188,11 +188,11 @@
   </v-dialog>
   <!-- Action Buttons -->
   <v-row>
-    <v-col cols="12" justify="center" align="center">
+    <v-col cols="12" class="d-flex flex-wrap justify-center ga-2">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
       <v-btn
         color="info"
-        class="ml-2"
+        
         @click="showCopyDialog"
         :disabled="selectedTags.length === 0"
       >
@@ -200,7 +200,7 @@
       </v-btn>
       <v-btn 
         color="error" 
-        class="ml-2" 
+         
         @click="deleteConfirmDialog = true"
         :disabled="selectedTags.length === 0"
         :loading="deleting"
@@ -209,7 +209,7 @@
       </v-btn>
       <v-btn 
         color="secondary" 
-        class="ml-2" 
+         
         @click="selectedTags = []"
         :disabled="selectedTags.length === 0"
       >

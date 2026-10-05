@@ -26,10 +26,10 @@
     @close="closeProtonModal"
   />
   <v-row>
-    <v-col cols="12" justify="center" align="center">
+    <v-col cols="12" class="d-flex flex-wrap justify-center ga-2">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
-      <v-btn color="deep-purple-accent-3" class="ml-2" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
-      <v-btn color="amber-darken-3" class="ml-2" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
+      <v-btn color="deep-purple-accent-3" prepend-icon="mdi-shield-vpn" @click="showProtonModal">ProtonVPN 节点同步</v-btn>
+      <v-btn color="amber-darken-3" prepend-icon="mdi-cloud-sync" :loading="cfLoading" @click="refreshCloudflare">刷新 Cloudflare 全球洁净出口</v-btn>
     </v-col>
   </v-row>
   <v-row>

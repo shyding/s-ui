@@ -38,7 +38,7 @@
     @close="egressCheckModal.visible = false"
   />
   <v-row>
-    <v-col cols="12" justify="center" align="center">
+    <v-col cols="12" class="d-flex flex-wrap justify-center ga-2 align-center">
       <!-- Primary actions -->
       <div class="d-flex flex-wrap justify-center ga-2 mb-2">
         <v-btn color="primary" @click="showModal(0)" prepend-icon="mdi-plus">{{ $t('actions.add') }}</v-btn>
@@ -71,7 +71,7 @@
       </div>
       <v-menu>
         <template v-slot:activator="{ props }">
-          <v-btn color="primary" class="ml-2" v-bind="props">
+          <v-btn color="primary" v-bind="props">
             {{ $t('actions.sort') || 'Sort' }}
             <v-icon end>mdi-menu-down</v-icon>
           </v-btn>
