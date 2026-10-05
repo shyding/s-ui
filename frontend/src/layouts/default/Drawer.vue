@@ -5,7 +5,6 @@
     :expand-on-hover="!isMobile"
     :rail="!isMobile"
     :permanent="!isMobile"
-    @click="isMobile ? $emit('toggleDrawer') : null"
   >
     <v-list-item
       height="63"
@@ -24,7 +23,8 @@
         v-for="item in menu"
         :key="item.title"
         :to="item.path"
-        :active="router.currentRoute.value.path == item.path">
+        :active="router.currentRoute.value.path == item.path"
+        @click="isMobile && $emit('toggleDrawer')">
         <template v-slot:prepend>
           <v-icon :icon="item.icon"></v-icon>
         </template>
