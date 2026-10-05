@@ -73,40 +73,72 @@
       </v-col>
   </v-row>
   <v-row>
-    <v-col class="v-card-subtitle" cols="12">{{ $t('rule.ruleset') }}</v-col>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(item, index) in <any[]>rulesets" :key="item.tag">
-      <v-card rounded="xl" elevation="5" min-width="200" :title="item.tag">
+    <v-col class="v-card-subtitle" cols="12">
+      <v-row align="center" no-gutters>
+        <v-col cols="auto">{{ $t('rule.ruleset') }}</v-col>
+        <v-spacer></v-spacer>
+        <v-col cols="12" sm="6" md="4" lg="3">
+          <v-text-field
+            v-model="searchRulesets"
+            :label="$t('search') || 'Search'"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-text-field>
+        </v-col>
+      </v-row>
+      <v-row v-if="selectedRulesets.length > 0" class="mt-2" no-gutters>
+        <v-col cols="auto" class="d-flex align-center ga-2">
+          <v-chip color="primary" variant="tonal">已选 {{ selectedRulesets.length }}</v-chip>
+          <v-btn color="error" size="small" variant="outlined" @click="batchDelRulesetConfirm = true">
+            {{ $t('actions.deleteSelected') || 'Delete Selected' }}
+          </v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedRulesets = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+        </v-col>
+      </v-row>
+    </v-col>
+    <v-col cols="12" sm="4" md="3" lg="2" v-for="(entry, fidx) in filteredRulesets" :key="entry.item.tag">
+      <v-card rounded="xl" elevation="5" min-width="200" :title="entry.item.tag">
+        <v-checkbox
+          :model-value="selectedRulesets.includes(entry.item.tag)"
+          @update:model-value="toggleRulesetSelect(entry.item.tag, !!$event)"
+          hide-details
+          density="compact"
+          class="ml-2 mt-1"
+        ></v-checkbox>
         <v-card-subtitle style="margin-top: -20px;">
           <v-row>
-            <v-col>{{ $t('ruleset.' + item.type) }}</v-col>
+            <v-col>{{ $t('ruleset.' + entry.item.type) }}</v-col>
           </v-row>
         </v-card-subtitle>
         <v-card-text>
           <v-row>
             <v-col>{{ $t('ruleset.format') }}</v-col>
             <v-col>
-              {{ item.format }}
+              {{ entry.item.format }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('actions.update') }}</v-col>
             <v-col>
-              {{ item.update_interval?? '-' }}
+              {{ entry.item.update_interval?? '-' }}
             </v-col>
           </v-row>
         </v-card-text>
         <v-divider></v-divider>
         <v-card-actions style="padding: 0;">
-          <v-btn icon="mdi-file-edit" @click="showRulesetModal(index)">
+          <v-btn icon="mdi-file-edit" @click="showRulesetModal(entry.index)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
-          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRulesetOverlay[index] = true">
+          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRulesetOverlay[entry.index] = true">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.del')"></v-tooltip>
           </v-btn>
           <v-overlay
-            v-model="delRulesetOverlay[index]"
+            v-model="delRulesetOverlay[entry.index]"
             contained
             class="align-center justify-center"
           >
@@ -114,8 +146,8 @@
               <v-divider></v-divider>
               <v-card-text>{{ $t('confirm') }}</v-card-text>
               <v-card-actions>
-                <v-btn color="error" variant="outlined" @click="delRuleset(index)">{{ $t('yes') }}</v-btn>
-                <v-btn color="success" variant="outlined" @click="delRulesetOverlay[index] = false">{{ $t('no') }}</v-btn>
+                <v-btn color="error" variant="outlined" @click="delRuleset(entry.index)">{{ $t('yes') }}</v-btn>
+                <v-btn color="success" variant="outlined" @click="delRulesetOverlay[entry.index] = false">{{ $t('no') }}</v-btn>
               </v-card-actions>
             </v-card>
           </v-overlay>
@@ -124,58 +156,90 @@
     </v-col>
   </v-row>
   <v-row>
-    <v-col class="v-card-subtitle" cols="12">{{ $t('pages.rules') }}</v-col>
-    <v-col cols="12" sm="4" md="3" lg="2" v-for="(item, index) in <any[]>rules"
-        :key="item.id"
+    <v-col class="v-card-subtitle" cols="12">
+      <v-row align="center" no-gutters>
+        <v-col cols="auto">{{ $t('pages.rules') }}</v-col>
+        <v-spacer></v-spacer>
+        <v-col cols="12" sm="6" md="4" lg="3">
+          <v-text-field
+            v-model="searchRules"
+            :label="$t('search') || 'Search'"
+            prepend-inner-icon="mdi-magnify"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+          ></v-text-field>
+        </v-col>
+      </v-row>
+      <v-row v-if="selectedRules.length > 0" class="mt-2" no-gutters>
+        <v-col cols="auto" class="d-flex align-center ga-2">
+          <v-chip color="primary" variant="tonal">已选 {{ selectedRules.length }}</v-chip>
+          <v-btn color="error" size="small" variant="outlined" @click="batchDelRuleConfirm = true">
+            {{ $t('actions.deleteSelected') || 'Delete Selected' }}
+          </v-btn>
+          <v-btn size="small" variant="outlined" @click="selectedRules = []">{{ $t('actions.clear') || 'Clear' }}</v-btn>
+        </v-col>
+      </v-row>
+    </v-col>
+    <v-col cols="12" sm="4" md="3" lg="2" v-for="(entry, fidx) in filteredRules"
+        :key="entry.index"
         :draggable="true"
-        @dragstart="onDragStart(index)"
+        @dragstart="onDragStart(entry.index)"
         @dragover.prevent
-        @drop="onDrop(index)"
+        @drop="onDrop(entry.index)"
       >
-      <v-card rounded="xl" elevation="5" min-width="200" :title="index+1">
+      <v-card rounded="xl" elevation="5" min-width="200" :title="entry.index+1">
+        <v-checkbox
+          :model-value="selectedRules.includes(entry.index)"
+          @update:model-value="toggleRuleSelect(entry.index, !!$event)"
+          hide-details
+          density="compact"
+          class="ml-2 mt-1"
+        ></v-checkbox>
         <v-card-subtitle style="margin-top: -20px;">
           <v-row>
-            <v-col>{{ item.type != undefined ? $t('rule.logical') + ' (' + item.mode + ')' : $t('rule.simple') }}</v-col>
+            <v-col>{{ entry.item.type != undefined ? $t('rule.logical') + ' (' + entry.item.mode + ')' : $t('rule.simple') }}</v-col>
           </v-row>
         </v-card-subtitle>
         <v-card-text>
           <v-row>
             <v-col>{{ $t('admin.action') }}</v-col>
             <v-col>
-              {{ item.action }}
+              {{ entry.item.action }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('objects.outbound') }}</v-col>
             <v-col>
-              {{ item.outbound?? '-' }}
+              {{ entry.item.outbound?? '-' }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('pages.rules') }}</v-col>
             <v-col>
-              {{ item.rules ? item.rules.length : Object.keys(item).filter(r => !actionKeys.includes(r)).length }}
+              {{ entry.item.rules ? entry.item.rules.length : Object.keys(entry.item).filter(r => !actionKeys.includes(r)).length }}
             </v-col>
           </v-row>
           <v-row>
             <v-col>{{ $t('rule.invert') }}</v-col>
             <v-col>
-              {{ $t( (item.invert?? false)? 'yes' : 'no') }}
+              {{ $t( (entry.item.invert?? false)? 'yes' : 'no') }}
             </v-col>
           </v-row>
         </v-card-text>
         <v-divider></v-divider>
         <v-card-actions style="padding: 0;">
-          <v-btn icon="mdi-file-edit" @click="showRuleModal(index)">
+          <v-btn icon="mdi-file-edit" @click="showRuleModal(entry.index)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
-          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRuleOverlay[index] = true">
+          <v-btn icon="mdi-file-remove" style="margin-inline-start:0;" color="warning" @click="delRuleOverlay[entry.index] = true">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.del')"></v-tooltip>
           </v-btn>
           <v-overlay
-            v-model="delRuleOverlay[index]"
+            v-model="delRuleOverlay[entry.index]"
             contained
             class="align-center justify-center"
           >
@@ -183,8 +247,8 @@
               <v-divider></v-divider>
               <v-card-text>{{ $t('confirm') }}</v-card-text>
               <v-card-actions>
-                <v-btn color="error" variant="outlined" @click="delRule(index)">{{ $t('yes') }}</v-btn>
-                <v-btn color="success" variant="outlined" @click="delRuleOverlay[index] = false">{{ $t('no') }}</v-btn>
+                <v-btn color="error" variant="outlined" @click="delRule(entry.index)">{{ $t('yes') }}</v-btn>
+                <v-btn color="success" variant="outlined" @click="delRuleOverlay[entry.index] = false">{{ $t('no') }}</v-btn>
               </v-card-actions>
             </v-card>
           </v-overlay>
@@ -192,6 +256,29 @@
       </v-card>
     </v-col>
   </v-row>
+  <!-- Batch delete confirm dialogs -->
+  <v-dialog v-model="batchDelRulesetConfirm" max-width="400">
+    <v-card :title="$t('actions.del')" rounded="lg">
+      <v-divider></v-divider>
+      <v-card-text>{{ $t('actions.confirmDeleteSelected', { count: selectedRulesets.length }) || `Delete ${selectedRulesets.length} selected rulesets?` }}</v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="error" variant="outlined" @click="batchDelRulesets">{{ $t('yes') }}</v-btn>
+        <v-btn color="success" variant="outlined" @click="batchDelRulesetConfirm = false">{{ $t('no') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+  <v-dialog v-model="batchDelRuleConfirm" max-width="400">
+    <v-card :title="$t('actions.del')" rounded="lg">
+      <v-divider></v-divider>
+      <v-card-text>{{ $t('actions.confirmDeleteSelected', { count: selectedRules.length }) || `Delete ${selectedRules.length} selected rules?` }}</v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="error" variant="outlined" @click="batchDelRules">{{ $t('yes') }}</v-btn>
+        <v-btn color="success" variant="outlined" @click="batchDelRuleConfirm = false">{{ $t('no') }}</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script lang="ts" setup>
@@ -276,6 +363,68 @@ const inboundTags = computed((): string[] => {
 
 let delRuleOverlay = ref(new Array<boolean>)
 let delRulesetOverlay = ref(new Array<boolean>)
+
+// Search & batch selection for rules/rulesets
+const searchRules = ref('')
+const searchRulesets = ref('')
+const selectedRules = ref<number[]>([])
+const selectedRulesets = ref<string[]>([])
+const batchDelRuleConfirm = ref(false)
+const batchDelRulesetConfirm = ref(false)
+
+const filteredRulesets = computed((): {item: any, index: number}[] => {
+  const all = rulesets.value.map((item: any, index: number) => ({ item, index }))
+  if (!searchRulesets.value) return all
+  const q = searchRulesets.value.toLowerCase()
+  return all.filter(({ item }) =>
+    (item.tag && item.tag.toLowerCase().includes(q)) ||
+    (item.type && item.type.toLowerCase().includes(q))
+  )
+})
+
+const filteredRules = computed((): {item: any, index: number}[] => {
+  const all = rules.value.map((item: any, index: number) => ({ item, index }))
+  if (!searchRules.value) return all
+  const q = searchRules.value.toLowerCase()
+  return all.filter(({ item }) =>
+    (item.outbound && String(item.outbound).toLowerCase().includes(q)) ||
+    (item.action && String(item.action).toLowerCase().includes(q)) ||
+    (item.type && String(item.type).toLowerCase().includes(q))
+  )
+})
+
+const toggleRulesetSelect = (tag: string, val: boolean) => {
+  if (val) {
+    if (!selectedRulesets.value.includes(tag)) selectedRulesets.value.push(tag)
+  } else {
+    selectedRulesets.value = selectedRulesets.value.filter(t => t !== tag)
+  }
+}
+
+const toggleRuleSelect = (index: number, val: boolean) => {
+  if (val) {
+    if (!selectedRules.value.includes(index)) selectedRules.value.push(index)
+  } else {
+    selectedRules.value = selectedRules.value.filter(i => i !== index)
+  }
+}
+
+const batchDelRulesets = () => {
+  const tags = new Set(selectedRulesets.value)
+  // remove from the end to keep indices stable
+  for (let i = rulesets.value.length - 1; i >= 0; i--) {
+    if (tags.has(rulesets.value[i].tag)) rulesets.value.splice(i, 1)
+  }
+  selectedRulesets.value = []
+  batchDelRulesetConfirm.value = false
+}
+
+const batchDelRules = () => {
+  const idx = [...selectedRules.value].sort((a, b) => b - a)
+  for (const i of idx) rules.value.splice(i, 1)
+  selectedRules.value = []
+  batchDelRuleConfirm.value = false
+}
 
 const ruleModal = ref({
   visible: false,
