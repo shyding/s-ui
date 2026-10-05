@@ -58,7 +58,14 @@ go test -tags 'with_quic,with_grpc,with_utls,with_acme,with_gvisor' ./database/.
 
 固定 SUI 节点出现少量 `-1` 时，不能只看端口是否开放，必须区分传输层和认证层：
 
-| 节点 | 根因 | 修复位置 |
+> 2026-10-05 更正：下表是上一轮提出的假设，并非已通过线上回归验证的根因。
+> 用户复测出现退化，不得引用下表声称节点已经修复或保证失败数量不会增加。
+> VMess 检查只验证 UUID 格式；URL query 包装器不能读取 VMess Base64 JSON。
+> 服务端健康检查结果也不能代表 v2rayN 的真实连接结果。
+> SOCKS 的运行时 users 来自 Client.Config 注入，不能以静态 Options 缺少 users
+> 为由删除订阅凭据。不得按端口覆盖整份入站配置，或未经证据全局关闭 rp_filter。
+
+| 节点 | 未证实的原假设（仅保留追溯） | 原改动位置 |
 |---|---|---|
 | VMess HTTPUpgrade（54149） | 服务端旧配置同时声明 `h2`，HTTPUpgrade 实际只接受 HTTP/1.1 | `service/sui_nodes.go`：HTTPUpgrade 专用 ALPN |
 | VMess HTTPUpgrade（54168） | 健康检查器绕过了 WS/HTTPUpgrade 包装，直接在裸 TCP 上检查 VMess | `service/node_health_worker.go`：VMess 先包装传输 |

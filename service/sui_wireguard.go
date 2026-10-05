@@ -353,11 +353,6 @@ func configureNativeWireGuard(port int, opts *suiWireGuardOptions) error {
 		return fmt.Errorf("start %s: %w (%s)", name, e, out)
 	}
 	_, _ = runRoot("sysctl", "-w", "net.ipv4.ip_forward=1")
-	// Reverse-path filtering can discard replies sourced from the tunnel
-	// address before they reach the WireGuard peer.  Loose/disabled filtering
-	// is required for a routed VPN interface on cloud hosts.
-	_, _ = runRoot("sysctl", "-w", "net.ipv4.conf.all.rp_filter=0")
-	_, _ = runRoot("sysctl", "-w", fmt.Sprintf("net.ipv4.conf.%s.rp_filter=0", name))
 	_ = ensureIPTablesRule([]string{"-A", "FORWARD", "-i", name, "-j", "ACCEPT"})
 	_ = ensureIPTablesRule([]string{"-A", "FORWARD", "-o", name, "-j", "ACCEPT"})
 	_, subnet, _ := net.ParseCIDR(opts.ServerAddress)

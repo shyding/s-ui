@@ -270,10 +270,7 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 					logger.Info(fmt.Sprintf("EnsureSUINodes: reconciled %s credentials", spec.Tag))
 				}
 			}
-			// These built-in entries are owned by S-UI. Reconcile their complete
-			// transport profile so upgrades from the old shared-ALPN profile do
-			// not leave 54149/54168 permanently unusable.
-			if spec.Type == "tuic" || spec.Port == 54149 || spec.Port == 54168 || spec.Port == 54156 {
+			if spec.Type == "tuic" {
 				canonical, marshalErr := json.MarshalIndent(spec.BuildOptions(), "", "  ")
 				if marshalErr != nil {
 					return created, fmt.Errorf("marshal options for %s: %w", spec.Tag, marshalErr)

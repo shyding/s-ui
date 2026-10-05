@@ -546,7 +546,7 @@ func fixSUIHysteria2Auth(uri string, password string) string {
 // fixSOCKSAuth ensures the SOCKS URI auth matches both the inbound config and
 // the current client's mixed/socks credentials.  A stale stored URI can be
 // syntactically valid yet fail with -1 when the client password was rotated.
-// If inbound has no users, remove userinfo from URI (server rejects unexpected auth).
+// Users are injected by InboundService from Client.Config at runtime, not Options.
 func fixSOCKSAuth(uri string, clientConfig *json.RawMessage) string {
 	if !strings.HasPrefix(uri, "socks5://") && !strings.HasPrefix(uri, "socks://") {
 		return uri
@@ -567,25 +567,18 @@ func fixSOCKSAuth(uri string, clientConfig *json.RawMessage) string {
 	if err := db.Where("tag LIKE ?", "%-"+port).First(&inbound).Error; err != nil {
 		return uri
 	}
-	var opts map[string]interface{}
-	if err := json.Unmarshal(inbound.Options, &opts); err != nil {
+	if inbound.Type != "socks" && inbound.Type != "mixed" {
 		return uri
 	}
-	// Check if inbound has users
-	_, hasUsers := opts["users"]
-	if !hasUsers && u.User != nil {
-		// Inbound expects no auth, but URI has it - remove
+	// Keep this aligned with the explicit unauthenticated case in addUsers.
+	if inbound.Type == "socks" && strings.HasPrefix(inbound.Tag, "coverage-socks-") {
 		u.User = nil
-		logger.Infof("Fixed SUI socks auth for port %s: removed unexpected userinfo", port)
 		return u.String()
 	}
-	if hasUsers && clientConfig != nil && len(*clientConfig) > 0 {
+	if clientConfig != nil && len(*clientConfig) > 0 {
 		var cfg map[string]map[string]interface{}
 		if json.Unmarshal(*clientConfig, &cfg) == nil {
-			userCfg := cfg["mixed"]
-			if userCfg == nil {
-				userCfg = cfg["socks"]
-			}
+			userCfg := cfg[inbound.Type]
 			username, _ := userCfg["username"].(string)
 			password, _ := userCfg["password"].(string)
 			if username != "" {
