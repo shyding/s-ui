@@ -1679,10 +1679,20 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 
 	// Two subscription-only native WireGuard nodes complete the fixed 40-node
 	// inventory (38 application inbounds + UDP 54180/54181 relays).
-	for _, wgLink := range service.GetSUIWireGuardLinks(database.GetDB()) {
-		if !seen[wgLink] {
-			seen[wgLink] = true
-			result = append(result, wgLink)
+	// Skip for pool clients (they only have pool-socks-* tags).
+	isPoolClient := len(allowedTags) > 0
+	for tag := range allowedTags {
+		if !strings.HasPrefix(tag, "pool-") {
+			isPoolClient = false
+			break
+		}
+	}
+	if !isPoolClient {
+		for _, wgLink := range service.GetSUIWireGuardLinks(database.GetDB()) {
+			if !seen[wgLink] {
+				seen[wgLink] = true
+				result = append(result, wgLink)
+			}
 		}
 	}
 
