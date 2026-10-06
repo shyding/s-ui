@@ -1604,13 +1604,21 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 				// regional egress variants. Expansion creates 100+ duplicates per
 				// inbound, exhausting the 1300 subscription limit.
 				proto := strings.SplitN(finalLink, "://", 2)[0]
+				// pool-* inbounds are 1:1 bound to specific outbounds; use the
+				// bound outbound's real geo instead of the default Singapore.
+				country, region, city := "新加坡", "中央区", "新加坡城-"+getProtocolDetails(finalLink, proto)
+				if strings.HasPrefix(link.Remark, "pool-") {
+					if geo := poolInboundGeo(link.Remark); geo != nil {
+						country, region, city = geo[0], geo[1], geo[2]
+					}
+				}
 				candidates := []CandidateNode{{
 					Uri:      finalLink,
 					Protocol: proto,
 					Provider: "SUI",
-					Country:  "新加坡",
-					Region:   "中央区",
-					City:     "新加坡城-" + getProtocolDetails(finalLink, proto),
+					Country:  country,
+					Region:   region,
+					City:     city,
 					Priority: getProtocolPriority(proto),
 					NodeKey:  extractNodeKey(finalLink),
 				}}
@@ -1979,8 +1987,66 @@ func (s *LinkService) getExternalSub(url string) []string {
 
 }
 
-func getProtocolDetails(uri, proto string) string {
-	origProto := strings.ToLower(proto)
+// poolInboundGeo returns [country, region, city] for a pool-* inbound by
+// looking up its 1:1 bound outbound via route rules, then the outbound's geo.
+// Returns nil if the binding or geo cannot be resolved.
+func poolInboundGeo(inboundTag string) []string {
+	db := database.GetDB()
+	if db == nil {
+		return nil
+	}
+	// Find bound outbound from route rules in settings config
+	var outboundTag string
+	var setting model.Setting
+	if err := db.Model(&model.Setting{}).Where("key = ?", "config").First(&setting).Error; err == nil {
+		var configMap map[string]interface{}
+		if err := json.Unmarshal([]byte(setting.Value), &configMap); err == nil {
+			if routeMap, ok := configMap["route"].(map[string]interface{}); ok {
+				if rules, ok := routeMap["rules"].([]interface{}); ok {
+					for _, r := range rules {
+						if rMap, ok := r.(map[string]interface{}); ok {
+							if inbounds, ok := rMap["inbound"].([]interface{}); ok {
+								for _, inb := range inbounds {
+									if inbStr, ok := inb.(string); ok && inbStr == inboundTag {
+										if ob, ok := rMap["outbound"].(string); ok {
+											outboundTag = ob
+										}
+										break
+									}
+								}
+							}
+						}
+						if outboundTag != "" {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if outboundTag == "" {
+		return nil
+	}
+	var ob model.Outbound
+	if err := db.Model(&model.Outbound{}).Where("tag = ?", outboundTag).First(&ob).Error; err != nil {
+		return nil
+	}
+	country := ob.Country
+	if country == "" {
+		country = "??"
+	}
+	region := ob.Region
+	if region == "" {
+		region = country
+	}
+	city := ob.City
+	if city == "" {
+		city = region
+	}
+	return []string{country, region, city}
+}
+
+func getProtocolDetails(uri, proto string) string {	origProto := strings.ToLower(proto)
 	if origProto == "hysteria2" || origProto == "hy2" {
 		return "Hysteria2"
 	}
