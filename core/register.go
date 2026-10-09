@@ -1,6 +1,9 @@
 package core
 
 import (
+	"context"
+	"github.com/alireza0/s-ui/core/vmesscompat"
+	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/endpoint"
 	"github.com/sagernet/sing-box/adapter/inbound"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -12,6 +15,8 @@ import (
 	"github.com/sagernet/sing-box/dns/transport/hosts"
 	"github.com/sagernet/sing-box/dns/transport/local"
 	"github.com/sagernet/sing-box/dns/transport/quic"
+	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/anytls"
 	"github.com/sagernet/sing-box/protocol/block"
 	"github.com/sagernet/sing-box/protocol/direct"
@@ -56,7 +61,12 @@ func InboundRegistry() *inbound.Registry {
 	mixed.RegisterInbound(registry)
 
 	shadowsocks.RegisterInbound(registry)
-	vmess.RegisterInbound(registry)
+	inbound.Register[option.VMessInboundOptions](registry, "vmess", func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.VMessInboundOptions) (adapter.Inbound, error) {
+		if options.Transport != nil && options.Transport.Type == "httpupgrade" {
+			return vmesscompat.NewInbound(ctx, router, logger, tag, options)
+		}
+		return vmess.NewInbound(ctx, router, logger, tag, options)
+	})
 	trojan.RegisterInbound(registry)
 	naive.RegisterInbound(registry)
 	shadowtls.RegisterInbound(registry)

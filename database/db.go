@@ -111,6 +111,7 @@ func InitDB(dbPath string) error {
 		&model.Subscription{},
 		&model.CloudflareEndpoint{},
 		&model.NodeHealthStatus{},
+		&model.SUIWireGuardNode{},
 	)
 	if err != nil {
 		return err

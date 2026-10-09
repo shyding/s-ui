@@ -2,6 +2,7 @@ package app
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/alireza0/s-ui/config"
@@ -68,6 +69,25 @@ func (a *APP) Init() error {
 		logger.Warning("failed to ensure SUI nodes:", err)
 	} else if created > 0 {
 		logger.Infof("initialized %d SUI nodes (ports 54142-54179)", created)
+	}
+	// Bootstrap helpers mutate existing profiles/identities. Never run them
+	// implicitly during a normal upgrade of an already configured server.
+	if os.Getenv("SUI_BOOTSTRAP_COVERAGE") == "1" {
+		if created, err := service.EnsureSUIInboundTypeCoverage(database.GetDB()); err != nil {
+			logger.Warning("failed to ensure inbound type coverage:", err)
+		} else if created > 0 {
+			logger.Infof("initialized %d inbound type coverage entries", created)
+		}
+	}
+	if os.Getenv("SUI_BOOTSTRAP_WIREGUARD") == "1" {
+		if created, err := service.EnsureSUIWireGuardNodes(database.GetDB()); err != nil {
+			logger.Warning("failed to ensure native WireGuard nodes:", err)
+		} else if created > 0 {
+			logger.Infof("initialized %d native WireGuard nodes (UDP 54181-54182)", created)
+		}
+		if err := service.ConfigureSUIWireGuardForwarding(database.GetDB()); err != nil {
+			logger.Warning("failed to configure WireGuard UDP forwarding:", err)
+		}
 	}
 
 	// Init Setting

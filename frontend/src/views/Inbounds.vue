@@ -23,6 +23,40 @@
     @close="closeClientModal"
   />
 
+  <!-- Batch create every non-Direct inbound type. -->
+  <v-dialog v-model="batchDialog.visible" max-width="720">
+    <v-card rounded="lg">
+      <v-card-title>批量添加入站</v-card-title>
+      <v-divider></v-divider>
+      <v-card-text>
+        <v-alert density="compact" type="info" variant="tonal" class="mb-3">
+          默认已选中 Direct 以外的全部入站类型；端口和标签会自动分配。
+        </v-alert>
+        <v-autocomplete
+          v-model="batchDialog.types"
+          :items="batchTypeOptions"
+          label="入站类型"
+          multiple chips closable-chips
+          variant="outlined" density="compact"
+        ></v-autocomplete>
+        <v-autocomplete
+          v-model="batchDialog.clientIds"
+          :items="allClients"
+          item-title="name" item-value="id"
+          label="关联用户（可选）"
+          multiple chips closable-chips clearable
+          variant="outlined" density="compact"
+        ></v-autocomplete>
+        <v-text-field v-model.number="batchDialog.startPort" type="number" label="起始端口" variant="outlined" density="compact" />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn variant="outlined" @click="batchDialog.visible = false">取消</v-btn>
+        <v-btn color="primary" :loading="batchDialog.loading" :disabled="batchDialog.types.length === 0" @click="createBatchInbounds">创建 {{ batchDialog.types.length }} 个</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- Copy Dialog -->
   <v-dialog v-model="copyDialog.visible" max-width="400">
     <v-card :title="$t('actions.copy') + ' ' + $t('objects.inbound')" rounded="lg">
@@ -190,6 +224,7 @@
   <v-row>
     <v-col cols="12" class="d-flex flex-wrap justify-center ga-2">
       <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
+      <v-btn color="success" class="ml-2" @click="showBatchDialog">批量添加入站</v-btn>
       <v-btn
         color="info"
         
@@ -370,6 +405,7 @@ import Stats from '@/layouts/modals/Stats.vue'
 import { Config } from '@/types/config'
 import { computed, ref } from 'vue'
 import { Inbound } from '@/types/inbounds'
+import { InTypes, createInbound } from '@/types/inbounds'
 import ClientModal from '@/layouts/modals/Client.vue'
 import HttpUtils from '@/plugins/httputil'
 import { push } from 'notivue'
@@ -427,6 +463,65 @@ const modal = ref({
   visible: false,
   id: 0,
 })
+
+const batchTypeOptions = Object.entries(InTypes)
+  .filter(([key]) => key !== 'Direct')
+  .map(([, value]) => value)
+const batchDialog = ref({
+  visible: false,
+  loading: false,
+  types: [...batchTypeOptions],
+  clientIds: <number[]>[],
+  startPort: 54200,
+})
+
+const showBatchDialog = () => {
+  batchDialog.value.types = [...batchTypeOptions]
+  batchDialog.value.clientIds = []
+  const used = inbounds.value.map((i: any) => Number(i.listen_port)).filter((p: number) => Number.isFinite(p) && p > 0)
+  batchDialog.value.startPort = Math.max(54200, ...used.map(p => p + 1))
+  batchDialog.value.visible = true
+}
+
+const createBatchInbounds = async () => {
+  if (batchDialog.value.loading) return
+  let port = Number(batchDialog.value.startPort)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    push.error('起始端口必须为 1–65535 的整数')
+    return
+  }
+  batchDialog.value.loading = true
+  const usedPorts = new Set(inbounds.value.map((i: any) => Number(i.listen_port)))
+  const pending = [...batchDialog.value.types]
+  try {
+  for (const type of pending) {
+    while (usedPorts.has(port)) port++
+    if (port > 65535) throw new Error('没有可分配的端口；已创建的入站保留')
+    const payload: any = createInbound(type as any, { id: 0, tag: `batch-${type}-${port}` })
+    if (type !== 'tun') {
+      payload.listen = '::'
+      payload.listen_port = port
+    } else {
+      delete payload.listen
+      delete payload.listen_port
+      payload.interface_name = `sui-tun-${port}`.slice(0, 15)
+      payload.address = ['172.31.0.1/30']
+      payload.auto_route = false
+    }
+    const success = await Data().save('inbounds', 'new', payload, batchDialog.value.clientIds)
+    if (!success) throw new Error(`创建 ${type} 失败；已创建的入站保留`)
+    usedPorts.add(port)
+    batchDialog.value.types = batchDialog.value.types.filter(t => t !== type)
+    port++
+  }
+  batchDialog.value.visible = false
+  } catch (error) {
+    push.error(error instanceof Error ? error.message : '批量创建失败')
+  } finally {
+    batchDialog.value.startPort = port
+    batchDialog.value.loading = false
+  }
+}
 
 // Search & Pagination
 const search = ref('')

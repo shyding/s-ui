@@ -64,6 +64,7 @@ jobs:
           go build -ldflags="-w -s" -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor" -o sui main.go
           file sui
           chmod +x sui
+          sha256sum sui
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
