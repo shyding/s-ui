@@ -579,6 +579,9 @@ func fixSOCKSAuth(uri string, clientConfig *json.RawMessage) string {
 		var cfg map[string]map[string]interface{}
 		if json.Unmarshal(*clientConfig, &cfg) == nil {
 			userCfg := cfg[inbound.Type]
+			if inbound.Type == "mixed" && userCfg == nil {
+				userCfg = cfg["socks"]
+			}
 			username, _ := userCfg["username"].(string)
 			password, _ := userCfg["password"].(string)
 			if username != "" {
@@ -2056,7 +2059,8 @@ func poolInboundGeo(inboundTag string) []string {
 	return []string{country, region, city}
 }
 
-func getProtocolDetails(uri, proto string) string {	origProto := strings.ToLower(proto)
+func getProtocolDetails(uri, proto string) string {
+	origProto := strings.ToLower(proto)
 	if origProto == "hysteria2" || origProto == "hy2" {
 		return "Hysteria2"
 	}

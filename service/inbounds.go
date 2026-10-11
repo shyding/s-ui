@@ -319,11 +319,18 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 		Config string `gorm:"column:config"`
 	}
 	var rows []clientUserRow
+	userConfig := fmt.Sprintf(`json_extract(clients.config, "$.%s")`, inboundType)
+	if inboundType == "mixed" {
+		// The client editor stores SOCKS credentials under "socks". Mixed
+		// listeners accept SOCKS too; preserve explicit mixed credentials but
+		// fall back to socks rather than accidentally starting without auth.
+		userConfig = `COALESCE(json_extract(clients.config, '$.mixed'), json_extract(clients.config, '$.socks'))`
+	}
 
 	err := db.Raw(
-		fmt.Sprintf(`SELECT name, json_extract(clients.config, "$.%s") AS config
+		fmt.Sprintf(`SELECT name, %s AS config
 		FROM clients WHERE enable = true AND %s`,
-			inboundType, condition)).Scan(&rows).Error
+			userConfig, condition)).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +347,7 @@ func (s *InboundService) fetchUsers(db *gorm.DB, inboundType string, condition s
 		// SOCKS/HTTP/Naive use auth.User (username/password only); injecting the
 		// generic name field makes sing-box reject the whole inbound config.
 		switch inboundType {
-		case "socks", "http", "naive":
+		case "mixed", "socks", "http", "naive":
 		default:
 			userMap["name"] = row.Name
 		}

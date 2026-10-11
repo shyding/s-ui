@@ -21,6 +21,7 @@ func TestSOCKSAuthRuntimeCredentials(t *testing.T) {
 		database.SetDB(previous)
 	})
 	cfg := json.RawMessage(`{"mixed":{"username":"mixed-user","password":"mixed-pass"},"socks":{"username":"socks-user","password":"socks-pass"}}`)
+	socksOnly := json.RawMessage(`{"socks":{"username":"socks-user","password":"socks-pass"}}`)
 	tlsRecord := model.Tls{Name: "auth-test", Server: json.RawMessage(`{"enabled":false}`)}
 	if err := db.Create(&tlsRecord).Error; err != nil {
 		t.Fatal(err)
@@ -30,6 +31,7 @@ func TestSOCKSAuthRuntimeCredentials(t *testing.T) {
 		config                      *json.RawMessage
 	}{
 		{"mixed users injected at runtime", "mixed", "custom-31001", "31001", "socks5://mixed-user:mixed-pass@example.com:31001", &cfg},
+		{"mixed falls back to editor socks credentials", "mixed", "custom-31006", "31006", "socks5://socks-user:socks-pass@example.com:31006", &socksOnly},
 		{"socks uses its own credentials", "socks", "custom-31002", "31002", "socks5://socks-user:socks-pass@example.com:31002", &cfg},
 		{"unknown credentials preserved", "mixed", "custom-31003", "31003", "socks5://old:secret@example.com:31003", nil},
 		{"explicit anonymous coverage", "socks", "coverage-socks-31004", "31004", "socks5://example.com:31004", &cfg},
