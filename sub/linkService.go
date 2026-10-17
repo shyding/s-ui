@@ -1577,30 +1577,29 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 					}
 				}
 				finalLink := s.addClientInfo(cleanUri, clientInfo)
-				// Fix stale transport params from outdated stored links (causes client -1)
-				// e.g., type=tcp for a ws inbound
-				finalLink = fixSUITransport(finalLink)
-				// Fix security param (security=none for plain, security=tls/reality for TLS)
-				finalLink = fixSUISecurity(finalLink)
-				// Fix VLESS flow param (remove stale flow if inbound doesn't support it)
-				finalLink = fixVLESSFlow(finalLink)
-				// Fix VMess string port (e.g., "port":"54146" -> "port":54146)
-				finalLink = fixVMessPort(finalLink)
-				// Fix VMess transport params (net/path/host) from inbound config
-				finalLink = fixVMessTransport(finalLink)
-				// Fix SS method (e.g., 2022-blake3-aes-128-gcm -> aes-256-gcm)
-				finalLink = fixSSMethod(finalLink)
-				// Fix HY2 sni param (missing sni causes client -1)
-				finalLink = fixSUIHysteria2(finalLink)
-				// Fix TUIC QUIC ALPN (h3 is required by the TUIC TLS server)
-				finalLink = fixSUITUICALPN(finalLink)
-				// Stored links can contain an old password after a client edit.
-				finalLink = fixSUIHysteria2Auth(finalLink, hysteria2Password)
-				// Fix SOCKS auth (remove unexpected userinfo if inbound has no users)
-				finalLink = fixSOCKSAuth(finalLink, clientConfig)
-				// Fix REALITY flow (remove flow param for sing-box compat, or convert to TLS)
-				finalLink = fixSUIRealityToTLS(finalLink)
-				finalLink = fixSUIRealityFlow(finalLink)
+				// Pool links are generated from the live inbound/outbound mapping and
+				// are already canonical socks5 URLs.  Do not run the generic SUI
+				// transport/security synchronizers here: each of those helpers performs
+				// a SQLite lookup by port, so 300 pool links turn one subscription
+				// request into thousands of serialized SQLite reads and can make the
+				// response appear to hang while the pool is being probed.
+				isPoolInbound := strings.HasPrefix(link.Remark, "pool-")
+				if !isPoolInbound {
+					// Fix stale transport params from outdated stored links (causes client -1)
+					finalLink = fixSUITransport(finalLink)
+					// Fix security/credential/transport parameters from live inbounds.
+					finalLink = fixSUISecurity(finalLink)
+					finalLink = fixVLESSFlow(finalLink)
+					finalLink = fixVMessPort(finalLink)
+					finalLink = fixVMessTransport(finalLink)
+					finalLink = fixSSMethod(finalLink)
+					finalLink = fixSUIHysteria2(finalLink)
+					finalLink = fixSUITUICALPN(finalLink)
+					finalLink = fixSUIHysteria2Auth(finalLink, hysteria2Password)
+					finalLink = fixSOCKSAuth(finalLink, clientConfig)
+					finalLink = fixSUIRealityToTLS(finalLink)
+					finalLink = fixSUIRealityFlow(finalLink)
+				}
 				// fixSUIReality DISABLED: has duplication bug (pbk=pbk=), DB links are manually synced and correct.
 				// finalLink = fixSUIReality(finalLink)
 				// SUI inbounds: publish as-is (1 per inbound), do NOT expand into
