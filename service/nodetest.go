@@ -156,7 +156,9 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Context) (*NodeTestResult, error) {
 	result, err := s.TestOutbound(tag)
 	if err != nil {
-		return nil, err
+		// Keep a concrete failed result so scheduled health checks can persist
+		// the failure instead of silently leaving a stale available=1 record.
+		return &NodeTestResult{Tag: tag, Available: false, Latency: -1, Error: s.simplifyError(err.Error())}, nil
 	}
 
 	// Skip IP lookup if connection failed (except for UDP protocols which skipped check)
@@ -333,7 +335,7 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	// many free SOCKS endpoints answer metadata requests but reject CONNECT to
 	// the actual client target.  Measure the same TLS/generate_204 path used by
 	// the v2rayN-style latency test before promoting the record.
-	if latency, latencyErr := s.measureSOCKS5Latency(dialer); latencyErr != nil {
+	if latency, latencyErr := s.measureSOCKS5Latency(ctx, dialer); latencyErr != nil {
 		result.Available = false
 		result.Error = fmt.Sprintf("proxy target check failed: %v", latencyErr)
 		return result, nil
@@ -385,9 +387,15 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	return result, nil
 }
 
-func (s *NodeTestService) measureSOCKS5Latency(dialer proxy.Dialer) (int64, error) {
+func (s *NodeTestService) measureSOCKS5Latency(ctx context.Context, dialer proxy.Dialer) (int64, error) {
 	start := time.Now()
-	conn, err := dialer.Dial("tcp", "www.gstatic.com:443")
+	var conn net.Conn
+	var err error
+	if cd, ok := dialer.(proxy.ContextDialer); ok {
+		conn, err = cd.DialContext(ctx, "tcp", "www.gstatic.com:443")
+	} else {
+		conn, err = dialer.Dial("tcp", "www.gstatic.com:443")
+	}
 	if err != nil {
 		return -1, err
 	}
@@ -1041,6 +1049,14 @@ func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 		updates["city"] = result.City
 		updates["fraud_score"] = result.FraudScore
 		updates["ip_type"] = result.IPType
+	} else if !result.Available {
+		// Do not retain a previously verified landing IP after a failed test.
+		// Selection code uses landing_ip as a quality signal; keeping stale data
+		// would re-promote dead hproxy records into /sub/pool.
+		updates["landing_ip"] = ""
+		updates["country"] = ""
+		updates["region"] = ""
+		updates["city"] = ""
 	}
 
 	return db.Model(&model.Outbound{}).
