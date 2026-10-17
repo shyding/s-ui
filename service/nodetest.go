@@ -204,6 +204,21 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	if proxyErr == nil && latency > 0 {
 		result.RealLatency = latency
 	}
+	// HProxy source records already carry provider geography. Do not block
+	// health promotion on third-party IP/geolocation APIs; the real target
+	// TLS probe above is the authoritative availability check.
+	if strings.HasPrefix(tag, "hproxy-") {
+		if result.RealLatency <= 0 {
+			result.Available = false
+			if result.Error == "" {
+				result.Error = "proxy target latency probe failed"
+			}
+		} else if result.RealLatency > 650 {
+			result.Available = false
+			result.Error = "stage 3 latency exceeds 650ms threshold"
+		}
+		return result, nil
+	}
 
 	// If RealLatency test failed using gstatic, try the IP API connection as fallback (server latency)
 	if result.RealLatency == 0 {
@@ -352,6 +367,12 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 			result.Error = "stage 3 latency exceeds 650ms threshold"
 			return result, nil
 		}
+	}
+	// HProxy SOCKS entries use their direct target/TLS probe as the complete
+	// health test. Provider geography is already known from the source feed;
+	// skip slow/unreliable metadata endpoints.
+	if strings.HasPrefix(result.Tag, "hproxy-") {
+		return result, nil
 	}
 
 	ipLookupTasks := []IPLookupTask{
