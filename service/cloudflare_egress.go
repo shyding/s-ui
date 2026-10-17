@@ -130,38 +130,38 @@ var ColoToCountryMap = map[string]string{
 	// Asia-Pacific - 新增
 	"LLK": "AZ", "GYD": "AZ", // Azerbaijan 阿塞拜疆
 	"CGP": "BD", "JSR": "BD", // Bangladesh 孟加拉
-	"BWN": "BN", // Brunei 文莱
-	"TBS": "GE", // Georgia 第比利斯
+	"BWN": "BN",                                                                               // Brunei 文莱
+	"TBS": "GE",                                                                               // Georgia 第比利斯
 	"AMD": "IN", "IXC": "IN", "CNN": "IN", "KNU": "IN", "COK": "IN", "NAG": "IN", "PAT": "IN", // India 印度新增城市
 	"DPS": "ID", "MLG": "ID", "JOG": "ID", // Indonesia 印尼新增城市
 	"AKX": "KZ", "ALA": "KZ", "NQZ": "KZ", // Kazakhstan 哈萨克斯坦
-	"FRU": "KG", // Kyrgyzstan 吉尔吉斯斯坦
-	"MLE": "MV", // Maldives 马尔代夫
-	"KCH": "MY", // Malaysia 马来西亚古晋
-	"NOU": "NC", // New Caledonia 新喀里多尼亚
-	"WLG": "NZ", // New Zealand 惠灵顿
+	"FRU": "KG",              // Kyrgyzstan 吉尔吉斯斯坦
+	"MLE": "MV",              // Maldives 马尔代夫
+	"KCH": "MY",              // Malaysia 马来西亚古晋
+	"NOU": "NC",              // New Caledonia 新喀里多尼亚
+	"WLG": "NZ",              // New Zealand 惠灵顿
 	"CGY": "PH", "CRK": "PH", // Philippines 菲律宾新增
 	"TAS": "UZ", // Uzbekistan 乌兹别克斯坦
 	"DAD": "VN", // Vietnam 岘港
 
 	// Americas - 新增
-	"NQN": "AR", // Argentina 内乌肯
-	"BGI": "BB", // Barbados 巴巴多斯
-	"LPB": "BO", // Bolivia 玻利维亚
+	"NQN": "AR",                                                                  // Argentina 内乌肯
+	"BGI": "BB",                                                                  // Barbados 巴巴多斯
+	"LPB": "BO",                                                                  // Bolivia 玻利维亚
 	"QWJ": "BR", "ARU": "BR", "BEL": "BR", "BNU": "BR", "CAW": "BR", "CFC": "BR", // Brazil 巴西新增城市
 	"XAP": "BR", "CGB": "BR", "FLN": "BR", "GYN": "BR", "ITJ": "BR", "JOI": "BR",
 	"JDO": "BR", "MAO": "BR", "PMW": "BR", "RAO": "BR", "SOD": "BR", "SJP": "BR",
 	"SJK": "BR", "NVT": "BR", "UDI": "BR", "VIX": "BR",
-	"ARI": "CL", // Chile 阿里卡
-	"BAQ": "CO", // Colombia 巴兰基亚
+	"ARI": "CL",              // Chile 阿里卡
+	"BAQ": "CO",              // Colombia 巴兰基亚
 	"STI": "DO", "SDQ": "DO", // Dominican Republic 多米尼加
-	"GND": "GD", // Grenada 格林纳达
-	"GEO": "GY", // Guyana 圭亚那
+	"GND": "GD",              // Grenada 格林纳达
+	"GEO": "GY",              // Guyana 圭亚那
 	"SAP": "HN", "TGU": "HN", // Honduras 洪都拉斯
-	"KIN": "JM", // Jamaica 牙买加
-	"SJU": "PR", // Puerto Rico 波多黎各
-	"PBM": "SR", // Suriname 苏里南
-	"POS": "TT", // Trinidad and Tobago 特立尼达和多巴哥
+	"KIN": "JM",                                                     // Jamaica 牙买加
+	"SJU": "PR",                                                     // Puerto Rico 波多黎各
+	"PBM": "SR",                                                     // Suriname 苏里南
+	"POS": "TT",                                                     // Trinidad and Tobago 特立尼达和多巴哥
 	"ABQ": "US", "ANC": "US", "AUS": "US", "BGR": "US", "BUF": "US", // United States 美国新增城市
 	"CVG": "US", "RDU": "US", "HNL": "US", "IND": "US", "JAX": "US",
 	"MCI": "US", "LAS": "US", "MFE": "US", "MEM": "US", "MGM": "US",
@@ -169,20 +169,20 @@ var ColoToCountryMap = map[string]string{
 	"RIC": "US", "SMF": "US", "SAT": "US", "FSD": "US", "STL": "US", "TLH": "US",
 
 	// Middle East & Africa - 新增
-	"EVN": "AM", // Armenia 亚美尼亚
-	"OUA": "BF", // Burkina Faso 布基纳法索
-	"GBE": "BW", // Botswana 博茨瓦纳
+	"EVN": "AM",              // Armenia 亚美尼亚
+	"OUA": "BF",              // Burkina Faso 布基纳法索
+	"GBE": "BW",              // Botswana 博茨瓦纳
 	"ABJ": "CI", "ASK": "CI", // Ivory Coast 科特迪瓦
-	"DLA": "CM", // Cameroon 喀麦隆
-	"JIB": "DJ", // Djibouti 吉布提
+	"DLA": "CM",                           // Cameroon 喀麦隆
+	"JIB": "DJ",                           // Djibouti 吉布提
 	"AAE": "DZ", "CZL": "DZ", "ORN": "DZ", // Algeria 阿尔及利亚新增城市
-	"ADD": "ET", // Ethiopia 埃塞俄比亚
-	"SUV": "FJ", // Fiji 斐济
-	"HFA": "IL", // Israel 海法
+	"ADD": "ET",                                                     // Ethiopia 埃塞俄比亚
+	"SUV": "FJ",                                                     // Fiji 斐济
+	"HFA": "IL",                                                     // Israel 海法
 	"BSR": "IQ", "EBL": "IQ", "NJF": "IQ", "XNH": "IQ", "ISU": "IQ", // Iraq 伊拉克新增城市
-	"TNR": "MG", // Madagascar 马达加斯加
-	"WDH": "NA", // Namibia 纳米比亚
-	"ZDM": "PS", // Palestine 巴勒斯坦
+	"TNR": "MG",              // Madagascar 马达加斯加
+	"WDH": "NA",              // Namibia 纳米比亚
+	"ZDM": "PS",              // Palestine 巴勒斯坦
 	"KJA": "RU", "SVX": "RU", // Russia 俄罗斯新增城市
 	"EBB": "UG", // Uganda 乌干达
 	"HRE": "ZW", // Zimbabwe 津巴布韦
@@ -191,6 +191,7 @@ var ColoToCountryMap = map[string]string{
 // CountryNameMap provides localized names for discovered ISO country codes
 var CountryNameMap = map[string]string{
 	"US": "美国", "SG": "新加坡", "JP": "日本", "HK": "中国香港", "TW": "中国台湾",
+	"CN": "中国大陆",
 	"KR": "韩国", "GB": "英国", "DE": "德国", "FR": "法国", "NL": "荷兰",
 	"CA": "加拿大", "AU": "澳大利亚", "IN": "印度", "BR": "巴西", "IT": "意大利",
 	"ES": "西班牙", "CH": "瑞士", "SE": "瑞典", "NO": "挪威", "FI": "芬兰",

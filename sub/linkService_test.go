@@ -92,6 +92,27 @@ func TestExpandEgressLinks_VMess(t *testing.T) {
 	}
 }
 
+func TestPoolKnownCountryFallbackLinksPassSecurityValidation(t *testing.T) {
+	cases := []struct {
+		port, country, region, city string
+	}{
+		{"56007", "CM", "", ""},
+		{"56008", "CN", "Hong Kong", "Hong Kong"},
+		{"56009", "CO", "Cota", "Cota"},
+		{"56011", "DK", "Taastrup", "Taastrup"},
+		{"56012", "EE", "Johvi", "Johvi"},
+		{"56040", "SN", "Dakar", "Dakar"},
+	}
+	links := make([]string, 0, len(cases))
+	for i, tc := range cases {
+		remark := service.FormatStandardRemark("SUI", tc.country, tc.region, tc.city, i+1)
+		links = append(links, "socks5://dash.icta.top:"+tc.port+"#"+remark)
+	}
+	if ok, violations := ValidateSubscriptionSecurity(links, "dash.icta.top"); !ok {
+		t.Fatalf("known-country pool links must pass security validation: %v", violations)
+	}
+}
+
 func TestExpandEgressLinks_VLESS(t *testing.T) {
 	s := &LinkService{}
 

@@ -596,10 +596,16 @@ func LocalizeEgressLocation(country, region, city string) (string, string, strin
 
 	defGeos, hasDef := CountryDefaultGeos[country]
 	if !hasDef {
-		// Do not fabricate geography. Unknown country gets empty defaults;
-		// the remark format validation will filter out nodes with missing
-		// location instead of publishing fake "亚太" data.
-		defGeos = [2]string{"", ""}
+		// A recognized country code is still valid geography even when the
+		// provider did not return a region/city.  Falling back to the localized
+		// country name keeps the node publishable without inventing a foreign
+		// city or leaking English text into subscription remarks.  Truly unknown
+		// countries still retain empty defaults and are rejected by validation.
+		if country != "" {
+			defGeos = [2]string{country, country}
+		} else {
+			defGeos = [2]string{"", ""}
+		}
 	}
 
 	regionCN := regionToChinese(strings.TrimSpace(region))

@@ -123,3 +123,19 @@ func TestSubscriptionGeographyIsLocalizedToChinese(t *testing.T) {
 		t.Fatalf("expected Mexican geography to be localized, got %q", got)
 	}
 }
+
+func TestLocalizeKnownCountryWithMissingRegionCity(t *testing.T) {
+	for _, code := range []string{"CM", "DK", "EE", "SN"} {
+		country, region, city := LocalizeEgressLocation(code, "", "")
+		if country == "" || region == "" || city == "" {
+			t.Fatalf("known country %s must have non-empty localized fallback: %q/%q/%q", code, country, region, city)
+		}
+		for _, value := range []string{country, region, city} {
+			for _, r := range value {
+				if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+					t.Fatalf("localized fallback contains ASCII text for %s: %q", code, value)
+				}
+			}
+		}
+	}
+}
