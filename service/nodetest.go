@@ -327,6 +327,22 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	// Try multiple IP lookup services concurrently
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// A successful IP lookup alone is not sufficient for a proxy candidate:
+	// many free SOCKS endpoints answer metadata requests but reject CONNECT to
+	// the actual client target.  Measure the same TLS/generate_204 path used by
+	// the v2rayN-style latency test before promoting the record.
+	if latency, latencyErr := s.measureSOCKS5Latency(dialer); latencyErr != nil {
+		result.Available = false
+		result.Error = fmt.Sprintf("proxy target check failed: %v", latencyErr)
+		return result, nil
+	} else {
+		result.RealLatency = latency
+		if latency > 650 {
+			result.Available = false
+			result.Error = "stage 3 latency exceeds 650ms threshold"
+			return result, nil
+		}
+	}
 
 	ipLookupTasks := []IPLookupTask{
 		// Service 1: ip-api.com
@@ -365,6 +381,27 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	}
 
 	return result, nil
+}
+
+func (s *NodeTestService) measureSOCKS5Latency(dialer proxy.Dialer) (int64, error) {
+	start := time.Now()
+	conn, err := dialer.Dial("tcp", "www.gstatic.com:443")
+	if err != nil {
+		return -1, err
+	}
+	defer conn.Close()
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: "www.gstatic.com", InsecureSkipVerify: true})
+	if err := tlsConn.Handshake(); err != nil {
+		return -1, err
+	}
+	if _, err := tlsConn.Write([]byte("HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n")); err != nil {
+		return -1, err
+	}
+	one := []byte{0}
+	if _, err := tlsConn.Read(one); err != nil && err != io.EOF {
+		return -1, err
+	}
+	return time.Since(start).Milliseconds(), nil
 }
 
 // createOutboundHTTPClient creates an http.Client that routes through a sing-box outbound
