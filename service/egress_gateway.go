@@ -252,29 +252,20 @@ func ApplyEgressIPTables() error {
 // GetEgressVpsPort returns the VPS port for a given seed host:port, or 0 if not mapped.
 // Checks both original hostname and resolved IP.
 func GetEgressVpsPort(seedHost, seedPort string) int {
-	mappings := getCachedMappings()
-	for _, m := range mappings {
-		if (m.SeedHost == seedHost || m.SeedIP == seedHost) && m.SeedPort == seedPort {
-			return m.VpsPort
-		}
-		// Also try without brackets for IPv6
-		if strings.Trim(m.SeedHost, "[]") == strings.Trim(seedHost, "[]") && m.SeedPort == seedPort {
-			return m.VpsPort
-		}
-	}
+	// The VPS port-forwarding gateway is intentionally disabled.  Its DNAT
+	// rules conflict with the public pool-socks listeners: packets destined
+	// for a local SOCKS listener were rewritten to unrelated Cloudflare
+	// endpoints before reaching s-ui.  Keep the mapping reader for backward
+	// compatibility, but never expose a rewritten gateway port to clients.
 	return 0
 }
 
 // RefreshEgressGateway regenerates mappings and applies iptables.
 // Called after health checks complete or on manual trigger.
 func RefreshEgressGateway() error {
-	mappings, err := GenerateEgressMappings()
-	if err != nil {
-		return fmt.Errorf("failed to generate mappings: %w", err)
-	}
-	if len(mappings) == 0 {
-		logger.Warning("No healthy egress nodes, skipping iptables update")
-		return nil
-	}
-	return ApplyEgressIPTables()
+	// Do not regenerate or apply DNAT rules. Public pool listeners bind the
+	// VPS ports directly; forwarding those ports makes every public SOCKS
+	// handshake fail before it reaches s-ui.
+	logger.Info("Egress gateway DNAT disabled; preserving direct VPS listeners")
+	return nil
 }
