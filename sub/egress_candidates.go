@@ -15,18 +15,18 @@ import (
 // 38 SUI类型协议矩阵：所有已测试OK的客户端协议类型
 // 只有这些协议的外部节点才能映射暴露
 var suiTypeProtocolMatrix = map[string]bool{
-	"vless":      true,
-	"vmess":      true,
-	"trojan":     true,
-	"hysteria2":  true,
-	"hysteria":   true,
-	"tuic":       true,
+	"vless":       true,
+	"vmess":       true,
+	"trojan":      true,
+	"hysteria2":   true,
+	"hysteria":    true,
+	"tuic":        true,
 	"shadowsocks": true,
-	"ss":         true,
-	"socks":      true,
-	"socks5":     true,
-	"mixed":      true,
-	"http":       true,
+	"ss":          true,
+	"socks":       true,
+	"socks5":      true,
+	"mixed":       true,
+	"http":        true,
 }
 
 // egressSource 定义外部节点来源及其outbound tag模式
@@ -56,8 +56,10 @@ func getEgressCandidates() []CandidateNode {
 
 	for _, src := range egressSources {
 		var outbounds []model.Outbound
-		// 质量门：available=true 且有国家信息（通过健康检查）
-		err := db.Where("tag LIKE ? AND available = ?", src.TagLike, true).Find(&outbounds).Error
+		// 质量门必须使用本次真实出口探测得到的 landing_ip 和完整地理
+		// 信息。available 可能是历史状态，单独使用会把失效 hproxy 重新
+		// 暴露到 /sub/pool。
+		err := db.Where("tag LIKE ? AND available = ? AND landing_ip <> '' AND country <> '' AND region <> '' AND city <> ''", src.TagLike, true).Find(&outbounds).Error
 		if err != nil {
 			logger.Warningf("加载%s候选节点失败: %v", src.Provider, err)
 			continue

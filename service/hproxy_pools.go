@@ -22,7 +22,7 @@ func EnsureHProxyPoolsInOutbounds(config *SingBoxConfig, db *gorm.DB) {
 		return
 	}
 	var candidates []model.Outbound
-	if err := db.Where("tag LIKE ? AND available = ?", "hproxy-%", true).Find(&candidates).Error; err != nil {
+	if err := db.Where("tag LIKE ? AND available = ? AND landing_ip <> '' AND country <> '' AND region <> '' AND city <> ''", "hproxy-%", true).Find(&candidates).Error; err != nil {
 		return
 	}
 	groups := make(map[string][]string)

@@ -242,8 +242,11 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		}
 		result.Available = false
 	} else {
-		// After successful IP lookup, try to get fraud score if IP is available
-		if result.LandingIP != "" {
+		// Health promotion only needs a verified landing IP.  The fraud-score
+		// scraper is a separate, slow web request (up to 15s) and must not be
+		// part of the hproxy promotion gate; otherwise 300 candidates can keep
+		// the worker busy for tens of minutes and leave stale pool bindings.
+		if result.LandingIP != "" && !strings.HasPrefix(tag, "hproxy-") {
 			s.getIPTypeAndScore(dialCtx, outbound_adapter, result)
 		}
 	}
