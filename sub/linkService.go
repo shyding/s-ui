@@ -1925,8 +1925,16 @@ func ValidateSubscriptionSecurity(links []string, allowedHost string) (bool, []s
 			remark := u.Fragment
 			// SUI 本地 inbound（如 vless-54142）跳过备注格式检查
 			isSuiTag := false
+			// Standardized remarks may carry a two-rune country flag before
+			// SUI-/vless-; inspect the actual provider prefix after removing it.
+			remarkForPrefix := remark
+			if runes := []rune(remarkForPrefix); len(runes) >= 2 &&
+				runes[0] >= 0x1F1E6 && runes[0] <= 0x1F1FF &&
+				runes[1] >= 0x1F1E6 && runes[1] <= 0x1F1FF {
+				remarkForPrefix = string(runes[2:])
+			}
 			for _, prefix := range suiTagPrefixes {
-				if strings.HasPrefix(remark, prefix) {
+				if strings.HasPrefix(remarkForPrefix, prefix) {
 					isSuiTag = true
 					break
 				}
