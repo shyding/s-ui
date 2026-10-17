@@ -175,7 +175,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 
 	// For SOCKS5 nodes, use direct proxy connection (no sing-box dependency)
 	if outbound.Type == "socks" {
-		return s.testWithSOCKS5(outbound, result)
+		return s.testWithSOCKS5(outbound, result, ctx)
 	}
 
 	// For other protocols, try to use sing-box outbound
@@ -287,7 +287,7 @@ func (s *NodeTestService) tryCloudflareTrace(ctx context.Context, outbound adapt
 }
 
 // testWithSOCKS5 tests SOCKS5 node and queries IP directly without sing-box
-func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTestResult) (*NodeTestResult, error) {
+func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTestResult, parentCtx context.Context) (*NodeTestResult, error) {
 	// Parse outbound options
 	var options map[string]interface{}
 	if err := json.Unmarshal(outbound.Options, &options); err != nil {
@@ -327,7 +327,7 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	}
 
 	// Try multiple IP lookup services concurrently
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 15*time.Second)
 	defer cancel()
 	// A successful IP lookup alone is not sufficient for a proxy candidate:
 	// many free SOCKS endpoints answer metadata requests but reject CONNECT to
