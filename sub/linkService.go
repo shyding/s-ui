@@ -1640,6 +1640,7 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 	// would open 300 nested proxy checks and block /sub/pool indefinitely.
 	// Return the already-bound links directly, with normalized SUI remarks.
 	if len(allCandidates) > 0 && isPoolTagsOnly(allowedTags) {
+		logger.Infof("pool subscription fast path: allowed_tags=%d candidates=%d", len(allowedTags), len(allCandidates))
 		for i, candidate := range allCandidates {
 			remark := service.FormatStandardRemark("SUI", candidate.Country, candidate.Region, candidate.City, i+1)
 			finalUri := setRemarkOnUri(candidate.Uri, candidate.Protocol, remark)
