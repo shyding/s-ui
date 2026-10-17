@@ -236,7 +236,10 @@ func runEgressHealthCheck(reload ...func() error) {
 	if len(candidateTags) == 0 {
 		return
 	}
-	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 10)
+	// Candidate checks have an independent 20s timeout; use moderate
+	// parallelism so a 300-node round completes promptly without exhausting
+	// the VPS file-descriptor/CPU budget.
+	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 30)
 	egressProgressDone.Add(int32(len(candidateTags)))
 	if err != nil {
 		logger.Warning("public-proxy candidate health check failed:", err)

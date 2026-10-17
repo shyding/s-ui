@@ -916,7 +916,11 @@ func (s *NodeTestService) TestAllOutboundsWithIP(concurrency int, ctx context.Co
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result, _ := s.TestOutboundWithLandingIP(ob.Tag, ctx)
+			// Bound every candidate independently; one unresponsive upstream
+			// must not hold the whole 300-node health round open forever.
+			nodeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			result, _ := s.TestOutboundWithLandingIP(ob.Tag, nodeCtx)
 			if result != nil {
 				mu.Lock()
 				results = append(results, result)
@@ -960,7 +964,9 @@ func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result, _ := s.TestOutboundWithLandingIP(ob.Tag, ctx)
+			nodeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			result, _ := s.TestOutboundWithLandingIP(ob.Tag, nodeCtx)
 			if result != nil {
 				mu.Lock()
 				results = append(results, result)
