@@ -237,6 +237,12 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	s.executeIPLookups(dialCtx, result, ipLookupTasks)
 
 	if result.LandingIP == "" {
+		// HProxy candidates already passed the real target/TLS probe above.
+		// Geolocation APIs are auxiliary metadata and may be blocked by the
+		// proxy; they must not turn an otherwise working proxy into -1.
+		if strings.HasPrefix(tag, "hproxy-") && result.RealLatency > 0 && result.Available {
+			return result, nil
+		}
 		// STRICT FAIL-CLOSED: LandingIP must be a real IP obtained through the proxy.
 		// Never fake it with server address, tag inference, or 1.1.1.1.
 		if result.Error == "" {
@@ -370,6 +376,12 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	s.executeIPLookups(ctx, result, ipLookupTasks)
 
 	if result.LandingIP == "" {
+		// For hproxy entries, the SOCKS/TLS target probe is the availability
+		// signal. IP lookup is optional enrichment and must not create a false
+		// negative when the proxy blocks metadata providers.
+		if strings.HasPrefix(result.Tag, "hproxy-") && result.RealLatency > 0 && result.Available {
+			return result, nil
+		}
 		if result.Error == "" {
 			result.Error = "all IP lookup services failed"
 		}
@@ -1050,13 +1062,15 @@ func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 		updates["fraud_score"] = result.FraudScore
 		updates["ip_type"] = result.IPType
 	} else if !result.Available {
-		// Do not retain a previously verified landing IP after a failed test.
-		// Selection code uses landing_ip as a quality signal; keeping stale data
-		// would re-promote dead hproxy records into /sub/pool.
+		// Never retain a previously verified landing IP after a failed test.
+		// HProxy source geography is independent metadata, so preserve only
+		// country/region/city for pool labeling while clearing the IP itself.
 		updates["landing_ip"] = ""
-		updates["country"] = ""
-		updates["region"] = ""
-		updates["city"] = ""
+		if !strings.HasPrefix(result.Tag, "hproxy-") {
+			updates["country"] = ""
+			updates["region"] = ""
+			updates["city"] = ""
+		}
 	}
 
 	return db.Model(&model.Outbound{}).
