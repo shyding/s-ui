@@ -318,7 +318,9 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	}
 
 	proxyAddr := fmt.Sprintf("%s:%d", server, port)
-	dialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
+	// proxy.Dialer has no context method; give its underlying direct dial a
+	// hard timeout so a dead free-proxy cannot pin the health worker forever.
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, &net.Dialer{Timeout: 8 * time.Second})
 	if err != nil {
 		result.Error = fmt.Sprintf("create SOCKS5 dialer failed: %v", err)
 		return result, nil
@@ -390,6 +392,7 @@ func (s *NodeTestService) measureSOCKS5Latency(dialer proxy.Dialer) (int64, erro
 		return -1, err
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
 	tlsConn := tls.Client(conn, &tls.Config{ServerName: "www.gstatic.com", InsecureSkipVerify: true})
 	if err := tlsConn.Handshake(); err != nil {
 		return -1, err
