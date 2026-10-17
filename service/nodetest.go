@@ -356,8 +356,10 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 
 		result.Available = false
 	} else {
-		// Try to get fraud score
-		if result.LandingIP != "" {
+		// HProxy promotion only needs a verified landing IP. Avoid the slow
+		// Scamalytics request here as well as in the sing-box path; SOCKS5
+		// hproxy records use this direct dialer path.
+		if result.LandingIP != "" && !strings.HasPrefix(result.Tag, "hproxy-") {
 			s.getIPTypeAndScoreWithDialer(dialer, result)
 		}
 	}
