@@ -62,7 +62,7 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		return nil, nil, err
 	}
 
-	links := j.LinkService.GetLocalLinks(&client.Links, "", nil)
+	links := j.authorizedLocalLinks(client, inDatas)
 	tagNumEnable := 0
 	if len(links) > 1 {
 		tagNumEnable = 1
@@ -96,6 +96,9 @@ func (j *JsonService) GetJson(subId string, format string) (*string, []string, e
 		origOb["tag"] = origNativeTag
 		expandedOutbounds = append(expandedOutbounds, origOb)
 		expandedOutTags = append(expandedOutTags, origNativeTag)
+		if t == "socks" || t == "http" {
+			continue // Runtime auth.User has no regional multiplexed identity.
+		}
 
 		// 2. Expand across all active regions
 		for _, reg := range activeRegions {
@@ -208,6 +211,9 @@ func (j *JsonService) getOutbounds(clientConfig json.RawMessage, inbounds []*mod
 			outbound["password"] = strings.Join(userPass, ":")
 		} else { // Other protocols
 			config, _ := configs[protocol].(map[string]interface{})
+			if protocol == "mixed" && configs[protocol] == nil {
+				config, _ = configs["socks"].(map[string]interface{})
+			}
 			for key, value := range config {
 				if key == "name" || key == "alterId" || (key == "flow" && inData.TlsId == 0) {
 					continue

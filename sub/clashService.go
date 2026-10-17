@@ -76,7 +76,7 @@ func (s *ClashService) GetClash(subId string) (*string, []string, error) {
 		return nil, nil, err
 	}
 
-	links := s.LinkService.GetLocalLinks(&client.Links, "", nil)
+	links := s.authorizedLocalLinks(client, inDatas)
 	tagNumEnable := 0
 	if len(links) > 1 {
 		tagNumEnable = 1
@@ -110,6 +110,9 @@ func (s *ClashService) GetClash(subId string) (*string, []string, error) {
 		origOb["tag"] = origNativeTag
 		expandedOutbounds = append(expandedOutbounds, origOb)
 		expandedOutTags = append(expandedOutTags, origNativeTag)
+		if t == "socks" || t == "http" {
+			continue // Runtime auth.User has no regional multiplexed identity.
+		}
 
 		// 2. Expand across all active regions
 		for _, reg := range activeRegions {
