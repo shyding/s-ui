@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1610,7 +1611,11 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 				// bound outbound's real geo instead of the default Singapore.
 				country, region, city := "新加坡", "中央区", "新加坡城-"+getProtocolDetails(finalLink, proto)
 				if strings.HasPrefix(link.Remark, "pool-") {
-					if geo := poolInboundGeo(link.Remark); geo != nil {
+					// Pool links already carry the selected outbound geography in
+					// their fragment (the route binding is generated atomically with
+					// the link).  Parsing it avoids re-reading the entire route JSON
+					// once per port during subscription generation.
+					if geo := poolLinkGeo(cleanUri); geo != nil {
 						country, region, city = geo[0], geo[1], geo[2]
 					}
 				}
@@ -1627,6 +1632,23 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 				allCandidates = append(allCandidates, candidates...)
 			}
 		}
+	}
+
+	// Pool entries are promoted from the health-gated outbound set before
+	// they are written to the client.  They are not ordinary SUI protocol
+	// nodes: running CheckNodeHealthNow for every pool SOCKS listener here
+	// would open 300 nested proxy checks and block /sub/pool indefinitely.
+	// Return the already-bound links directly, with normalized SUI remarks.
+	if len(allCandidates) > 0 && isPoolTagsOnly(allowedTags) {
+		for i, candidate := range allCandidates {
+			remark := service.FormatStandardRemark("SUI", candidate.Country, candidate.Region, candidate.City, i+1)
+			finalUri := setRemarkOnUri(candidate.Uri, candidate.Protocol, remark)
+			if !seen[finalUri] {
+				seen[finalUri] = true
+				result = append(result, finalUri)
+			}
+		}
+		return result
 	}
 
 	// Load Seed nodes from file (SUI_SEED_NODES_FILE) as candidates.
@@ -1682,13 +1704,7 @@ func (s *LinkService) getAuthorizedLinks(linkJson *json.RawMessage, types string
 	// Two subscription-only native WireGuard nodes complete the fixed 40-node
 	// inventory (38 application inbounds + UDP 54180/54181 relays).
 	// Skip for pool clients (they only have pool-socks-* tags).
-	isPoolClient := len(allowedTags) > 0
-	for tag := range allowedTags {
-		if !strings.HasPrefix(tag, "pool-") {
-			isPoolClient = false
-			break
-		}
-	}
+	isPoolClient := isPoolTagsOnly(allowedTags)
 	if !isPoolClient {
 		for _, wgLink := range service.GetSUIWireGuardLinks(database.GetDB()) {
 			if !seen[wgLink] {
@@ -1997,6 +2013,40 @@ func (s *LinkService) getExternalSub(url string) []string {
 	links := util.StrOrBase64Encoded(string(body))
 	return strings.Split(links, "\n")
 
+}
+
+func isPoolTagsOnly(tags map[string]bool) bool {
+	if len(tags) == 0 {
+		return false
+	}
+	for tag := range tags {
+		if !strings.HasPrefix(tag, "pool-") {
+			return false
+		}
+	}
+	return true
+}
+
+// poolLinkGeo extracts [country, region, city] from a generated pool link
+// fragment.  Pool links are written as ...#CC-Region-City-Port.
+func poolLinkGeo(uri string) []string {
+	idx := strings.LastIndex(uri, "#")
+	if idx < 0 || idx+1 >= len(uri) {
+		return nil
+	}
+	parts := strings.Split(strings.TrimSpace(uri[idx+1:]), "-")
+	if len(parts) < 4 {
+		return nil
+	}
+	port := parts[len(parts)-1]
+	if _, err := strconv.Atoi(port); err != nil {
+		return nil
+	}
+	city := strings.Join(parts[2:len(parts)-1], "-")
+	if city == "" {
+		return nil
+	}
+	return []string{parts[0], parts[1], city}
 }
 
 // poolInboundGeo returns [country, region, city] for a pool-* inbound by
