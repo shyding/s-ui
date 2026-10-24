@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,16 +16,31 @@ func syncEndpointCandidates(db *gorm.DB) []string {
 		return nil
 	}
 	var tags []string
-	upsert := func(tag, country, region, city string) {
-		if tag == "" {
+	upsert := func(endpointTag, country, region, city string) {
+		if endpointTag == "" {
+			return
+		}
+		tag := "out-" + endpointTag
+		wrapper, err := BuildDirectOutboundJson(tag, endpointTag)
+		if err != nil {
 			return
 		}
 		var ob model.Outbound
-		err := db.Where("tag = ?", tag).First(&ob).Error
+		err = db.Where("tag = ?", tag).First(&ob).Error
 		if err == gorm.ErrRecordNotFound {
-			ob = model.Outbound{Tag: tag, Type: "wireguard", Options: json.RawMessage(`{}`)}
+			ob = model.Outbound{Tag: tag, Type: "selector"}
+			if ob.UnmarshalJSON(wrapper) != nil {
+				return
+			}
 		} else if err != nil {
 			return
+		}
+		if ob.Id != 0 {
+			// Repair rows created by the previous broken implementation.
+			ob.Type = "selector"
+			if ob.UnmarshalJSON(wrapper) != nil {
+				return
+			}
 		}
 		ob.Country, ob.Region, ob.City = country, region, city
 		if ob.Id == 0 {
@@ -34,10 +48,13 @@ func syncEndpointCandidates(db *gorm.DB) []string {
 				return
 			}
 		} else {
-			_ = db.Model(&ob).Updates(map[string]interface{}{"country": country, "region": region, "city": city}).Error
+			_ = db.Save(&ob).Error
 		}
 		tags = append(tags, tag)
 	}
+	// Remove only synthetic rows from the old implementation; endpoint records
+	// (and their private keys) remain untouched.
+	db.Where("tag LIKE ? AND type = ?", "ep-%", "wireguard").Delete(&model.Outbound{})
 
 	var endpoints []model.Endpoint
 	if db.Where("tag LIKE ?", "ep-proton-%").Find(&endpoints).Error == nil {

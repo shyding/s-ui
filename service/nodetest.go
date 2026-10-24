@@ -77,9 +77,10 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		port = int(p)
 	}
 
-	hasEndpoint := outbound.Type == "direct" && (options["endpoint"] != nil || options["detour"] != nil)
+	hasEndpoint := (outbound.Type == "direct" && (options["endpoint"] != nil || options["detour"] != nil)) ||
+		(outbound.Type == "selector" && strings.HasPrefix(tag, "out-ep-") && options["outbounds"] != nil)
 	isPool := outbound.Type == "urltest"
-	isConfiguredEndpoint := strings.HasPrefix(tag, "ep-")
+	isConfiguredEndpoint := strings.HasPrefix(tag, "out-ep-")
 
 	if server == "" && outbound.LandingIP != "" {
 		server = outbound.LandingIP
