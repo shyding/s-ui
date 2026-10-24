@@ -1133,6 +1133,12 @@ func (s *NodeTestService) SaveTestResult(result *NodeTestResult) error {
 		updates["city"] = result.City
 		updates["fraud_score"] = result.FraudScore
 		updates["ip_type"] = result.IPType
+	} else if result.Available && result.Country != "" && result.Region != "" && result.City != "" {
+		// A real target probe can succeed while all geo APIs are blocked. Keep
+		// the source/flag geography so the healthy node remains pool-eligible.
+		updates["country"] = NormalizeCountryCode(result.Country)
+		updates["region"] = result.Region
+		updates["city"] = result.City
 	} else if !result.Available {
 		// Never retain a previously verified landing IP after a failed test.
 		// HProxy source geography is independent metadata, so preserve only
