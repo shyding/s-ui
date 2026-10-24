@@ -170,11 +170,13 @@ func runEgressHealthCheck(reload ...func() error) {
 	}
 
 	// 设置总进度（包含 HProxy）
-	hproxyCutoff := time.Now().Add(-15 * time.Minute).Unix()
 	var hproxyTags []string
 	db.Model(&model.Outbound{}).
-		Where("tag LIKE ? AND (last_test_time < ? OR available = ?)", "hproxy-%", hproxyCutoff, false).
-		Order("last_test_time ASC").Limit(300).Pluck("tag", &hproxyTags)
+		// Subscription refreshes update last_test_time even before a real
+		// target probe. Do not use that timestamp as a health gate: every
+		// round must explicitly screen the HProxy inventory.
+		Where("tag LIKE ?", "hproxy-%").
+		Order("last_test_time ASC").Limit(1500).Pluck("tag", &hproxyTags)
 
 	total := int32(len(tags) + len(protonTags) + len(seedTags) + len(hproxyTags))
 	ResetEgressProgress(total)

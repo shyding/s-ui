@@ -189,6 +189,8 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 
 	outbound_adapter, loaded := outboundManager.Outbound(tag)
 	if !loaded {
+		result.Available = false
+		result.Latency = -1
 		result.Error = "outbound not found in sing-box (load node first or use SOCKS5)"
 		return result, nil
 	}
