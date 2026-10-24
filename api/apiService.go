@@ -1214,7 +1214,15 @@ func (a *ApiService) TriggerEgressHealthCheck(c *gin.Context) {
 		return
 	}
 	egressOk := service.TriggerEgressHealthCheck()
-	nodeOk := service.TriggerNodeHealthCheck()
+	nodeOk := false
+	// Pool maintenance can be run independently from the expensive full node
+	// sweep (the seed report may contain thousands of entries). Callers that
+	// explicitly request egressOnly get the pool health cycle without starting
+	// a second 14k-node worker.
+	egressOnly := c.Request.FormValue("egressOnly") == "1" || strings.EqualFold(c.Request.FormValue("egressOnly"), "true")
+	if !egressOnly {
+		nodeOk = service.TriggerNodeHealthCheck()
+	}
 	if !egressOk && !nodeOk {
 		c.JSON(409, gin.H{
 			"success": false,

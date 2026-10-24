@@ -1009,7 +1009,7 @@ func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency
 
 			nodeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 			defer cancel()
-			result, _ := s.TestOutboundWithLandingIP(ob.Tag, nodeCtx)
+			result := s.testOutboundWithHardDeadline(ob.Tag, nodeCtx)
 			if result != nil {
 				mu.Lock()
 				results = append(results, result)
@@ -1020,6 +1020,28 @@ func (s *NodeTestService) TestSelectedOutboundsWithIP(tags []string, concurrency
 
 	wg.Wait()
 	return results, nil
+}
+
+// testOutboundWithHardDeadline protects the health worker from adapters that
+// fail to propagate context cancellation. A few third-party/proxy transports
+// can otherwise leave a goroutine blocked indefinitely, preventing the whole
+// batch from saving results or rebuilding the public pool.
+func (s *NodeTestService) testOutboundWithHardDeadline(tag string, ctx context.Context) *NodeTestResult {
+	resultCh := make(chan *NodeTestResult, 1)
+	go func() {
+		result, _ := s.TestOutboundWithLandingIP(tag, ctx)
+		resultCh <- result
+	}()
+	timer := time.NewTimer(25 * time.Second)
+	defer timer.Stop()
+	select {
+	case result := <-resultCh:
+		return result
+	case <-timer.C:
+		return &NodeTestResult{Tag: tag, Available: false, Latency: -1, Error: "health test hard timeout"}
+	case <-ctx.Done():
+		return &NodeTestResult{Tag: tag, Available: false, Latency: -1, Error: "health test context timeout"}
+	}
 }
 
 // TestAllOutboundsWithIPInternal is the internal method that uses corePtr directly

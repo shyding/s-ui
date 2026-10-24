@@ -204,7 +204,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	hproxyPassed := 0
 	poolRebuilt := 0
 	if len(hproxyTags) > 0 {
-		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 30)
+		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 60)
 		egressProgressDone.Add(int32(len(hproxyTags)))
 		if proxyErr != nil {
 			logger.Warning("public-proxy candidate health check failed:", proxyErr)
@@ -238,7 +238,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// 3. Seed nodes: background check (tags already collected above)
 	seedPassed := 0
 	if len(seedTags) > 0 {
-		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 5)
+		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 60)
 		egressProgressDone.Add(int32(len(seedTags)))
 		if err != nil {
 			logger.Warning("seed client node health check failed:", err)
