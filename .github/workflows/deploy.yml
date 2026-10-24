@@ -65,6 +65,11 @@ jobs:
           file sui
           chmod +x sui
           sha256sum sui
+          # The VPS SSH gateway drops long-running raw scp transfers.  Compress
+          # the already-stripped ELF before transfer so deployment is resumable
+          # within the gateway timeout; verify/decompress remotely below.
+          gzip -1 -c sui > sui.gz
+          sha256sum sui.gz
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -77,10 +82,11 @@ jobs:
 
       - name: Transfer artifacts to server
         run: |
-          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf /tmp/scripts /tmp/sui /tmp/s-ui.service"
-          scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} sui ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui
-          scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
-          scp -o StrictHostKeyChecking=accept-new -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf /tmp/scripts /tmp/sui /tmp/sui.gz /tmp/s-ui.service"
+          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} sui.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui.gz
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "gzip -t /tmp/sui.gz && gzip -dc /tmp/sui.gz > /tmp/sui && chmod 755 /tmp/sui && rm -f /tmp/sui.gz"
+          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
+          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
 
       - name: Bootstrap and start s-ui service
         env:
