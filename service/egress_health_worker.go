@@ -192,6 +192,25 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
+	// HProxy backs the public 300-port pool. Test it before the slower
+	// seed/WireGuard background round so pool promotion is not delayed by
+	// unrelated UDP endpoints.
+	hproxyPassed := 0
+	if len(hproxyTags) > 0 {
+		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 30)
+		egressProgressDone.Add(int32(len(hproxyTags)))
+		if proxyErr != nil {
+			logger.Warning("public-proxy candidate health check failed:", proxyErr)
+		} else {
+			for _, result := range proxyResults {
+				if result.Available && strings.HasPrefix(result.Tag, "hproxy-") {
+					hproxyPassed++
+				}
+			}
+			logger.Infof("public-proxy candidate health check finished: tested=%d passed=%d", len(proxyResults), hproxyPassed)
+		}
+	}
+
 	// 2. Proton child nodes: daily check (tags already collected above)
 	if len(protonTags) > 0 {
 		protonResults, err := (&NodeTestService{}).TestSelectedAndSave(protonTags, 3)
@@ -229,34 +248,11 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-	// HProxy候选：每天测一遍，低并发(10)，每次300个
-	// （曾用 50 并发/1500 上限导致 VPS 资源耗尽卡死，现降低）
-	// 标签已在进度设置时收集
-	candidateTags := hproxyTags
-	if len(candidateTags) == 0 {
-		return
-	}
-	// Candidate checks have an independent 20s timeout; use moderate
-	// parallelism so a 300-node round completes promptly without exhausting
-	// the VPS file-descriptor/CPU budget.
-	proxyResults, err := (&NodeTestService{}).TestSelectedAndSave(candidateTags, 30)
-	egressProgressDone.Add(int32(len(candidateTags)))
-	if err != nil {
-		logger.Warning("public-proxy candidate health check failed:", err)
-		return
-	}
-	passed := 0
-	for _, result := range proxyResults {
-		if result.Available && strings.HasPrefix(result.Tag, "hproxy-") {
-			passed++
-		}
-	}
-	logger.Infof("public-proxy candidate health check finished: tested=%d passed=%d", len(proxyResults), passed)
-	if (passed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
+	if (hproxyPassed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
 		if err := reload[0](); err != nil {
 			logger.Warning("sing-box reload after egress promotion failed:", err)
 		} else {
-			logger.Infof("sing-box reloaded after promoting %d public-proxy and %d seed exits", passed, seedPassed)
+			logger.Infof("sing-box reloaded after promoting %d public-proxy and %d seed exits", hproxyPassed, seedPassed)
 		}
 	}
 }
