@@ -450,39 +450,31 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 }
 
 func (s *NodeTestService) measureSOCKS5Latency(ctx context.Context, dialer proxy.Dialer) (int64, error) {
-	var lastErr error
-	for _, target := range []string{"www.gstatic.com", "www.google.com"} {
-		targetCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
-		start := time.Now()
-		var conn net.Conn
-		var err error
-		if cd, ok := dialer.(proxy.ContextDialer); ok {
-			conn, err = cd.DialContext(targetCtx, "tcp", target+":443")
-		} else {
-			conn, err = dialer.Dial("tcp", target+":443")
-		}
-		if err == nil {
-			_ = conn.SetDeadline(time.Now().Add(7 * time.Second))
-			tlsConn := tls.Client(conn, &tls.Config{ServerName: target, InsecureSkipVerify: true})
-			err = tlsConn.Handshake()
-			if err == nil {
-				_, err = tlsConn.Write([]byte("HEAD /generate_204 HTTP/1.1\r\nHost: " + target + "\r\nConnection: close\r\n\r\n"))
-			}
-			if err == nil {
-				_, err = tlsConn.Read([]byte{0})
-				if err == io.EOF {
-					err = nil
-				}
-			}
-			conn.Close()
-		}
-		cancel()
-		if err == nil {
-			return time.Since(start).Milliseconds(), nil
-		}
-		lastErr = err
+	start := time.Now()
+	var conn net.Conn
+	var err error
+	if cd, ok := dialer.(proxy.ContextDialer); ok {
+		conn, err = cd.DialContext(ctx, "tcp", "www.gstatic.com:443")
+	} else {
+		conn, err = dialer.Dial("tcp", "www.gstatic.com:443")
 	}
-	return -1, lastErr
+	if err != nil {
+		return -1, err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: "www.gstatic.com", InsecureSkipVerify: true})
+	if err := tlsConn.Handshake(); err != nil {
+		return -1, err
+	}
+	if _, err := tlsConn.Write([]byte("HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n")); err != nil {
+		return -1, err
+	}
+	one := []byte{0}
+	if _, err := tlsConn.Read(one); err != nil && err != io.EOF {
+		return -1, err
+	}
+	return time.Since(start).Milliseconds(), nil
 }
 
 // createOutboundHTTPClient creates an http.Client that routes through a sing-box outbound
@@ -1475,40 +1467,38 @@ func (s *NodeTestService) simplifyError(errStr string) string {
 	return errStr
 }
 
-// measureProxyLatency mirrors v2rayN's Google probe while retaining gstatic
-// compatibility. Both targets must complete a real TLS/HTTP request.
+// measureProxyLatency attempts to connect to gstatic.com through the proxy adapter
 func (s *NodeTestService) measureProxyLatency(ctx context.Context, outbound_adapter adapter.Outbound) (int64, error) {
-	var lastErr error
-	for _, target := range []string{"www.gstatic.com", "www.google.com"} {
-		dialCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
-		latency, err := s.measureProxyLatencyTarget(dialCtx, outbound_adapter, target)
-		cancel()
-		if err == nil {
-			return latency, nil
-		}
-		lastErr = err
-	}
-	return -1, lastErr
-}
+	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 
-func (s *NodeTestService) measureProxyLatencyTarget(ctx context.Context, outbound_adapter adapter.Outbound, target string) (int64, error) {
-	start := time.Now()
-	conn, err := outbound_adapter.DialContext(ctx, N.NetworkTCP, M.ParseSocksaddr(target+":443"))
+	rlStart := time.Now()
+	rlDest := M.ParseSocksaddr("www.gstatic.com:443")
+	rlConn, err := outbound_adapter.DialContext(dialCtx, N.NetworkTCP, rlDest)
 	if err != nil {
 		return -1, err
 	}
-	defer conn.Close()
-	tlsConn := tls.Client(conn, &tls.Config{ServerName: target, InsecureSkipVerify: true})
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
+	defer rlConn.Close()
+
+	tlsConn := tls.Client(rlConn, &tls.Config{
+		ServerName:         "www.gstatic.com",
+		InsecureSkipVerify: true,
+	})
+	if err := tlsConn.HandshakeContext(dialCtx); err != nil {
 		return -1, err
 	}
-	req := "HEAD /generate_204 HTTP/1.1\r\nHost: " + target + "\r\nConnection: close\r\n\r\n"
-	if _, err := tlsConn.Write([]byte(req)); err != nil {
+
+	req := "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n"
+	_, err = tlsConn.Write([]byte(req))
+	if err != nil {
 		return -1, err
 	}
+
 	buf := make([]byte, 1)
-	if _, err := tlsConn.Read(buf); err != nil && err != io.EOF {
+	_, err = tlsConn.Read(buf)
+	if err != nil && err != io.EOF {
 		return -1, err
 	}
-	return time.Since(start).Milliseconds(), nil
+
+	return time.Since(rlStart).Milliseconds(), nil
 }
