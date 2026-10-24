@@ -42,6 +42,20 @@ type NodeTestResult struct {
 	Error       string `json:"error,omitempty"`
 }
 
+// inferSourceGeo supplies a stable country fallback for imported seed remarks.
+// The report commonly carries a flag but no persisted geo fields; this is
+// metadata only and is used only after a real target probe succeeds.
+func inferSourceGeo(tag string) (string, string, string) {
+	runes := []rune(tag)
+	for i := 0; i+1 < len(runes); i++ {
+		if runes[i] >= 0x1F1E6 && runes[i] <= 0x1F1FF && runes[i+1] >= 0x1F1E6 && runes[i+1] <= 0x1F1FF {
+			country := string([]byte{byte('A' + runes[i] - 0x1F1E6), byte('A' + runes[i+1] - 0x1F1E6)})
+			return country, country, country
+		}
+	}
+	return "", "", ""
+}
+
 // TestOutbound tests a single outbound TCP connection
 func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 	db := database.GetDB()
@@ -78,6 +92,11 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		Country: outbound.Country,
 		Region:  outbound.Region,
 		City:    outbound.City,
+	}
+	if result.Country == "" || result.Region == "" || result.City == "" {
+		if country, region, city := inferSourceGeo(tag); country != "" {
+			result.Country, result.Region, result.City = country, region, city
+		}
 	}
 
 	if (server == "" || port == 0) && !hasEndpoint && !isPool {

@@ -9,7 +9,7 @@ import (
 
 func TestExecuteIPLookups_ErrorAggregation(t *testing.T) {
 	s := &NodeTestService{}
-	
+
 	baseResult := &NodeTestResult{
 		Tag:       "test-node",
 		Server:    "127.0.0.1",
@@ -55,7 +55,7 @@ func TestExecuteIPLookups_ErrorAggregation(t *testing.T) {
 
 func TestExecuteIPLookups_SuccessEndsEarly(t *testing.T) {
 	s := &NodeTestService{}
-	
+
 	baseResult := &NodeTestResult{
 		Tag:       "test-node",
 		Server:    "127.0.0.1",
@@ -92,7 +92,7 @@ func TestExecuteIPLookups_SuccessEndsEarly(t *testing.T) {
 
 func TestSimplifyError(t *testing.T) {
 	s := &NodeTestService{}
-	
+
 	tests := []struct {
 		input    string
 		expected string
@@ -140,5 +140,14 @@ func TestSimplifyError(t *testing.T) {
 		if actual != tc.expected {
 			t.Errorf("simplifyError(%q) = %q; expected %q", tc.input, actual, tc.expected)
 		}
+	}
+}
+
+func TestInferSourceGeo(t *testing.T) {
+	if country, region, city := inferSourceGeo("seed 🇮🇹 意大利"); country != "IT" || region != "IT" || city != "IT" {
+		t.Fatalf("unexpected flag geo: %q %q %q", country, region, city)
+	}
+	if country, _, _ := inferSourceGeo("seed without flag"); country != "" {
+		t.Fatalf("unexpected geo for unlabelled tag: %q", country)
 	}
 }
