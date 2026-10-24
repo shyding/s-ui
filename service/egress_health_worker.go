@@ -166,7 +166,10 @@ func runEgressHealthCheck(reload ...func() error) {
 	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
 		db.Model(&model.Outbound{}).
 			Where("subscription_id = ? AND (last_test_time < ? OR available = ?)", seedSubscription.Id, protonCutoff, false).
-			Order("last_test_time ASC").Limit(1500).Pluck("tag", &seedTags)
+			// The imported report is not ordered by quality; testing only the first
+			// 1500 repeatedly biases the pool toward a dead prefix. Sample the full
+			// inventory so healthy endpoints from later countries can be promoted.
+			Order("RANDOM()").Limit(8000).Pluck("tag", &seedTags)
 	}
 
 	// Capture the beginning of this round. Pool promotion must only use rows
@@ -238,7 +241,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// 3. Seed nodes: background check (tags already collected above)
 	seedPassed := 0
 	if len(seedTags) > 0 {
-		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 60)
+		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 120)
 		egressProgressDone.Add(int32(len(seedTags)))
 		if err != nil {
 			logger.Warning("seed client node health check failed:", err)
