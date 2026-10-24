@@ -72,9 +72,12 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 	}
 
 	result := &NodeTestResult{
-		Tag:    tag,
-		Server: server,
-		Port:   port,
+		Tag:     tag,
+		Server:  server,
+		Port:    port,
+		Country: outbound.Country,
+		Region:  outbound.Region,
+		City:    outbound.City,
 	}
 
 	if (server == "" || port == 0) && !hasEndpoint && !isPool {
@@ -257,7 +260,11 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		// HProxy candidates already passed the real target/TLS probe above.
 		// Geolocation APIs are auxiliary metadata and may be blocked by the
 		// proxy; they must not turn an otherwise working proxy into -1.
-		if strings.HasPrefix(tag, "hproxy-") && result.RealLatency > 0 && result.Available {
+		if result.RealLatency > 0 && result.Available && result.Country != "" && result.Region != "" && result.City != "" {
+			// Geo APIs are enrichment only. The subscription/source geo is already
+			// persisted, so an EOF/timeout from those APIs must not turn a node
+			// with a successful real target probe into a false negative.
+			result.Error = ""
 			return result, nil
 		}
 		// STRICT FAIL-CLOSED: LandingIP must be a real IP obtained through the proxy.
@@ -402,7 +409,8 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 		// For hproxy entries, the SOCKS/TLS target probe is the availability
 		// signal. IP lookup is optional enrichment and must not create a false
 		// negative when the proxy blocks metadata providers.
-		if strings.HasPrefix(result.Tag, "hproxy-") && result.RealLatency > 0 && result.Available {
+		if result.RealLatency > 0 && result.Available && result.Country != "" && result.Region != "" && result.City != "" {
+			result.Error = ""
 			return result, nil
 		}
 		if result.Error == "" {
