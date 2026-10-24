@@ -29,6 +29,7 @@ var (
 	// unchanged (e.g., outbound-only egress promotions), preventing brief SUI
 	// outages during client speed tests.
 	lastAppliedInboundHash string
+	lastAppliedRouteHash   string
 	inboundHashMu          sync.Mutex
 )
 
@@ -140,6 +141,11 @@ func (s *ConfigService) startCoreLocked(defaultConfig string) error {
 			if h, herr := s.computeInboundHash(); herr == nil {
 				inboundHashMu.Lock()
 				lastAppliedInboundHash = h
+				inboundHashMu.Unlock()
+			}
+			if h, herr := s.computeRouteHash(); herr == nil {
+				inboundHashMu.Lock()
+				lastAppliedRouteHash = h
 				inboundHashMu.Unlock()
 			}
 			return nil
@@ -283,10 +289,12 @@ func (s *ConfigService) restartCoreLocked() error {
 	// restarting for those causes brief SUI outages (client -1 during tests).
 	// Only stop/start when the inbound listeners actually changed.
 	if newHash, err := s.computeInboundHash(); err == nil {
+		newRouteHash, routeErr := s.computeRouteHash()
 		inboundHashMu.Lock()
 		oldHash := lastAppliedInboundHash
+		oldRouteHash := lastAppliedRouteHash
 		inboundHashMu.Unlock()
-		if oldHash != "" && oldHash == newHash {
+		if oldHash != "" && oldHash == newHash && routeErr == nil && oldRouteHash == newRouteHash {
 			logger.Info("Skip sing-box restart: inbounds unchanged (outbound-only update)")
 			return nil
 		}
@@ -308,6 +316,28 @@ func (s *ConfigService) restartCoreLocked() error {
 	// Extra grace period for OS to release TCP ports
 	time.Sleep(2 * time.Second)
 	return s.startCoreLocked("")
+}
+
+// computeRouteHash tracks persisted routing rules separately from inbound
+// listeners. Pool promotion changes only route bindings; treating it as an
+// outbound-only change would leave the running sing-box process using stale
+// pool-socks routes and produce "router outbound not found" errors.
+func (s *ConfigService) computeRouteHash() (string, error) {
+	db := database.GetDB()
+	if db == nil {
+		return "", fmt.Errorf("database is not initialized")
+	}
+	var setting model.Setting
+	if err := db.Where("key = ?", "config").First(&setting).Error; err != nil {
+		return "", err
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(setting.Value), &config); err != nil {
+		return "", err
+	}
+	route := config["route"]
+	h := sha256.Sum256(route)
+	return hex.EncodeToString(h[:]), nil
 }
 
 // computeInboundHash returns a stable SHA256 hash of the persisted listener and

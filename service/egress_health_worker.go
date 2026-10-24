@@ -166,9 +166,13 @@ func runEgressHealthCheck(reload ...func() error) {
 	if db.Where("name = ?", "Local v2rayN Seed Nodes").First(&seedSubscription).Error == nil {
 		db.Model(&model.Outbound{}).
 			Where("subscription_id = ? AND (last_test_time < ? OR available = ?)", seedSubscription.Id, protonCutoff, false).
-			Order("last_test_time ASC").Limit(200).Pluck("tag", &seedTags)
+			Order("last_test_time ASC").Limit(1500).Pluck("tag", &seedTags)
 	}
 
+	// Capture the beginning of this round. Pool promotion must only use rows
+	// written by this health pass, never stale availability from a subscription
+	// refresh or an earlier run.
+	roundStart := time.Now().Unix()
 	// 设置总进度（包含 HProxy）
 	var hproxyTags []string
 	db.Model(&model.Outbound{}).
@@ -198,6 +202,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// seed/WireGuard background round so pool promotion is not delayed by
 	// unrelated UDP endpoints.
 	hproxyPassed := 0
+	poolRebuilt := 0
 	if len(hproxyTags) > 0 {
 		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 30)
 		egressProgressDone.Add(int32(len(hproxyTags)))
@@ -250,7 +255,20 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-	if (hproxyPassed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
+	// Promote only after both HProxy and the optional local seed source have
+	// completed. This lets the user-provided v2rayN report contribute healthy
+	// exits instead of rebuilding prematurely from the 75 HProxy survivors.
+	if hproxyPassed > 0 || seedPassed > 0 {
+		var poolErr error
+		poolRebuilt, poolErr = rebuildPublicPool(roundStart)
+		if poolErr != nil {
+			logger.Warning("public pool rebuild skipped:", poolErr)
+		} else {
+			logger.Infof("public pool rebuilt from %d fresh healthy exits", poolRebuilt)
+		}
+	}
+
+	if (poolRebuilt > 0 || hproxyPassed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
 		if err := reload[0](); err != nil {
 			logger.Warning("sing-box reload after egress promotion failed:", err)
 		} else {
