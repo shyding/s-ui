@@ -139,6 +139,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	if db == nil {
 		return
 	}
+	endpointTags := syncEndpointCandidates(db)
 
 	tags := []string{"warp-6eV"}
 	// 1. Regional pools (Cloudflare and Proton) are high-priority: test them FIRST
@@ -185,7 +186,7 @@ func runEgressHealthCheck(reload ...func() error) {
 		Where("tag LIKE ?", "hproxy-%").
 		Order("last_test_time ASC").Limit(1500).Pluck("tag", &hproxyTags)
 
-	total := int32(len(tags) + len(protonTags) + len(seedTags) + len(hproxyTags))
+	total := int32(len(tags) + len(protonTags) + len(endpointTags) + len(seedTags) + len(hproxyTags))
 	ResetEgressProgress(total)
 	logger.Infof("EgressHealthWorker: 开始检测 %d 个出口节点", total)
 
@@ -205,6 +206,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// seed/WireGuard background round so pool promotion is not delayed by
 	// unrelated UDP endpoints.
 	hproxyPassed := 0
+	endpointPassed := 0
 	poolRebuilt := 0
 	if len(hproxyTags) > 0 {
 		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 60)
@@ -237,6 +239,18 @@ func runEgressHealthCheck(reload ...func() error) {
 			logger.Infof("Proton child health check finished: tested=%d passed=%d", len(protonResults), passed)
 		}
 	}
+	if len(endpointTags) > 0 {
+		endpointResults, endpointErr := (&NodeTestService{}).TestSelectedAndSave(endpointTags, min(len(endpointTags), 60))
+		egressProgressDone.Add(int32(len(endpointTags)))
+		if endpointErr != nil {
+			logger.Warning("EgressHealthWorker: endpoint health check failed:", endpointErr)
+		}
+		for _, result := range endpointResults {
+			if result != nil && result.Available {
+				endpointPassed++
+			}
+		}
+	}
 
 	// 3. Seed nodes: background check (tags already collected above)
 	seedPassed := 0
@@ -261,7 +275,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// Promote only after both HProxy and the optional local seed source have
 	// completed. This lets the user-provided v2rayN report contribute healthy
 	// exits instead of rebuilding prematurely from the 75 HProxy survivors.
-	if hproxyPassed > 0 || seedPassed > 0 {
+	if hproxyPassed > 0 || seedPassed > 0 || endpointPassed > 0 {
 		var poolErr error
 		poolRebuilt, poolErr = rebuildPublicPool(roundStart)
 		if poolErr != nil {
@@ -271,11 +285,11 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 
-	if (poolRebuilt > 0 || hproxyPassed > 0 || seedPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
+	if (poolRebuilt > 0 || hproxyPassed > 0 || seedPassed > 0 || endpointPassed > 0) && len(reload) > 0 && reload[0] != nil && canReloadEgress(time.Now()) {
 		if err := reload[0](); err != nil {
 			logger.Warning("sing-box reload after egress promotion failed:", err)
 		} else {
-			logger.Infof("sing-box reloaded after promoting %d public-proxy and %d seed exits", hproxyPassed, seedPassed)
+			logger.Infof("sing-box reloaded after promoting %d public-proxy, %d seed, and %d endpoint exits", hproxyPassed, seedPassed, endpointPassed)
 		}
 	}
 }

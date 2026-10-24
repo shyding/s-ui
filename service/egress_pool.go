@@ -21,7 +21,7 @@ func rebuildPublicPool(roundStart int64) (int, error) {
 		return 0, fmt.Errorf("database unavailable")
 	}
 	var rows []model.Outbound
-	if err := db.Where("(tag LIKE ? OR subscription_id IN (SELECT id FROM subscriptions WHERE name = ?)) AND available = ? AND last_test_time >= ? AND country <> '' AND region <> '' AND city <> ''", "hproxy-%", "Local v2rayN Seed Nodes", true, roundStart).
+	if err := db.Where("(tag LIKE ? OR tag LIKE ? OR tag LIKE ? OR subscription_id IN (SELECT id FROM subscriptions WHERE name = ?)) AND available = ? AND last_test_time >= ? AND country <> '' AND region <> '' AND city <> ''", "hproxy-%", "ep-proton-%", "ep-cf-%", "Local v2rayN Seed Nodes", true, roundStart).
 		Order("last_test_time DESC, id ASC").Find(&rows).Error; err != nil {
 		return 0, err
 	}
