@@ -22,7 +22,10 @@ func EnsureHProxyPoolsInOutbounds(config *SingBoxConfig, db *gorm.DB) {
 		return
 	}
 	var candidates []model.Outbound
-	if err := db.Where("tag LIKE ? AND available = ? AND landing_ip <> '' AND country <> '' AND region <> '' AND city <> ''", "hproxy-%", true).Find(&candidates).Error; err != nil {
+	// HProxy health is based on the real target/TLS probe.  The source feed
+	// already supplies geography; landing_ip is optional enrichment and may
+	// be empty when third-party geo APIs are blocked.
+	if err := db.Where("tag LIKE ? AND available = ? AND country <> '' AND region <> '' AND city <> ''", "hproxy-%", true).Find(&candidates).Error; err != nil {
 		return
 	}
 	groups := make(map[string][]string)

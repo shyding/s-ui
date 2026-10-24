@@ -56,10 +56,14 @@ func getEgressCandidates() []CandidateNode {
 
 	for _, src := range egressSources {
 		var outbounds []model.Outbound
-		// 质量门必须使用本次真实出口探测得到的 landing_ip 和完整地理
-		// 信息。available 可能是历史状态，单独使用会把失效 hproxy 重新
-		// 暴露到 /sub/pool。
-		err := db.Where("tag LIKE ? AND available = ? AND landing_ip <> '' AND country <> '' AND region <> '' AND city <> ''", src.TagLike, true).Find(&outbounds).Error
+		// HProxy's real target/TLS probe is authoritative.  Its source feed
+		// provides geography; landing_ip is optional enrichment and must not be
+		// required for a working proxy to enter the pool.
+		query := db.Where("tag LIKE ? AND available = ? AND country <> '' AND region <> '' AND city <> ''", src.TagLike, true)
+		if src.Provider != "HProxy" {
+			query = query.Where("landing_ip <> ''")
+		}
+		err := query.Find(&outbounds).Error
 		if err != nil {
 			logger.Warningf("加载%s候选节点失败: %v", src.Provider, err)
 			continue
