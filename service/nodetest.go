@@ -855,8 +855,14 @@ func (s *NodeTestService) tryPing0WithDialer(dialer proxy.Dialer, result *NodeTe
 
 // isTestableOutbound checks whether an outbound can be tested as a proxy tunnel
 func isTestableOutbound(ob model.Outbound) bool {
-	if ob.Type == "block" || ob.Type == "selector" {
+	if ob.Type == "block" {
 		return false
+	}
+	// Endpoint-backed selector wrappers are real proxy paths: their member is
+	// a configured sing-box endpoint.  Ordinary policy selectors remain
+	// non-testable because they do not identify one concrete exit.
+	if ob.Type == "selector" {
+		return strings.HasPrefix(ob.Tag, "out-ep-")
 	}
 	// Pure direct without endpoint/detour has no proxy tunnel to test
 	if ob.Type == "direct" && !strings.Contains(string(ob.Options), "endpoint") && !strings.Contains(string(ob.Options), "detour") {

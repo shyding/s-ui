@@ -209,7 +209,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	endpointPassed := 0
 	poolRebuilt := 0
 	if len(hproxyTags) > 0 {
-		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 60)
+		proxyResults, proxyErr := (&NodeTestService{}).TestSelectedAndSave(hproxyTags, 30)
 		egressProgressDone.Add(int32(len(hproxyTags)))
 		if proxyErr != nil {
 			logger.Warning("public-proxy candidate health check failed:", proxyErr)
@@ -240,7 +240,10 @@ func runEgressHealthCheck(reload ...func() error) {
 		}
 	}
 	if len(endpointTags) > 0 {
-		endpointResults, endpointErr := (&NodeTestService{}).TestSelectedAndSave(endpointTags, min(len(endpointTags), 60))
+		// Test the complete endpoint inventory.  These are the only candidates
+		// that can provide additional regions beyond the public-proxy pool; a
+		// 20-worker cap avoids exhausting the VPS while preserving coverage.
+		endpointResults, endpointErr := (&NodeTestService{}).TestSelectedAndSave(endpointTags, 20)
 		egressProgressDone.Add(int32(len(endpointTags)))
 		if endpointErr != nil {
 			logger.Warning("EgressHealthWorker: endpoint health check failed:", endpointErr)
@@ -255,7 +258,7 @@ func runEgressHealthCheck(reload ...func() error) {
 	// 3. Seed nodes: background check (tags already collected above)
 	seedPassed := 0
 	if len(seedTags) > 0 {
-		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 120)
+		seedResults, err := (&NodeTestService{}).TestSelectedAndSave(seedTags, 40)
 		egressProgressDone.Add(int32(len(seedTags)))
 		if err != nil {
 			logger.Warning("seed client node health check failed:", err)
