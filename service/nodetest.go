@@ -79,6 +79,7 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 
 	hasEndpoint := outbound.Type == "direct" && (options["endpoint"] != nil || options["detour"] != nil)
 	isPool := outbound.Type == "urltest"
+	isConfiguredEndpoint := strings.HasPrefix(tag, "ep-")
 
 	if server == "" && outbound.LandingIP != "" {
 		server = outbound.LandingIP
@@ -99,7 +100,7 @@ func (s *NodeTestService) TestOutbound(tag string) (*NodeTestResult, error) {
 		}
 	}
 
-	if (server == "" || port == 0) && !hasEndpoint && !isPool {
+	if (server == "" || port == 0) && !hasEndpoint && !isPool && !isConfiguredEndpoint {
 		result.Available = false
 		result.Latency = -1
 		result.Error = "invalid server or port"
