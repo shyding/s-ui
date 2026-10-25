@@ -265,7 +265,80 @@ func GetEgressVpsPort(seedHost, seedPort string) int {
 func RefreshEgressGateway() error {
 	// Do not regenerate or apply DNAT rules. Public pool listeners bind the
 	// VPS ports directly; forwarding those ports makes every public SOCKS
-	// handshake fail before it reaches s-ui.
-	logger.Info("Egress gateway DNAT disabled; preserving direct VPS listeners")
+	// handshake fail before it reaches s-ui.  Older releases did install rules,
+	// however, so merely returning here left stale rules active on upgraded
+	// servers. Remove only the gateway's documented port range; unrelated NAT
+	// rules are never touched.
+	if err := clearEgressIPTables(); err != nil {
+		return err
+	}
+	logger.Info("Egress gateway DNAT disabled; stale gateway rules removed")
 	return nil
+}
+
+// clearEgressIPTables removes legacy DNAT rules for the public pool port range.
+// It is intentionally best-effort on non-Linux development machines where
+// iptables is not installed. The server path returns an error only when an
+// available iptables command fails, so deployment cannot silently claim that
+// stale rules were removed.
+func clearEgressIPTables() error {
+	for _, binary := range []string{"iptables", "ip6tables"} {
+		path, err := exec.LookPath(binary)
+		if err != nil {
+			continue
+		}
+		out, err := exec.Command(path, "-t", "nat", "-S", "PREROUTING").Output()
+		if err != nil {
+			return fmt.Errorf("list %s PREROUTING rules: %w", binary, err)
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) == 0 || fields[0] != "-A" || !isLegacyGatewayDNAT(fields) {
+				continue
+			}
+			fields[0] = "-D"
+			if err := exec.Command(path, append([]string{"-t", "nat"}, fields...)...).Run(); err != nil {
+				return fmt.Errorf("remove stale %s rule %q: %w", binary, line, err)
+			}
+		}
+	}
+	return nil
+}
+
+func isLegacyGatewayDNAT(fields []string) bool {
+	hasDNAT := false
+	hasGatewayPort := false
+	for i, field := range fields {
+		switch field {
+		case "-j":
+			if i+1 < len(fields) && strings.EqualFold(fields[i+1], "DNAT") {
+				hasDNAT = true
+			}
+		case "--dport":
+			if i+1 < len(fields) && gatewayPortSpec(fields[i+1]) {
+				hasGatewayPort = true
+			}
+		case "--dports":
+			if i+1 < len(fields) && gatewayPortSpec(fields[i+1]) {
+				hasGatewayPort = true
+			}
+		}
+	}
+	return hasDNAT && hasGatewayPort
+}
+
+func gatewayPortSpec(spec string) bool {
+	parts := strings.SplitN(spec, ":", 2)
+	start, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	end := start
+	if len(parts) == 2 {
+		end, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return false
+		}
+	}
+	return start >= EgressGatewayPortStart && end <= EgressGatewayPortEnd
 }
