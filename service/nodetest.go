@@ -21,6 +21,7 @@ import (
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 	"golang.org/x/net/proxy"
+	"gorm.io/gorm"
 )
 
 type NodeTestService struct{}
@@ -40,6 +41,22 @@ type NodeTestResult struct {
 	IPType      string `json:"ipType"`
 	FraudScore  int    `json:"fraudScore"`
 	Error       string `json:"error,omitempty"`
+}
+
+// isSeedOutbound reports whether an outbound came from the user-provided
+// v2rayN inventory.  That inventory already carries the provider geography in
+// its remark and is used as a candidate source for the public 300-port pool.
+// Geolocation APIs are only enrichment for these records; they must not turn
+// a successful real proxy target probe into a false negative.
+func isSeedOutbound(db *gorm.DB, outbound model.Outbound) bool {
+	if db == nil || outbound.SubscriptionId == nil {
+		return false
+	}
+	var subscription model.Subscription
+	if err := db.First(&subscription, *outbound.SubscriptionId).Error; err != nil {
+		return false
+	}
+	return subscription.Name == seededClientNodesSubscriptionName
 }
 
 // inferSourceGeo supplies a stable country fallback for imported seed remarks.
@@ -198,6 +215,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 		result.Error = "outbound not found in database"
 		return result, nil
 	}
+	seedSource := isSeedOutbound(db, outbound)
 
 	// For SOCKS5 nodes, use direct proxy connection (no sing-box dependency)
 	if outbound.Type == "socks" {
@@ -233,7 +251,7 @@ func (s *NodeTestService) TestOutboundWithLandingIP(tag string, ctx context.Cont
 	// HProxy source records already carry provider geography. Do not block
 	// health promotion on third-party IP/geolocation APIs; the real target
 	// TLS probe above is the authoritative availability check.
-	if strings.HasPrefix(tag, "hproxy-") {
+	if strings.HasPrefix(tag, "hproxy-") || seedSource {
 		if result.RealLatency <= 0 {
 			result.Available = false
 			if result.Error == "" {
@@ -401,7 +419,7 @@ func (s *NodeTestService) testWithSOCKS5(outbound model.Outbound, result *NodeTe
 	// HProxy SOCKS entries use their direct target/TLS probe as the complete
 	// health test. Provider geography is already known from the source feed;
 	// skip slow/unreliable metadata endpoints.
-	if strings.HasPrefix(result.Tag, "hproxy-") {
+	if strings.HasPrefix(result.Tag, "hproxy-") || isSeedOutbound(database.GetDB(), outbound) {
 		return result, nil
 	}
 
