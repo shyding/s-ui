@@ -19,7 +19,9 @@ mkdir -p /usr/local/s-ui/seed
 # 2. Stop running service and clean port conflicts
 echo "--> [2/8] Stopping existing services and releasing ports..."
 systemctl stop s-ui 2>/dev/null || true
-pkill -9 -f /usr/local/s-ui/sui 2>/dev/null || true
+# Match only the executable name. A `pkill -f` path match can kill this
+# bootstrap shell/SSH command because its command line contains the path.
+pkill -9 -x sui 2>/dev/null || true
 if command -v fuser &> /dev/null; then
   fuser -k 40734/udp 54142/tcp 2096/tcp 2053/tcp 2>/dev/null || true
 fi
@@ -74,6 +76,9 @@ fi
 if [ -f /tmp/sui ]; then
   mv /tmp/sui /usr/local/s-ui/sui
   chmod +x /usr/local/s-ui/sui
+else
+  echo "ERROR: /tmp/sui not found after artifact transfer"
+  exit 1
 fi
 
 if [ -d /tmp/scripts ]; then
