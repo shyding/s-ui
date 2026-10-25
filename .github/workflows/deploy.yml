@@ -78,19 +78,20 @@ jobs:
 
       - name: Add server to known hosts
         run: |
-          ssh-keyscan -p ${{ secrets.SERVER_PORT }} -T 30 ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts || true
+          timeout 45s ssh-keyscan -p ${{ secrets.SERVER_PORT }} -T 20 ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts || true
 
       - name: Transfer artifacts to server
         run: |
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf /tmp/scripts /tmp/sui /tmp/sui.gz /tmp/s-ui.service"
-          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} sui.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui.gz
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "gzip -t /tmp/sui.gz && gzip -dc /tmp/sui.gz > /tmp/sui && chmod 755 /tmp/sui && rm -f /tmp/sui.gz"
-          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
-          scp -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
+          SSH_OPTS="-o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
+          ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf /tmp/scripts /tmp/sui /tmp/sui.gz /tmp/s-ui.service"
+          scp $SSH_OPTS -P ${{ secrets.SERVER_PORT }} sui.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui.gz
+          ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "gzip -t /tmp/sui.gz && gzip -dc /tmp/sui.gz > /tmp/sui && chmod 755 /tmp/sui && rm -f /tmp/sui.gz"
+          scp $SSH_OPTS -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
+          scp $SSH_OPTS -P ${{ secrets.SERVER_PORT }} s-ui.service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/s-ui.service
 
       - name: Bootstrap and start s-ui service
         env:
           SERVER_DOMAIN: ${{ secrets.SERVER_DOMAIN }}
         run: |
           DOMAIN="${SERVER_DOMAIN:-dash.icta.top}"
-          ssh -o StrictHostKeyChecking=accept-new -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "BOOTSTRAP_SCRIPT=\$(find /tmp/scripts -name deploy_bootstrap.sh 2>/dev/null | head -n 1); if [ -z \"\$BOOTSTRAP_SCRIPT\" ]; then echo 'deploy_bootstrap.sh not found in /tmp/scripts'; ls -la /tmp/scripts; exit 1; fi; chmod +x \"\$BOOTSTRAP_SCRIPT\"; sudo bash \"\$BOOTSTRAP_SCRIPT\" '$DOMAIN'"
+          ssh -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "BOOTSTRAP_SCRIPT=\$(find /tmp/scripts -name deploy_bootstrap.sh 2>/dev/null | head -n 1); if [ -z \"\$BOOTSTRAP_SCRIPT\" ]; then echo 'deploy_bootstrap.sh not found in /tmp/scripts'; ls -la /tmp/scripts; exit 1; fi; chmod +x \"\$BOOTSTRAP_SCRIPT\"; sudo bash \"\$BOOTSTRAP_SCRIPT\" '$DOMAIN'"
