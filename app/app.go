@@ -70,6 +70,11 @@ func (a *APP) Init() error {
 	} else if created > 0 {
 		logger.Infof("initialized %d SUI nodes (ports 54142-54179)", created)
 	}
+	if created, err := service.EnsureSUIClients(database.GetDB()); err != nil {
+		logger.Warning("failed to ensure SUI subscription clients:", err)
+	} else if created > 0 {
+		logger.Infof("initialized %d SUI subscription clients (my/pool)", created)
+	}
 	// Bootstrap helpers mutate existing profiles/identities. Never run them
 	// implicitly during a normal upgrade of an already configured server.
 	if os.Getenv("SUI_BOOTSTRAP_COVERAGE") == "1" {

@@ -245,11 +245,48 @@ func GetSUINodeSpecs() []SUINodeSpec {
 	}
 }
 
+// ensureSUI TLS profiles makes a fresh installation self-contained.  The
+// inbound schema has a foreign key to tls, so creating SUI inbounds before a
+// TLS row exists fails on a clean database.
+func ensureSUITLSProfiles(db *gorm.DB) (tlsID, plainID uint, err error) {
+	profiles := []struct {
+		name   string
+		server map[string]interface{}
+	}{
+		{"SUI TLS", suiTLSOptions()},
+		{"SUI Plain", map[string]interface{}{"enabled": false}},
+	}
+	ids := make([]*uint, len(profiles))
+	for i, profile := range profiles {
+		var row model.Tls
+		if e := db.Where("name = ?", profile.name).First(&row).Error; e == nil {
+			ids[i] = &row.Id
+			continue
+		} else if e != gorm.ErrRecordNotFound {
+			return 0, 0, e
+		}
+		server, e := json.Marshal(profile.server)
+		if e != nil {
+			return 0, 0, e
+		}
+		row = model.Tls{Name: profile.name, Server: server, Client: json.RawMessage(`{}`)}
+		if e = db.Create(&row).Error; e != nil {
+			return 0, 0, e
+		}
+		ids[i] = &row.Id
+	}
+	return *ids[0], *ids[1], nil
+}
+
 // EnsureSUINodes 幂等创建38个 SUI inbound。
 // 已存在的（按 tag 匹配）会被跳过，不会被覆盖；返回新建数量。
 func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 	if db == nil {
 		db = database.GetDB()
+	}
+	tlsID, plainTLSID, err := ensureSUITLSProfiles(db)
+	if err != nil {
+		return 0, fmt.Errorf("ensure SUI TLS profiles: %w", err)
 	}
 	specs := GetSUINodeSpecs()
 	for _, spec := range specs {
@@ -298,6 +335,15 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 					logger.Infof("EnsureSUINodes: migrated public plaintext %s to TLS", spec.Tag)
 				}
 			}
+			wantedTLSID := plainTLSID
+			if spec.TLS {
+				wantedTLSID = tlsID
+			}
+			if existing.TlsId != wantedTLSID {
+				if updateErr := db.Model(&existing).Update("tls_id", wantedTLSID).Error; updateErr != nil {
+					return created, fmt.Errorf("reconcile TLS profile for %s: %w", spec.Tag, updateErr)
+				}
+			}
 			continue // 已存在，跳过
 		}
 		opts := spec.BuildOptions()
@@ -308,9 +354,13 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 		inbound := model.Inbound{
 			Type:    spec.Type,
 			Tag:     spec.Tag,
+			TlsId:   plainTLSID,
 			Options: optsJSON,
 			Addrs:   json.RawMessage(`[]`),
 			OutJson: json.RawMessage(`{}`),
+		}
+		if spec.TLS {
+			inbound.TlsId = tlsID
 		}
 		if err := db.Create(&inbound).Error; err != nil {
 			return created, fmt.Errorf("create inbound %s: %w", spec.Tag, err)
@@ -344,6 +394,50 @@ func EnsureSUINodes(db *gorm.DB) (created int, err error) {
 		updated, marshalErr := json.MarshalIndent(opts, "", "  ")
 		if marshalErr == nil && db.Model(&inbound).Update("options", updated).Error == nil {
 			logger.Infof("EnsureSUINodes: reconciled TUIC ALPN dynamically for %s", inbound.Tag)
+		}
+	}
+	return created, nil
+}
+
+// EnsureSUIClients recreates the two canonical subscription clients on a
+// fresh installation. Existing clients are left untouched; only missing
+// clients are created and their local links are generated from the SUI
+// inbounds.
+func EnsureSUIClients(db *gorm.DB) (created int, err error) {
+	if db == nil {
+		db = database.GetDB()
+	}
+	ids, err := GetSUIInboundIDs(db)
+	if err != nil {
+		return 0, err
+	}
+	inboundJSON, err := json.Marshal(ids)
+	if err != nil {
+		return 0, err
+	}
+	config := json.RawMessage(`{"vless":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","flow":""},"vmess":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a"},"trojan":{"password":"icta-trojan-2026"},"hysteria2":{"password":"icta-hy2-2026"},"tuic":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","password":"icta-tuic-2026"},"shadowsocks":{"password":"icta-ss-aead-2026"},"socks":{"username":"my","password":"icta-socks-2026"},"http":{"username":"my","password":"icta-http-2026"}}`)
+	for _, name := range []string{"my", "pool"} {
+		var existing model.Client
+		if e := db.Where("name = ?", name).First(&existing).Error; e == nil {
+			continue
+		} else if e != gorm.ErrRecordNotFound {
+			return created, e
+		}
+		if e := db.Create(&model.Client{Enable: true, Name: name, Config: config, Inbounds: inboundJSON, Links: json.RawMessage(`[]`)}).Error; e != nil {
+			return created, e
+		}
+		created++
+	}
+	var clients []*model.Client
+	if err = db.Where("name IN ? AND enable = ?", []string{"my", "pool"}, true).Find(&clients).Error; err != nil {
+		return created, err
+	}
+	if err = (&ClientService{}).updateLinksWithFixedInbounds(db, clients, SUIServerName); err != nil {
+		return created, err
+	}
+	for _, client := range clients {
+		if err = db.Model(client).Updates(map[string]interface{}{"inbounds": inboundJSON, "links": client.Links}).Error; err != nil {
+			return created, err
 		}
 	}
 	return created, nil
