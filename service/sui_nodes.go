@@ -415,13 +415,21 @@ func EnsureSUIClients(db *gorm.DB) (created int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	config := json.RawMessage(`{"vless":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","flow":""},"vmess":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a"},"trojan":{"password":"icta-trojan-2026"},"hysteria2":{"password":"icta-hy2-2026"},"tuic":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","password":"icta-tuic-2026"},"shadowsocks":{"password":"icta-ss-aead-2026"},"socks":{"username":"my","password":"icta-socks-2026"},"http":{"username":"my","password":"icta-http-2026"}}`)
 	for _, name := range []string{"my", "pool"} {
 		var existing model.Client
 		if e := db.Where("name = ?", name).First(&existing).Error; e == nil {
+			if name == "pool" {
+				_ = db.Model(&existing).Update("config", json.RawMessage(`{"vless":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f","flow":""},"vmess":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f"},"trojan":{"password":"icta-pool-trojan-2026"},"hysteria2":{"password":"icta-pool-hy2-2026"},"tuic":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f","password":"icta-pool-tuic-2026"},"shadowsocks":{"password":"icta-pool-ss-2026"},"socks":{"username":"pool","password":"icta-pool-socks-2026"},"http":{"username":"pool","password":"icta-pool-http-2026"}}`)).Error
+			}
 			continue
 		} else if e != gorm.ErrRecordNotFound {
 			return created, e
+		}
+		// Pool uses distinct credentials because sing-box rejects duplicate
+		// usernames/passwords on one inbound when both clients are attached.
+		config := json.RawMessage(`{"vless":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","flow":""},"vmess":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a"},"trojan":{"password":"icta-trojan-2026"},"hysteria2":{"password":"icta-hy2-2026"},"tuic":{"uuid":"8c9fa6c8-bf77-4533-8b12-563cc157eb2a","password":"icta-tuic-2026"},"shadowsocks":{"password":"icta-ss-aead-2026"},"socks":{"username":"my","password":"icta-socks-2026"},"http":{"username":"my","password":"icta-http-2026"}}`)
+		if name == "pool" {
+			config = json.RawMessage(`{"vless":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f","flow":""},"vmess":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f"},"trojan":{"password":"icta-pool-trojan-2026"},"hysteria2":{"password":"icta-pool-hy2-2026"},"tuic":{"uuid":"3d2f8a4e-8c9b-4c5d-9e1f-7a6b5c4d3e2f","password":"icta-pool-tuic-2026"},"shadowsocks":{"password":"icta-pool-ss-2026"},"socks":{"username":"pool","password":"icta-pool-socks-2026"},"http":{"username":"pool","password":"icta-pool-http-2026"}}`)
 		}
 		if e := db.Create(&model.Client{Enable: true, Name: name, Config: config, Inbounds: inboundJSON, Links: json.RawMessage(`[]`)}).Error; e != nil {
 			return created, e

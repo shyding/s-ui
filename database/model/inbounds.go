@@ -63,7 +63,15 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 	combined["type"] = i.Type
 	combined["tag"] = i.Tag
 	if i.Tls != nil {
-		combined["tls"] = i.Tls.Server
+		// A disabled placeholder TLS profile is used to satisfy the legacy
+		// SQLite foreign key on fresh installs. Do not emit `tls` into the
+		// sing-box inbound in that case; plaintext inbounds reject that field.
+		var tlsServer map[string]interface{}
+		if err := json.Unmarshal(i.Tls.Server, &tlsServer); err == nil {
+			if enabled, ok := tlsServer["enabled"].(bool); !ok || enabled {
+				combined["tls"] = i.Tls.Server
+			}
+		}
 	}
 
 	if i.Options != nil {
