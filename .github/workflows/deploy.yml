@@ -83,7 +83,7 @@ jobs:
       - name: Provision dsy deployment access after OS reinstall
         run: |
           SSH_OPTS="-o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
-          ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "if id dsy >/dev/null 2>&1; then sudo install -d -m 700 -o dsy -g dsy /home/dsy/.ssh; sudo sh -c 'cat /home/${{ secrets.SERVER_USER }}/.ssh/authorized_keys >> /home/dsy/.ssh/authorized_keys'; sudo sh -c 'sort -u /home/dsy/.ssh/authorized_keys -o /home/dsy/.ssh/authorized_keys'; sudo chown dsy:dsy /home/dsy/.ssh/authorized_keys; sudo chmod 600 /home/dsy/.ssh/authorized_keys; echo dsy-access-ready; else echo dsy-user-missing; fi"
+          ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "if ! id dsy >/dev/null 2>&1; then sudo useradd --create-home --shell /bin/bash dsy; fi; sudo usermod -aG sudo dsy; sudo install -d -m 700 -o dsy -g dsy /home/dsy/.ssh; sudo sh -c 'cat /home/${{ secrets.SERVER_USER }}/.ssh/authorized_keys >> /home/dsy/.ssh/authorized_keys'; sudo sh -c 'sort -u /home/dsy/.ssh/authorized_keys -o /home/dsy/.ssh/authorized_keys'; sudo chown dsy:dsy /home/dsy/.ssh/authorized_keys; sudo chmod 600 /home/dsy/.ssh/authorized_keys; echo 'dsy ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/dsy-s-ui >/dev/null; sudo chmod 440 /etc/sudoers.d/dsy-s-ui; if [ -n '${{ secrets.SERVER_PASSWORD }}' ]; then printf '%s\n' 'dsy:${{ secrets.SERVER_PASSWORD }}' | sudo chpasswd; fi; echo dsy-access-ready"
 
       - name: Transfer artifacts to server
         run: |
