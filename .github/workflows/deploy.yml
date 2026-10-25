@@ -89,6 +89,7 @@ jobs:
         run: |
           SSH_OPTS="-o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
           ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo -n rm -rf /tmp/scripts /tmp/sui /tmp/sui.gz /tmp/s-ui.service"
+          ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo -n install -d -o ${{ secrets.SERVER_USER }} -g ${{ secrets.SERVER_USER }} -m 755 /tmp/scripts"
           scp $SSH_OPTS -P ${{ secrets.SERVER_PORT }} sui.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sui.gz
           ssh $SSH_OPTS -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "gzip -t /tmp/sui.gz && gzip -dc /tmp/sui.gz > /tmp/sui && chmod 755 /tmp/sui && rm -f /tmp/sui.gz"
           scp $SSH_OPTS -P ${{ secrets.SERVER_PORT }} -r scripts ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/scripts
