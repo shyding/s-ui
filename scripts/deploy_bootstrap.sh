@@ -14,6 +14,7 @@ mkdir -p /usr/local/s-ui/bin
 mkdir -p /usr/local/s-ui/scripts
 mkdir -p /usr/local/s-ui/db
 mkdir -p /usr/local/s-ui/certs
+mkdir -p /usr/local/s-ui/seed
 
 # 2. Stop running service and clean port conflicts
 echo "--> [2/8] Stopping existing services and releasing ports..."
@@ -82,6 +83,13 @@ if [ -d /tmp/scripts ]; then
   cp -rf /tmp/scripts/* /usr/local/s-ui/scripts/ 2>/dev/null || true
   chmod +x /usr/local/s-ui/scripts/*.py 2>/dev/null || true
   chmod +x /usr/local/s-ui/scripts/*.sh 2>/dev/null || true
+fi
+
+# Restore the repository-backed v2rayN seed inventory after a VPS reinstall.
+# The service unit reads this path through SUI_SEED_NODES_FILE.
+if [ -s /tmp/scripts/seed_client_nodes.txt ]; then
+  install -m 0644 /tmp/scripts/seed_client_nodes.txt /usr/local/s-ui/seed/nodes.txt
+  echo "Restored seed node inventory: $(wc -l < /usr/local/s-ui/seed/nodes.txt) entries"
 fi
 
 # 6. Automated SSL Certificate Provisioning & Fallback

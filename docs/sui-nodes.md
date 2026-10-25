@@ -1,13 +1,14 @@
-# SUI 38节点：创建方法固化与灾难恢复
+# SUI 40节点：创建方法固化、原生 WireGuard 与灾难恢复
 
 > 适用版本：shyding/s-ui main（含 `service/sui_nodes.go` 的提交之后）
 > 最后更新：2026-10-02
 
 ## 1. 概述
 
-SUI 订阅的核心是 38 个 inbound，监听端口 **54142–54179**，覆盖 VLESS / VMess /
-Trojan / Hysteria2 / TUIC / Shadowsocks / SOCKS(mixed) 七种协议，
-传输层覆盖 TCP / WS / gRPC / HTTPUpgrade。
+SUI 订阅固定发布 40 个节点：38 个应用 inbound 监听 **54142–54179**，另有两套
+独立 WARP 身份通过 **54181–54182/UDP** 发布为原生 `wireguard://` 节点。应用
+inbound 覆盖 VLESS / VMess / Trojan / Hysteria2 / TUIC / Shadowsocks /
+SOCKS(mixed)，传输层覆盖 TCP / WS / gRPC / HTTPUpgrade。
 
 这 38 个节点的**创建方法已固化为代码**（`service/sui_nodes.go`），不再依赖手工在
 管理界面逐个添加，也不再依赖任何一次性 SQL/脚本。重装系统或全新部署后，
@@ -55,11 +56,16 @@ Trojan / Hysteria2 / TUIC / Shadowsocks / SOCKS(mixed) 七种协议，
 | 54177 | trojan | trojan-tcp-plain-54177 | ❌ | tcp |
 | 54178 | hysteria2 | hysteria2-3-54178 | ✅ | udp |
 | 54179 | tuic | tuic-3-54179 | ✅ | udp |
+| 54181 | wireguard | wireguard-warp-54181 | WireGuard | udp relay |
+| 54182 | wireguard | wireguard-warp-54182 | WireGuard | udp relay |
 
 注意：
 - 54161–54164 的 tag 保留 `reality` 字样是历史命名，实际已迁移为标准 VLESS+TLS。
 - TLS 证书路径固定为 `/usr/local/s-ui/certs/fullchain.pem` 与 `privkey.pem`，
   SNI 为 `dash.icta.top`。更换域名/证书时需同步修改 `service/sui_nodes.go` 中的常量。
+- 54181/54182 各自使用独立 WireGuard 身份，密钥持久化于
+  `sui_wire_guard_nodes`，不会复用服务端出口身份；客户端 URI 的 host 始终是
+  `dash.icta.top`，真实 WireGuard 对端仅保留在服务端。
 
 ## 3. 代码位置
 
@@ -69,6 +75,7 @@ Trojan / Hysteria2 / TUIC / Shadowsocks / SOCKS(mixed) 七种协议，
 | 幂等创建 | `service/sui_nodes.go` → `EnsureSUINodes(db)` |
 | 获取38个ID | `service/sui_nodes.go` → `GetSUIInboundIDs(db)` |
 | 完整性校验 | `service/sui_nodes.go` → `VerifySUINodes(db)` |
+| 两个原生 WireGuard 节点 | `service/sui_wireguard.go` |
 | 单元测试 | `service/sui_nodes_test.go` |
 | 查询API | `GET /api/suiNodes`（`api/apiService.go`，返回 id/tag/port/protocol） |
 | 创建API | `POST /api/ensureSUINodes`（`api/apiService.go`） |
@@ -114,12 +121,13 @@ curl -X POST https://dash.icta.top:2053/api/ensureSUINodes
 ```bash
 # 新建测试用户 test-sui（通过管理界面，一键勾选38节点），然后：
 curl -s https://dash.icta.top:2096/sub/test-sui | base64 -d | grep -oE ':[0-9]{5}' | sort -u
-# 期望输出 54142..54179 共38个端口
+# 期望输出 38 个 54142..54179 节点和 2 个 54181..54182 节点，共40个
 ```
 
 验收标准：
-- 订阅解码后恰好 38 个 SUI 节点
-- 端口唯一覆盖 54142–54179
+- 订阅解码后恰好 40 个 SUI 节点
+- 端口唯一覆盖 54142–54179、54181–54182（54180 由主机 wg0 使用）
+- 54181/54182 的 URI scheme 必须为 `wireguard://`，并通过真实 HTTP 204 测试
 - 无重复 URI
 
 ## 7. 设计原则（避免重蹈覆辙）
